@@ -1,0 +1,106 @@
+{
+  "site": "www.airbnb.com",
+  "startUrl": "https://www.airbnb.com/",
+  "device": "iphone-15",
+  "createdAt": "2026-09-17T10:34:46.384Z",
+  "screens": [
+    {
+      "id": "s01",
+      "url": "https://www.airbnb.com/",
+      "title": "Airbnb | Vacation rentals, cabins, beach houses, & more",
+      "screenshot": "screens/s01.png",
+      "capturedAt": "2026-09-17T10:34:49.970Z",
+      "type": "home",
+      "typeConfidence": 0.96,
+      "patterns": [
+        "top_app_bar",
+        "card_list",
+        "carousel",
+        "filter_chips",
+        "sheet_or_dialog",
+        "date_picker",
+        "consent_banner",
+        "price_display"
+      ],
+      "qa": [
+        {
+          "kind": "failed_request",
+          "severity": "medium",
+          "detail": "net::ERR_FAILED https://www.airbnb.com/tracking/jitney/logging/messages"
+        },
+        {
+          "kind": "small_tap_target",
+          "severity": "medium",
+          "detail": "11 control(s) under 44×44px: \"Close\" 26×26, \"All\" 70×40, \"Homes\" 100×40, \"Experiences\" 133×40, \"Add to wishlist: Apartment in Issy-les-Moulineaux\" 32×32"
+        }
+      ]
+    },
+    {
+      "id": "s02",
+      "url": "https://www.airbnb.com/",
+      "title": "Airbnb | Vacation rentals, cabins, beach houses, & more",
+      "screenshot": "screens/s02.png",
+      "capturedAt": "2026-09-17T10:34:51.557Z",
+      "type": "search",
+      "typeConfidence": 0.76,
+      "patterns": [
+        "search_bar",
+        "card_list",
+        "carousel",
+        "filter_chips",
+        "form_fields"
+      ],
+      "qa": [
+        {
+          "kind": "failed_request",
+          "severity": "medium",
+          "detail": "net::ERR_FAILED https://www.airbnb.com/tracking/jitney/logging/messages"
+        },
+        {
+          "kind": "small_tap_target",
+          "severity": "medium",
+          "detail": "4 control(s) under 44×44px: \"Close\" 40×40, \"Back\" 16×54, \"When Add dates\" 321×18, \"Who Add guests\" 321×18"
+        }
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "from": "s01",
+      "flow": "Explore",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Start your search"
+      },
+      "hotspot": {
+        "x": 0.061068702290076333,
+        "y": 0.09976525821596244,
+        "width": 0.8778625954198473,
+        "height": 0.06572769953051644
+      },
+      "to": "s02"
+    }
+  ],
+  "flows": [
+    {
+      "name": "Explore",
+      "parent": null,
+      "screens": [
+        {
+          "screen": "s01",
+          "action": "Tap \"Start your search\"",
+          "hotspot": {
+            "x": 0.061068702290076333,
+            "y": 0.09976525821596244,
+            "width": 0.8778625954198473,
+            "height": 0.06572769953051644
+          }
+        },
+        {
+          "screen": "s02"
+        }
+      ]
+    }
+  ]
+}
