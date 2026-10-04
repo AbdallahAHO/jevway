@@ -1,0 +1,266 @@
+#!/usr/bin/env node
+import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
+import type { JourneySession } from './journeys/journey-session.ts';
+import type { BrowserTask } from './task/run-task.ts';
+import { createRunner } from './task/start-task.ts';
+
+// JEV_BROWSER: auto (running Chrome, shared with chrome-devtools-mcp --auto-connect) | launch | launch-headless | http://host:port
+const runner = createRunner(process.env.JEV_BROWSER ?? 'auto');
+const sessions = new Map<string, { task: BrowserTask; ownsTab: boolean }>();
+const journeys = new Map<string, JourneySession>();
+
+const server = new McpServer({ name: 'jev-browse', version: '0.1.0' });
+
+server.registerTool(
+  'browser_task',
+  {
+    title: 'Run a browser goal with Jev',
+    description: `Hand a whole browser goal (navigate, search, fill forms, set filters, open a result) to TypeSafe Jev.
+Jev picks each click/type/select in ~200ms per step and returns ONE short summary, instead of you deciding every step.
+Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards (same Chrome, the tab stays open; select it by url).
+
+- Pass every text value the goal needs in \`values\` (e.g. {"city":"Lisbon","email":"a@b.co"}). Jev only types supplied values.
+- Pass \`done_when\`: visible evidence of success. It is checked independently before status "done".
+- Statuses that hand control back — continue with the same \`session\`:
+  needs_input → add the missing value to \`values\`; needs_confirmation → the next click looks irreversible, set \`confirm_irreversible: true\` only if the user wants it;
+  uncertain / blocked → inspect \`stuck\` (candidates, page_text), rephrase \`goal\`, or finish the step with chrome-devtools.
+- Not supported: iframes, shadow DOM, canvas, file uploads, popup tabs. Use chrome-devtools for those.`,
+    inputSchema: {
+      goal: z.string().min(1).describe('The full outcome wanted, in plain language.'),
+      url: z.string().optional().describe('Open this URL in a new background tab (new session).'),
+      tab: z
+        .string()
+        .optional()
+        .describe('Instead of url: drive an open tab whose URL contains this text (new session).'),
+      values: z.record(z.string(), z.string()).optional().describe('Named text values Jev may type.'),
+      done_when: z.string().optional().describe('Visible evidence that the goal is complete.'),
+      session: z.string().optional().describe('Continue a previous session (same tab, history kept).'),
+      confirm_irreversible: z.boolean().optional().describe('Allow exactly one click flagged as irreversible.'),
+      max_steps: z.number().int().positive().max(100).optional(),
+    },
+  },
+  async ({ goal, url, tab, values, done_when, session, confirm_irreversible, max_steps }) => {
+    try {
+      const id = session ?? randomUUID().slice(0, 8);
+      let entry = sessions.get(id);
+      if (session && !entry) throw new Error(`Unknown session "${session}"`);
+      if (entry) {
+        entry.task.update({
+          goal,
+          values,
+          doneWhen: done_when,
+          maxSteps: max_steps,
+          confirmIrreversible: confirm_irreversible,
+        });
+      } else {
+        const task = await runner.start({ goal, url, tab, values, doneWhen: done_when, maxSteps: max_steps });
+        entry = { task, ownsTab: Boolean(url) };
+        sessions.set(id, entry);
+      }
+      const summary = await entry.task.run();
+      return { content: [{ type: 'text', text: JSON.stringify({ session: id, ...summary }, null, 1) }] };
+    } catch (error) {
+      return { isError: true, content: [{ type: 'text', text: `browser_task failed: ${(error as Error).message}` }] };
+    }
+  },
+);
+
+server.registerTool(
+  'browser_task_end',
+  {
+    title: 'End a Jev browser session',
+    description: 'Forget a browser_task session. Closes the tab it opened unless keep_tab is true.',
+    inputSchema: { session: z.string(), keep_tab: z.boolean().optional() },
+  },
+  async ({ session, keep_tab }) => {
+    const entry = sessions.get(session);
+    if (!entry) return { isError: true, content: [{ type: 'text', text: `Unknown session "${session}"` }] };
+    sessions.delete(session);
+    if (entry.ownsTab && !keep_tab) await entry.task.tab.close();
+    return { content: [{ type: 'text', text: `Session ${session} ended.` }] };
+  },
+);
+
+// Journey tools: text report + a light JPEG of the screen so multimodal agents see what Jev saw.
+const journeyReply = async (id: string, journey: JourneySession, payload: object) => ({
+  content: [
+    { type: 'text' as const, text: JSON.stringify({ journey: id, ...payload }, null, 1) },
+    { type: 'image' as const, data: await journey.preview(), mimeType: 'image/jpeg' },
+  ],
+});
+
+const journeyError = (tool: string, error: unknown) => ({
+  isError: true,
+  content: [{ type: 'text' as const, text: `${tool} failed: ${(error as Error).message}` }],
+});
+
+const findJourney = (id: string) => {
+  const journey = journeys.get(id);
+  if (!journey) throw new Error(`Unknown journey "${id}"`);
+  return journey;
+};
+
+server.registerTool(
+  'journey_start',
+  {
+    title: 'Start mapping mobile user journeys',
+    description: `Open a URL on an emulated phone and start a user-journey map. Every screen is screenshotted and judged by Jev
+(screen type, UI patterns, duplicate of a visited screen, error/empty/dead-end states, ranked next taps, irreversible-action risk)
+and QA-checked (console errors, failed requests, horizontal overflow, tap targets under 44px, unlabeled controls).
+Returns the first screen: report JSON + a screenshot image. Output folder: journey.json, screens/*.png, index.html viewer.
+
+Loop: look at the screenshot and report, optionally inspect with chrome-devtools (same Chrome), then
+journey_step (you choose, and describe what you saw) or journey_autopilot (Jev explores N screens and checks back).
+Finish with journey_finish. Use made-up data for any typing; stop at login, payment, and send steps.`,
+    inputSchema: {
+      url: z.string().url(),
+      device: z.enum(['iphone-15', 'pixel-8', 'laptop', 'desktop']).optional(),
+      intent: z
+        .string()
+        .optional()
+        .describe('Focus on one journey, e.g. "find and open a stay in Lisbon". Omit to explore core journeys.'),
+      values: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe('Text autopilot may type (search queries, fake names).'),
+      stay_within: z
+        .string()
+        .optional()
+        .describe(
+          'URL prefix autopilot must stay under, e.g. one project in a multi-project app. Default: same origin.',
+        ),
+      out_dir: z.string().optional().describe('Defaults to $JEV_JOURNEYS_DIR or ./journeys, plus <host>/<timestamp>.'),
+    },
+  },
+  async ({ url, device, intent, values, stay_within, out_dir }) => {
+    try {
+      const id = randomUUID().slice(0, 8);
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const outDir = out_dir ?? join(process.env.JEV_JOURNEYS_DIR ?? 'journeys', new URL(url).host, stamp);
+      const journey = await runner.startJourney({
+        startUrl: url,
+        device,
+        intent,
+        values,
+        stayWithin: stay_within,
+        outDir,
+      });
+      journeys.set(id, journey);
+      return journeyReply(id, journey, journey.report());
+    } catch (error) {
+      return journeyError('journey_start', error);
+    }
+  },
+);
+
+server.registerTool(
+  'journey_step',
+  {
+    title: 'Take the next journey step',
+    description: `Move the journey one step, and record what you learned about the screen you are leaving.
+next: an element index from "elements"/"jev.ranked_taps" (dropdown options look like "3:2"), or back | restart | scroll_down | scroll_up | screen:<id> (replay the recorded path to that screen).
+Pass value to type into a text field. Pass flow (e.g. "Homes/Searching homes"; it sticks for later steps), description (what the screen is, for the viewer) and insight (UX observation).`,
+    inputSchema: {
+      journey: z.string(),
+      next: z.union([z.string(), z.number()]),
+      value: z.string().optional(),
+      flow: z.string().optional(),
+      description: z.string().optional(),
+      insight: z.string().optional(),
+    },
+  },
+  async ({ journey: id, ...input }) => {
+    try {
+      const journey = findJourney(id);
+      return journeyReply(id, journey, await journey.step(input));
+    } catch (error) {
+      return journeyError('journey_step', error);
+    }
+  },
+);
+
+server.registerTool(
+  'journey_autopilot',
+  {
+    title: 'Let Jev explore the journey',
+    description: `With an intent, Jev keeps going until the intent is reached, it hits a stop condition, or it runs out of untried taps (no move limit). Without an intent, it checks back after \`screens\` new screens. The result includes a per-move log.
+It skips tried taps and off-site links, backs out of explored screens, skips irreversible taps while exploring, and stops at auth walls
+(or at the irreversible step / when the intent is reached if an intent is set). Steps are recorded under \`flow\`.
+Afterwards, describe the discovered screens with journey_annotate (look at their screenshot files).`,
+    inputSchema: {
+      journey: z.string(),
+      screens: z.number().int().positive().max(30).optional(),
+      flow: z.string().optional(),
+      intent: z.string().optional(),
+    },
+  },
+  async ({ journey: id, screens, flow, intent }) => {
+    try {
+      const journey = findJourney(id);
+      return journeyReply(id, journey, await journey.autopilot({ screens, flow, intent }));
+    } catch (error) {
+      return journeyError('journey_autopilot', error);
+    }
+  },
+);
+
+server.registerTool(
+  'journey_annotate',
+  {
+    title: 'Describe a journey screen or regroup steps',
+    description:
+      'Add a description and/or insight to any screen (by id), and optionally move steps [from_step..to_step] (0-based, see journey.json) into a named flow.',
+    inputSchema: {
+      journey: z.string(),
+      screen: z.string(),
+      description: z.string().optional(),
+      insight: z.string().optional(),
+      relabel: z.object({ from_step: z.number().int(), to_step: z.number().int(), flow: z.string() }).optional(),
+    },
+  },
+  async ({ journey: id, screen, description, insight, relabel }) => {
+    try {
+      findJourney(id).annotate(
+        screen,
+        { description, insight },
+        relabel && { fromStep: relabel.from_step, toStep: relabel.to_step, flow: relabel.flow },
+      );
+      return { content: [{ type: 'text' as const, text: `Annotated ${screen}.` }] };
+    } catch (error) {
+      return journeyError('journey_annotate', error);
+    }
+  },
+);
+
+server.registerTool(
+  'journey_finish',
+  {
+    title: 'Finish the journey map',
+    description:
+      'Write the final journey.json and index.html viewer, close the tab, and list screens still missing a description.',
+    inputSchema: { journey: z.string(), keep_tab: z.boolean().optional() },
+  },
+  async ({ journey: id, keep_tab }) => {
+    try {
+      const summary = await findJourney(id).finish({ closeTab: !keep_tab });
+      journeys.delete(id);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 1) }] };
+    } catch (error) {
+      return journeyError('journey_finish', error);
+    }
+  },
+);
+
+const shutdown = async () => {
+  await runner.close();
+  process.exit(0);
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+process.stdin.on('close', shutdown);
+
+await server.connect(new StdioServerTransport());
