@@ -1,0 +1,903 @@
+{
+  "site": "cloud.langfuse.com",
+  "startUrl": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/traces",
+  "device": "laptop",
+  "intent": "When a user reports a bad chatbot answer, I want to open a recent trace and inspect its input, output and nested observations, so I can see what the model received and returned. Read-only: never create, edit, delete, or change settings.",
+  "createdAt": "2026-09-17T11:05:57.100Z",
+  "screens": [
+    {
+      "id": "s01",
+      "url": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/traces?viewId=cmmkkfk1a03jiad07lkjcuir7&orderBy=order-DESC_column-startTime&filter=name%3BstringOptions%3B%3Bany+of%3Bimage-generator%257Csentiment-classifier%257Chandle-chatbot-message%257Cvoice-conversation",
+      "title": "Tracing | Langfuse",
+      "screenshot": "screens/s01.png",
+      "capturedAt": "2026-09-17T11:06:01.160Z",
+      "type": "results",
+      "typeConfidence": 0.94,
+      "patterns": [
+        "top_app_bar",
+        "menu_button",
+        "search_bar",
+        "card_list",
+        "filter_chips",
+        "date_picker",
+        "form_fields"
+      ],
+      "qa": [
+        {
+          "kind": "empty_state",
+          "severity": "low",
+          "detail": "Screen shows an empty state (Jev 0.94)"
+        },
+        {
+          "kind": "empty_state",
+          "severity": "low",
+          "detail": "Screen shows an empty state (Jev 0.95)"
+        },
+        {
+          "kind": "empty_state",
+          "severity": "low",
+          "detail": "Screen shows an empty state (Jev 0.93)"
+        },
+        {
+          "kind": "unlabeled_control",
+          "severity": "medium",
+          "detail": "1 control(s) without an accessible name (button)"
+        },
+        {
+          "kind": "empty_state",
+          "severity": "low",
+          "detail": "Screen shows an empty state (Jev 0.75)"
+        }
+      ]
+    },
+    {
+      "id": "s02",
+      "url": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/prompts?pageIndex=0&pageSize=50",
+      "title": "Prompts | Langfuse",
+      "screenshot": "screens/s02.png",
+      "capturedAt": "2026-09-17T11:06:42.120Z",
+      "type": "results",
+      "typeConfidence": 0.98,
+      "patterns": [
+        "top_app_bar",
+        "menu_button",
+        "search_bar",
+        "card_list",
+        "form_fields"
+      ],
+      "qa": [
+        {
+          "kind": "error_state",
+          "severity": "high",
+          "detail": "Screen shows an error or broken state (Jev 0.68)"
+        },
+        {
+          "kind": "error_state",
+          "severity": "high",
+          "detail": "Screen shows an error or broken state (Jev 0.69)"
+        },
+        {
+          "kind": "error_state",
+          "severity": "high",
+          "detail": "Screen shows an error or broken state (Jev 0.72)"
+        }
+      ]
+    },
+    {
+      "id": "s03",
+      "url": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/prompts/langfuse-docs-assistant-chat",
+      "title": "Prompts | Langfuse",
+      "screenshot": "screens/s03.png",
+      "capturedAt": "2026-09-17T11:06:47.538Z",
+      "type": "detail",
+      "typeConfidence": 0.98,
+      "patterns": [
+        "top_app_bar",
+        "search_bar",
+        "card_list",
+        "filter_chips"
+      ],
+      "qa": [
+        {
+          "kind": "unlabeled_control",
+          "severity": "medium",
+          "detail": "1 control(s) without an accessible name (button)"
+        }
+      ]
+    },
+    {
+      "id": "s04",
+      "url": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/dashboards",
+      "title": "Dashboards | Langfuse",
+      "screenshot": "screens/s04.png",
+      "capturedAt": "2026-09-17T11:15:09.469Z",
+      "type": "results",
+      "typeConfidence": 0.88,
+      "patterns": [
+        "top_app_bar",
+        "menu_button",
+        "card_list",
+        "form_fields",
+        "price_display"
+      ],
+      "qa": []
+    },
+    {
+      "id": "s05",
+      "url": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/dashboards/cmawoi7yd00aqad07f3why08w",
+      "title": "Dashboards | Langfuse",
+      "screenshot": "screens/s05.png",
+      "capturedAt": "2026-09-17T11:15:31.131Z",
+      "type": "content",
+      "typeConfidence": 0.26,
+      "patterns": [
+        "top_app_bar",
+        "menu_button",
+        "card_list",
+        "filter_chips",
+        "date_picker",
+        "form_fields",
+        "price_display"
+      ],
+      "qa": [
+        {
+          "kind": "unlabeled_control",
+          "severity": "medium",
+          "detail": "1 control(s) without an accessible name (button)"
+        }
+      ]
+    },
+    {
+      "id": "s06",
+      "url": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/observations?filter=environment%3BstringOptions%3B%3Bany%20of%3Bdefault&dateRange=1789557357791-1789643757791",
+      "title": "Langfuse",
+      "screenshot": "screens/s06.png",
+      "capturedAt": "2026-09-17T11:16:13.603Z",
+      "type": "results",
+      "typeConfidence": 0.78,
+      "patterns": [
+        "top_app_bar",
+        "search_bar",
+        "card_list",
+        "filter_chips",
+        "date_picker",
+        "form_fields"
+      ],
+      "qa": [
+        {
+          "kind": "empty_state",
+          "severity": "low",
+          "detail": "Screen shows an empty state (Jev 0.95)"
+        },
+        {
+          "kind": "empty_state",
+          "severity": "low",
+          "detail": "Screen shows an empty state (Jev 0.77)"
+        },
+        {
+          "kind": "empty_state",
+          "severity": "low",
+          "detail": "Screen shows an empty state (Jev 0.96)"
+        },
+        {
+          "kind": "unlabeled_control",
+          "severity": "medium",
+          "detail": "1 control(s) without an accessible name (button)"
+        },
+        {
+          "kind": "empty_state",
+          "severity": "low",
+          "detail": "Screen shows an empty state (Jev 0.94)"
+        }
+      ]
+    },
+    {
+      "id": "s07",
+      "url": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/dashboards/langfuse-home-dashboard",
+      "title": "Dashboards | Langfuse",
+      "screenshot": "screens/s07.png",
+      "capturedAt": "2026-09-17T11:19:13.737Z",
+      "type": "home",
+      "typeConfidence": 0.86,
+      "patterns": [
+        "top_app_bar",
+        "menu_button",
+        "search_bar",
+        "filter_chips",
+        "date_picker",
+        "form_fields",
+        "price_display"
+      ],
+      "qa": [
+        {
+          "kind": "unlabeled_control",
+          "severity": "medium",
+          "detail": "2 control(s) without an accessible name (button)"
+        }
+      ]
+    },
+    {
+      "id": "s08",
+      "url": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/sessions",
+      "title": "Sessions | Langfuse",
+      "screenshot": "screens/s08.png",
+      "capturedAt": "2026-09-17T11:21:32.717Z",
+      "type": "results",
+      "typeConfidence": 1,
+      "patterns": [
+        "top_app_bar",
+        "menu_button",
+        "search_bar",
+        "card_list",
+        "filter_chips",
+        "date_picker",
+        "form_fields",
+        "price_display"
+      ],
+      "qa": []
+    },
+    {
+      "id": "s09",
+      "url": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/sessions/chat_066abf38-5164-4181-8af6-fd8533846cb0?viewId=__langfuse_with_io__&filter=hasInput%3Bboolean%3B%3B%3D%3Btrue%2ChasOutput%3Bboolean%3B%3B%3D%3Btrue",
+      "title": "Sessions | Langfuse",
+      "screenshot": "screens/s09.png",
+      "capturedAt": "2026-09-17T11:21:38.024Z",
+      "type": "detail",
+      "typeConfidence": 0.96,
+      "patterns": [
+        "top_app_bar",
+        "menu_button",
+        "filter_chips",
+        "price_display"
+      ],
+      "qa": [
+        {
+          "kind": "unlabeled_control",
+          "severity": "medium",
+          "detail": "1 control(s) without an accessible name (button)"
+        }
+      ]
+    },
+    {
+      "id": "s10",
+      "url": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/scores",
+      "title": "Scores | Langfuse",
+      "screenshot": "screens/s10.png",
+      "capturedAt": "2026-09-17T11:21:54.588Z",
+      "type": "results",
+      "typeConfidence": 0.99,
+      "patterns": [
+        "top_app_bar",
+        "search_bar",
+        "card_list",
+        "filter_chips",
+        "date_picker",
+        "form_fields",
+        "price_display"
+      ],
+      "qa": []
+    },
+    {
+      "id": "s11",
+      "url": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/scores/analytics",
+      "title": "Scores | Langfuse",
+      "screenshot": "screens/s11.png",
+      "capturedAt": "2026-09-17T11:22:23.046Z",
+      "type": "content",
+      "typeConfidence": 0.48,
+      "patterns": [
+        "top_app_bar",
+        "filter_chips",
+        "date_picker",
+        "form_fields",
+        "price_display"
+      ],
+      "qa": [
+        {
+          "kind": "empty_state",
+          "severity": "low",
+          "detail": "Screen shows an empty state (Jev 0.80)"
+        }
+      ]
+    },
+    {
+      "id": "s12",
+      "url": "https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi/traces?viewId=__langfuse_errors_only&filter=level%3BstringOptions%3B%3Bany+of%3BERROR",
+      "title": "Tracing | Langfuse",
+      "screenshot": "screens/s12.png",
+      "capturedAt": "2026-09-17T11:22:49.753Z",
+      "type": "results",
+      "typeConfidence": 0.9,
+      "patterns": [
+        "top_app_bar",
+        "menu_button",
+        "search_bar",
+        "filter_chips",
+        "date_picker",
+        "form_fields",
+        "price_display"
+      ],
+      "qa": []
+    }
+  ],
+  "steps": [
+    {
+      "from": "s01",
+      "flow": "Tracing/Prompt version impact",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Prompts"
+      },
+      "hotspot": {
+        "x": 0,
+        "y": 0.5077777777777778,
+        "width": 0.12708333333333333,
+        "height": 0.035555555555555556
+      },
+      "to": "s02"
+    },
+    {
+      "from": "s02",
+      "flow": "Tracing/Prompt version impact",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "langfuse-docs-assistant-chat"
+      },
+      "hotspot": {
+        "x": 0.16180555555555556,
+        "y": 0.33438368055555556,
+        "width": 0.11898328993055556,
+        "height": 0.020112847222222223
+      },
+      "to": "s03"
+    },
+    {
+      "from": "s02",
+      "flow": "Tracing/Prompt version impact",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Tracing"
+      },
+      "hotspot": {
+        "x": 0,
+        "y": 0.3188888888888889,
+        "width": 0.12708333333333333,
+        "height": 0.035555555555555556
+      },
+      "to": "s01"
+    },
+    {
+      "from": "s01",
+      "flow": "Tracing/Control cost",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Dashboards"
+      },
+      "hotspot": {
+        "x": 0,
+        "y": 0.24333333333333335,
+        "width": 0.12708333333333333,
+        "height": 0.035555555555555556
+      },
+      "to": "s04"
+    },
+    {
+      "from": "s04",
+      "flow": "Tracing/Control cost",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Tracing"
+      },
+      "hotspot": {
+        "x": 0,
+        "y": 0.3188888888888889,
+        "width": 0.12708333333333333,
+        "height": 0.035555555555555556
+      },
+      "to": "s01"
+    },
+    {
+      "from": "s04",
+      "flow": "Tracing/Control cost",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Langfuse Cost Dashboard"
+      },
+      "hotspot": {
+        "x": 0.13333333333333333,
+        "y": 0.4199392361111111,
+        "width": 0.10298394097222222,
+        "height": 0.020112847222222223
+      },
+      "to": "s05"
+    },
+    {
+      "from": "s05",
+      "flow": "Tracing/Control cost",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Tracing"
+      },
+      "hotspot": {
+        "x": 0,
+        "y": 0.3188888888888889,
+        "width": 0.12708333333333333,
+        "height": 0.035555555555555556
+      },
+      "to": "s01"
+    },
+    {
+      "from": "s04",
+      "flow": "Tracing/Control cost",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Langfuse Cost Dashboard Review your LLM costs. Langfuse Langfuse 2025-05-20 17:38:32 2025-05-20 18:09:56 Open menu"
+      },
+      "hotspot": {
+        "x": 0.12777777777777777,
+        "y": 0.4077777777777778,
+        "width": 0.85625,
+        "height": 0.04555555555555556
+      },
+      "to": "s05"
+    },
+    {
+      "from": "s05",
+      "flow": "Tracing/Control cost",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "View as table"
+      },
+      "hotspot": {
+        "x": 0.5520833333333334,
+        "y": 0.18,
+        "width": 0.12445203993055555,
+        "height": 0.03428819444444445
+      },
+      "to": "s06"
+    },
+    {
+      "from": "s06",
+      "flow": "Tracing/Control cost",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Tracing"
+      },
+      "hotspot": {
+        "x": 0,
+        "y": 0.3188888888888889,
+        "width": 0.12708333333333333,
+        "height": 0.035555555555555556
+      },
+      "to": "s01"
+    },
+    {
+      "from": "s04",
+      "flow": "Tracing/Control cost",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Langfuse Home Overview of traces, costs, scores, usage, and latencies in this project. Shown on the project home page. Langfuse Langfuse 2026-07-06 02:00:00 2026-07-09 02:00:00 Open menu"
+      },
+      "hotspot": {
+        "x": 0.12777777777777777,
+        "y": 0.3622222222222222,
+        "width": 0.85625,
+        "height": 0.04555555555555556
+      },
+      "to": "s07"
+    },
+    {
+      "from": "s07",
+      "flow": "Tracing/Control cost",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Tracing"
+      },
+      "hotspot": {
+        "x": 0,
+        "y": 0.3188888888888889,
+        "width": 0.12708333333333333,
+        "height": 0.035555555555555556
+      },
+      "to": "s01"
+    },
+    {
+      "from": "s04",
+      "flow": "Tracing/Control cost",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Langfuse Home"
+      },
+      "hotspot": {
+        "x": 0.13333333333333333,
+        "y": 0.37438368055555554,
+        "width": 0.06231553819444444,
+        "height": 0.020112847222222223
+      },
+      "to": "s07"
+    },
+    {
+      "from": "s01",
+      "flow": "Tracing/Replay a conversation",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Sessions"
+      },
+      "hotspot": {
+        "x": 0,
+        "y": 0.3566666666666667,
+        "width": 0.12708333333333333,
+        "height": 0.035555555555555556
+      },
+      "to": "s08"
+    },
+    {
+      "from": "s08",
+      "flow": "Tracing/Replay a conversation",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "chat_066abf38-5164-4181-8af6-fd8533846cb0"
+      },
+      "hotspot": {
+        "x": 0.32501627604166666,
+        "y": 0.2566059027777778,
+        "width": 0.13333333333333333,
+        "height": 0.020112847222222223
+      },
+      "to": "s09"
+    },
+    {
+      "from": "s01",
+      "flow": "Tracing/Find low-quality answers",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Scores"
+      },
+      "hotspot": {
+        "x": 0,
+        "y": 0.6211111111111111,
+        "width": 0.12708333333333333,
+        "height": 0.035555555555555556
+      },
+      "to": "s10"
+    },
+    {
+      "from": "s10",
+      "flow": "Tracing/Find low-quality answers",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Analytics"
+      },
+      "hotspot": {
+        "x": 0.17521701388888888,
+        "y": 0.09777777777777778,
+        "width": 0.05237630208333333,
+        "height": 0.035555555555555556
+      },
+      "to": "s11"
+    },
+    {
+      "from": "s11",
+      "flow": "Tracing/Find low-quality answers",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Tracing"
+      },
+      "hotspot": {
+        "x": 0,
+        "y": 0.3188888888888889,
+        "width": 0.12708333333333333,
+        "height": 0.035555555555555556
+      },
+      "to": "s01"
+    },
+    {
+      "from": "s01",
+      "flow": "Tracing/Find low-quality answers",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Errors Only Focus on observations that failed"
+      },
+      "hotspot": {
+        "x": 0.13680555555555557,
+        "y": 0.2349652777777778,
+        "width": 0.18263888888888888,
+        "height": 0.05147569444444444
+      },
+      "to": "s12"
+    },
+    {
+      "from": "s12",
+      "flow": "Tracing/Find low-quality answers",
+      "by": "autopilot",
+      "action": {
+        "operation": "CLICK",
+        "label": "Scores"
+      },
+      "hotspot": {
+        "x": 0,
+        "y": 0.6211111111111111,
+        "width": 0.12708333333333333,
+        "height": 0.035555555555555556
+      },
+      "to": "s10"
+    }
+  ],
+  "flows": [
+    {
+      "name": "Tracing/Prompt version impact",
+      "parent": "Tracing",
+      "screens": [
+        {
+          "screen": "s01",
+          "action": "Tap \"Prompts\"",
+          "hotspot": {
+            "x": 0,
+            "y": 0.5077777777777778,
+            "width": 0.12708333333333333,
+            "height": 0.035555555555555556
+          }
+        },
+        {
+          "screen": "s02",
+          "action": "Tap \"langfuse-docs-assistant-chat\"",
+          "hotspot": {
+            "x": 0.16180555555555556,
+            "y": 0.33438368055555556,
+            "width": 0.11898328993055556,
+            "height": 0.020112847222222223
+          }
+        },
+        {
+          "screen": "s03"
+        },
+        {
+          "screen": "s02",
+          "action": "Tap \"Tracing\"",
+          "hotspot": {
+            "x": 0,
+            "y": 0.3188888888888889,
+            "width": 0.12708333333333333,
+            "height": 0.035555555555555556
+          }
+        },
+        {
+          "screen": "s01"
+        }
+      ]
+    },
+    {
+      "name": "Tracing/Control cost",
+      "parent": "Tracing",
+      "screens": [
+        {
+          "screen": "s01",
+          "action": "Tap \"Dashboards\"",
+          "hotspot": {
+            "x": 0,
+            "y": 0.24333333333333335,
+            "width": 0.12708333333333333,
+            "height": 0.035555555555555556
+          }
+        },
+        {
+          "screen": "s04",
+          "action": "Tap \"Tracing\"",
+          "hotspot": {
+            "x": 0,
+            "y": 0.3188888888888889,
+            "width": 0.12708333333333333,
+            "height": 0.035555555555555556
+          }
+        },
+        {
+          "screen": "s01"
+        },
+        {
+          "screen": "s04",
+          "action": "Tap \"Langfuse Cost Dashboard\"",
+          "hotspot": {
+            "x": 0.13333333333333333,
+            "y": 0.4199392361111111,
+            "width": 0.10298394097222222,
+            "height": 0.020112847222222223
+          }
+        },
+        {
+          "screen": "s05",
+          "action": "Tap \"Tracing\"",
+          "hotspot": {
+            "x": 0,
+            "y": 0.3188888888888889,
+            "width": 0.12708333333333333,
+            "height": 0.035555555555555556
+          }
+        },
+        {
+          "screen": "s01"
+        },
+        {
+          "screen": "s04",
+          "action": "Tap \"Langfuse Cost Dashboard Review your LLM costs. Langfuse Langfuse 2025-05-20 17:38:32 2025-05-20 18:09:56 Open menu\"",
+          "hotspot": {
+            "x": 0.12777777777777777,
+            "y": 0.4077777777777778,
+            "width": 0.85625,
+            "height": 0.04555555555555556
+          }
+        },
+        {
+          "screen": "s05",
+          "action": "Tap \"View as table\"",
+          "hotspot": {
+            "x": 0.5520833333333334,
+            "y": 0.18,
+            "width": 0.12445203993055555,
+            "height": 0.03428819444444445
+          }
+        },
+        {
+          "screen": "s06",
+          "action": "Tap \"Tracing\"",
+          "hotspot": {
+            "x": 0,
+            "y": 0.3188888888888889,
+            "width": 0.12708333333333333,
+            "height": 0.035555555555555556
+          }
+        },
+        {
+          "screen": "s01"
+        },
+        {
+          "screen": "s04",
+          "action": "Tap \"Langfuse Home Overview of traces, costs, scores, usage, and latencies in this project. Shown on the project home page. Langfuse Langfuse 2026-07-06 02:00:00 2026-07-09 02:00:00 Open menu\"",
+          "hotspot": {
+            "x": 0.12777777777777777,
+            "y": 0.3622222222222222,
+            "width": 0.85625,
+            "height": 0.04555555555555556
+          }
+        },
+        {
+          "screen": "s07",
+          "action": "Tap \"Tracing\"",
+          "hotspot": {
+            "x": 0,
+            "y": 0.3188888888888889,
+            "width": 0.12708333333333333,
+            "height": 0.035555555555555556
+          }
+        },
+        {
+          "screen": "s01"
+        },
+        {
+          "screen": "s04",
+          "action": "Tap \"Langfuse Home\"",
+          "hotspot": {
+            "x": 0.13333333333333333,
+            "y": 0.37438368055555554,
+            "width": 0.06231553819444444,
+            "height": 0.020112847222222223
+          }
+        },
+        {
+          "screen": "s07"
+        }
+      ]
+    },
+    {
+      "name": "Tracing/Replay a conversation",
+      "parent": "Tracing",
+      "screens": [
+        {
+          "screen": "s01",
+          "action": "Tap \"Sessions\"",
+          "hotspot": {
+            "x": 0,
+            "y": 0.3566666666666667,
+            "width": 0.12708333333333333,
+            "height": 0.035555555555555556
+          }
+        },
+        {
+          "screen": "s08",
+          "action": "Tap \"chat_066abf38-5164-4181-8af6-fd8533846cb0\"",
+          "hotspot": {
+            "x": 0.32501627604166666,
+            "y": 0.2566059027777778,
+            "width": 0.13333333333333333,
+            "height": 0.020112847222222223
+          }
+        },
+        {
+          "screen": "s09"
+        }
+      ]
+    },
+    {
+      "name": "Tracing/Find low-quality answers",
+      "parent": "Tracing",
+      "screens": [
+        {
+          "screen": "s01",
+          "action": "Tap \"Scores\"",
+          "hotspot": {
+            "x": 0,
+            "y": 0.6211111111111111,
+            "width": 0.12708333333333333,
+            "height": 0.035555555555555556
+          }
+        },
+        {
+          "screen": "s10",
+          "action": "Tap \"Analytics\"",
+          "hotspot": {
+            "x": 0.17521701388888888,
+            "y": 0.09777777777777778,
+            "width": 0.05237630208333333,
+            "height": 0.035555555555555556
+          }
+        },
+        {
+          "screen": "s11",
+          "action": "Tap \"Tracing\"",
+          "hotspot": {
+            "x": 0,
+            "y": 0.3188888888888889,
+            "width": 0.12708333333333333,
+            "height": 0.035555555555555556
+          }
+        },
+        {
+          "screen": "s01",
+          "action": "Tap \"Errors Only Focus on observations that failed\"",
+          "hotspot": {
+            "x": 0.13680555555555557,
+            "y": 0.2349652777777778,
+            "width": 0.18263888888888888,
+            "height": 0.05147569444444444
+          }
+        },
+        {
+          "screen": "s12",
+          "action": "Tap \"Scores\"",
+          "hotspot": {
+            "x": 0,
+            "y": 0.6211111111111111,
+            "width": 0.12708333333333333,
+            "height": 0.035555555555555556
+          }
+        },
+        {
+          "screen": "s10"
+        }
+      ]
+    },
+    {
+      "name": "Tracing",
+      "parent": null,
+      "screens": []
+    }
+  ]
+}
