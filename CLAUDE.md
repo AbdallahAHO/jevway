@@ -1,0 +1,3 @@
+# jev-browse
+
+@AGENTS.md
