@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Staylist · Find a place</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; margin: 0; background: #f6f5f2; color: #1d1d1b; }
+  header { padding: 14px 28px; background: #1d1d1b; color: #fff; font-weight: 600; }
+  main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+  form, .card, .panel { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 2px #0001; }
+  label { display: block; margin: 10px 0 4px; font-weight: 500; }
+  input[type=text], input[type=email], select { width: 100%; padding: 8px; box-sizing: border-box; }
+  .field { position: relative; }
+  [role=listbox] { position: absolute; left: 0; right: 0; background: #fff; border: 1px solid #ccc; margin: 0; padding: 0; list-style: none; z-index: 2; }
+  [role=option] { padding: 8px; cursor: pointer; }
+  [role=option]:hover { background: #eee; }
+  button { margin-top: 12px; padding: 8px 14px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>Staylist</header>
+<main>
+  <section id="search-view">
+    <form id="search" onsubmit="return false">
+      <div class="field">
+        <label for="city">Destination</label>
+        <input id="city" type="text" role="combobox" aria-expanded="false" aria-controls="city-options" autocomplete="off" placeholder="Where are you going?">
+        <ul id="city-options" role="listbox" class="hidden"></ul>
+      </div>
+      <label for="guests">Guests</label>
+      <select id="guests">
+        <option value="1">1 guest</option>
+        <option value="2">2 guests</option>
+        <option value="3">3 guests</option>
+        <option value="4">4 guests</option>
+      </select>
+      <label><input id="free-cancel" type="checkbox"> Free cancellation</label>
+      <label><input id="breakfast" type="checkbox"> Breakfast included</label>
+      <button id="search-button" type="button">Search</button>
+    </form>
+    <p id="status" role="status"></p>
+    <div id="results"></div>
+  </section>
+
+  <section id="detail-view" class="hidden">
+    <div class="panel">
+      <button type="button" id="back">← Back to results</button>
+      <h1 id="detail-name"></h1>
+      <p id="detail-meta"></p>
+      <button type="button" id="book-now">Book now</button>
+    </div>
+    <form id="booking" class="panel hidden" onsubmit="return false">
+      <h2>Your details</h2>
+      <label for="full-name">Full name</label>
+      <input id="full-name" type="text" autocomplete="off">
+      <label for="email">Email address</label>
+      <input id="email" type="email" autocomplete="off">
+      <p id="booking-error" role="alert"></p>
+      <button type="button" id="confirm-booking">Confirm booking and pay €412</button>
+    </form>
+    <div id="confirmation" class="panel hidden"><h2>Booking confirmed</h2><p>Reference JV-1042. A receipt is on its way.</p></div>
+  </section>
+</main>
+<script>
+  // Independent ground truth for verification; the agent never reads this object.
+  const state = window.__fixture = {
+    city: '', guests: '1', freeCancellation: false, breakfast: false,
+    searched: null, opened: null, booking: { name: '', email: '', confirmed: false },
+  };
+  const stays = [
+    { id: 'casa-flora', name: 'Casa Flora', city: 'Lisbon', free: true, breakfast: true, price: 206 },
+    { id: 'hotel-azul', name: 'Hotel Azul', city: 'Lisbon', free: false, breakfast: true, price: 139 },
+    { id: 'alfama-loft', name: 'Alfama Loft', city: 'Lisbon', free: true, breakfast: false, price: 174 },
+    { id: 'lima-house', name: 'Lima House', city: 'Lima', free: true, breakfast: true, price: 98 },
+    { id: 'thames-rooms', name: 'Thames Rooms', city: 'London', free: true, breakfast: false, price: 245 },
+  ];
+  const cities = ['Lisbon', 'Lima', 'Linz', 'London', 'Lyon'];
+  const $ = (id) => document.getElementById(id);
+
+  $('city').addEventListener('input', () => {
+    state.city = '';
+    const query = $('city').value.trim().toLowerCase();
+    // Suggestions arrive asynchronously, like a real autocomplete API.
+    setTimeout(() => {
+      const matches = query ? cities.filter((c) => c.toLowerCase().startsWith(query.slice(0, 2))) : [];
+      $('city-options').innerHTML = matches.map((c) => `<li role="option" data-city="${c}">${c}, ${c === 'Lisbon' ? 'Portugal' : c === 'Lima' ? 'Peru' : c === 'Linz' ? 'Austria' : c === 'London' ? 'United Kingdom' : 'France'}</li>`).join('');
+      $('city-options').classList.toggle('hidden', !matches.length);
+      $('city').setAttribute('aria-expanded', String(Boolean(matches.length)));
+    }, 120);
+  });
+  $('city-options').addEventListener('click', (event) => {
+    const option = event.target.closest('[role=option]');
+    if (!option) return;
+    state.city = option.dataset.city;
+    $('city').value = option.textContent;
+    $('city-options').classList.add('hidden');
+    $('city').setAttribute('aria-expanded', 'false');
+  });
+  $('guests').addEventListener('change', () => (state.guests = $('guests').value));
+  $('free-cancel').addEventListener('change', () => (state.freeCancellation = $('free-cancel').checked));
+  $('breakfast').addEventListener('change', () => (state.breakfast = $('breakfast').checked));
+
+  $('search-button').addEventListener('click', () => {
+    if (!state.city) { $('status').textContent = 'Choose a destination from the suggestions first.'; return; }
+    $('status').textContent = 'Searching…';
+    $('results').innerHTML = '';
+    setTimeout(() => {
+      state.searched = { city: state.city, guests: state.guests, freeCancellation: state.freeCancellation, breakfast: state.breakfast };
+      const found = stays.filter((s) => s.city === state.city && (!state.freeCancellation || s.free) && (!state.breakfast || s.breakfast));
+      $('status').textContent = `${found.length} stays in ${state.city} for ${state.guests} guest(s)`;
+      $('results').innerHTML = found.map((s) => `<article class="card"><h3>${s.name}</h3><p>${s.city} · €${s.price}/night${s.free ? ' · Free cancellation' : ''}${s.breakfast ? ' · Breakfast' : ''}</p><a href="#" data-open="${s.id}">View ${s.name}</a></article>`).join('');
+    }, 400);
+  });
+  $('results').addEventListener('click', (event) => {
+    const link = event.target.closest('[data-open]');
+    if (!link) return;
+    event.preventDefault();
+    const stay = stays.find((s) => s.id === link.dataset.open);
+    state.opened = stay.id;
+    $('detail-name').textContent = stay.name;
+    $('detail-meta').textContent = `${stay.city} · ${state.searched.guests} guest(s) · €${stay.price}/night · 2 nights`;
+    $('search-view').classList.add('hidden');
+    $('detail-view').classList.remove('hidden');
+  });
+  $('back').addEventListener('click', () => {
+    $('detail-view').classList.add('hidden');
+    $('search-view').classList.remove('hidden');
+  });
+  $('book-now').addEventListener('click', () => $('booking').classList.remove('hidden'));
+  $('confirm-booking').addEventListener('click', () => {
+    state.booking.name = $('full-name').value;
+    state.booking.email = $('email').value;
+    if (!state.booking.name || !state.booking.email.includes('@')) { $('booking-error').textContent = 'Enter your name and a valid email.'; return; }
+    state.booking.confirmed = true;
+    $('booking').classList.add('hidden');
+    $('book-now').classList.add('hidden');
+    $('confirmation').classList.remove('hidden');
+  });
+</script>
+</body>
+</html>

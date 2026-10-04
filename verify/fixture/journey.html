@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nestly</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.4 system-ui, sans-serif; color: #1c1b1a; background: #fff; padding-bottom: 72px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #eee; position: sticky; top: 0; background: #fff; z-index: 3; }
+  header b { color: #e0484f; font-size: 20px; }
+  .icon-btn { width: 44px; height: 44px; border: 0; background: #f3f2f0; border-radius: 22px; font-size: 18px; }
+  main { padding: 16px; }
+  .search-pill { display: block; width: 100%; padding: 14px 18px; border-radius: 30px; border: 1px solid #ddd; background: #fff; text-align: left; font: inherit; box-shadow: 0 2px 8px #0001; min-height: 52px; }
+  .chips { display: flex; gap: 8px; overflow-x: auto; margin: 16px 0; }
+  .chips button { flex: none; padding: 10px 14px; border-radius: 20px; border: 1px solid #ddd; background: #fff; font: inherit; min-height: 44px; }
+  .card { margin-bottom: 18px; position: relative; }
+  .card .photo { height: 190px; border-radius: 14px; background: linear-gradient(135deg, #c9d6df, #f0e6d8); }
+  .card h3 { margin: 8px 0 2px; font-size: 16px; }
+  .card a { color: inherit; text-decoration: none; display: block; min-height: 44px; }
+  .heart { position: absolute; top: 10px; right: 10px; width: 22px; height: 22px; border: 0; border-radius: 11px; background: #fff; font-size: 12px; }
+  .heart::before { content: '♡'; }
+  nav.tabs { position: fixed; bottom: 0; left: 0; right: 0; display: flex; border-top: 1px solid #eee; background: #fff; }
+  nav.tabs a { flex: 1; text-align: center; padding: 12px 0; min-height: 56px; color: #555; text-decoration: none; font-size: 12px; }
+  label { display: block; margin: 14px 0 6px; font-weight: 600; }
+  input, select { width: 100%; padding: 12px; font: inherit; border: 1px solid #ccc; border-radius: 10px; min-height: 48px; }
+  [role=listbox] { list-style: none; margin: 4px 0 0; padding: 0; border: 1px solid #ddd; border-radius: 10px; }
+  [role=option] { padding: 14px 12px; min-height: 44px; }
+  .primary { width: 100%; margin-top: 18px; padding: 14px; border: 0; border-radius: 12px; background: #e0484f; color: #fff; font: 600 16px system-ui; min-height: 52px; }
+  .amenities { width: 520px; border-collapse: collapse; margin: 12px 0; }
+  .amenities td { border: 1px solid #eee; padding: 8px; }
+  .sheet { position: fixed; inset: auto 0 0 0; background: #fff; border-radius: 18px 18px 0 0; padding: 18px 16px 28px; box-shadow: 0 -8px 30px #0003; z-index: 5; }
+  .scrim { position: fixed; inset: 0; background: #0005; z-index: 4; }
+  .muted { color: #6b6a65; }
+</style>
+</head>
+<body>
+<header><b>nestly</b><button class="icon-btn" aria-label="Menu" onclick="location.hash='#/menu'">☰</button></header>
+<main id="app"></main>
+<nav class="tabs">
+  <a href="#/">Explore</a><a href="#/wishlists">Wishlists</a><a href="#/trips">Trips</a><a href="#/login">Log in</a>
+</nav>
+<script>
+  // Ground truth for verification: every route the fixture rendered, in order.
+  window.__visited = [];
+  window.__paid = false;
+  const stays = [
+    { id: 'casa-flora', name: 'Casa Flora', city: 'Lisbon', price: 206 },
+    { id: 'alfama-loft', name: 'Alfama Loft', city: 'Lisbon', price: 174 },
+    { id: 'porto-house', name: 'Ribeira House', city: 'Porto', price: 132 },
+  ];
+  const query = { city: '' };
+  const app = document.getElementById('app');
+  const card = (s) => `<div class="card"><div class="photo"></div><button class="heart"></button><a href="#/stay/${s.id}"><h3>${s.name}</h3><span class="muted">${s.city} · €${s.price} night</span></a></div>`;
+
+  const routes = {
+    '/': () => `
+      <button class="search-pill" onclick="location.hash='#/search'">Where to? <span class="muted">Anywhere · Any week</span></button>
+      <div class="chips"><button>Beachfront</button><button>Cabins</button><button>Trending</button></div>
+      <h2>Popular this week</h2>${stays.map(card).join('')}`,
+    '/search': () => `
+      <h2>Where to?</h2>
+      <label for="dest">Destination</label>
+      <input id="dest" role="combobox" aria-controls="dest-options" aria-expanded="false" autocomplete="off" placeholder="Search destinations">
+      <ul id="dest-options" role="listbox" hidden></ul>
+      <button class="primary" onclick="location.hash='#/results'">Search</button>`,
+    '/results': () => {
+      // Planted QA issue: a broken image request on the results screen.
+      fetch('/missing-thumbnail.jpg').catch(() => {});
+      const found = stays.filter((s) => !query.city || s.city === query.city);
+      return `<h2>${found.length} stays${query.city ? ' in ' + query.city : ''}</h2>
+        <button class="chips" style="border:0;background:none;padding:0" onclick="location.hash='#/filters'"><span style="padding:10px 14px;border:1px solid #ddd;border-radius:20px">Filters</span></button>
+        ${found.map(card).join('')}`;
+    },
+    '/filters': () => `
+      <div class="scrim" onclick="history.back()"></div>
+      <div class="sheet"><h2>Filters</h2>
+        <label><input type="checkbox" style="width:auto;min-height:0"> Free cancellation</label>
+        <label for="price">Max price</label><select id="price"><option>Any</option><option>€150</option><option>€250</option></select>
+        <button class="primary" onclick="history.back()">Show stays</button></div>`,
+    '/stay': (id) => {
+      const stay = stays.find((s) => s.id === id);
+      // Planted QA issue: a runtime error on the detail screen.
+      console.error('Reviews widget failed to load: TypeError: reviews is undefined');
+      return `<div class="photo" style="height:240px;border-radius:14px;background:linear-gradient(135deg,#d8c3a5,#8e8d8a)"></div>
+        <h1>${stay.name}</h1><p class="muted">${stay.city} · Entire apartment · 2 guests</p>
+        <table class="amenities"><tr><td>Wifi</td><td>Kitchen</td><td>Washer</td><td>Air conditioning</td><td>Workspace</td></tr></table>
+        <p>€${stay.price} night</p>
+        <button class="primary" onclick="location.hash='#/reserve/${stay.id}'">Reserve</button>`;
+    },
+    '/reserve': (id) => `
+      <h2>Confirm and pay</h2><p class="muted">${stays.find((s) => s.id === id).name} · 2 nights · €${stays.find((s) => s.id === id).price * 2 + 58} total</p>
+      <label for="card">Card number</label><input id="card" inputmode="numeric">
+      <button class="primary" onclick="window.__paid = true; document.querySelector('h2').textContent = 'Payment sent'">Confirm and pay</button>`,
+    '/wishlists': () => `<h2>Wishlists</h2><p class="muted">Nothing saved yet. Tap the heart on a stay to save it.</p>`,
+    '/trips': () => `<h2>Trips</h2><p class="muted">No trips booked… yet!</p><button class="primary" onclick="location.hash='#/'">Start searching</button>`,
+    '/login': () => `<h2>Log in or sign up</h2><label for="email">Email</label><input id="email" type="email"><button class="primary">Continue</button>`,
+    '/menu': () => `<h2>Menu</h2><p><a href="#/help">Help Centre</a></p><p><a href="https://example.org/careers">Careers</a></p>`,
+    '/help': () => `<h2>Help Centre</h2><p class="muted">Answers to common questions about stays, payments and cancellations.</p>`,
+  };
+
+  const render = () => {
+    const [, route = '', param] = location.hash.replace(/^#/, '').split('/');
+    const view = routes['/' + route] ?? routes['/'];
+    window.__visited.push('/' + route + (param ? '/' + param : ''));
+    app.innerHTML = view(param);
+    window.scrollTo(0, 0);
+    const dest = document.getElementById('dest');
+    if (dest) {
+      dest.addEventListener('input', () => {
+        setTimeout(() => {
+          const list = document.getElementById('dest-options');
+          const matches = ['Lisbon, Portugal', 'Porto, Portugal'].filter((c) => dest.value && c.toLowerCase().startsWith(dest.value.toLowerCase().slice(0, 2)));
+          list.innerHTML = matches.map((c) => `<li role="option">${c}</li>`).join('');
+          list.hidden = !matches.length;
+          dest.setAttribute('aria-expanded', String(Boolean(matches.length)));
+          list.querySelectorAll('[role=option]').forEach((option) => option.addEventListener('click', () => {
+            query.city = option.textContent.split(',')[0];
+            dest.value = option.textContent;
+            list.hidden = true;
+          }));
+        }, 120);
+      });
+    }
+  };
+  addEventListener('hashchange', render);
+  render();
+</script>
+</body>
+</html>
