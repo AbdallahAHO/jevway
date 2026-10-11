@@ -5,6 +5,7 @@ import { DEVICES, type Device, type DeviceName } from '../browser/devices.ts';
 import { StalePage, Tab, type PageAction, type PageState } from '../browser/tab.ts';
 import { buildActionSpace, type ActionSpace } from '../jev/action-space.ts';
 import { decide, type Ask, type Decision, type StepRecord } from '../jev/decide.ts';
+import type { ScreenshotMode } from '../jev/model.ts';
 import { watchDiagnostics, type DiagnosticsWatcher } from './diagnostics.ts';
 import { buildFlows, hotspotOf, type JourneyDoc, type JourneyStep } from './journey-doc.ts';
 import { pickNextMove } from './pick-next-move.ts';
@@ -34,6 +35,8 @@ export interface JourneyOptions {
   newWindow?: boolean;
   /** Autopilot backs out of any page whose URL does not start with this (default: the start page's origin). */
   stayWithin?: string;
+  /** Any mode but `off` sends every screen's marked screenshot with its judgments (screen type, patterns, QA). */
+  screenshots?: ScreenshotMode;
   /** Score every ranked tap's commit risk by name (see ModelProfile.elementRisk). */
   elementRisk?: boolean;
   /** Flat operation rules from the model profile (see ModelProfile.compactRules). */
@@ -346,6 +349,7 @@ export class JourneySession {
   async #capture(arrival: Omit<JourneyStep, 'to'> | null) {
     await this.#diagnostics.waitForIdle();
     const page = await this.#settledPage();
+    const seesScreen = (this.#options.screenshots ?? 'off') !== 'off';
     const decision = await decide(this.#ask, {
       page,
       goal: this.#options.intent ?? EXPLORE_GOAL,
@@ -355,6 +359,7 @@ export class JourneySession {
       extraQuestions: screenQuestions(this.doc.screens.map((screen) => visitedSummary(screen, this.#excerpts))),
       compactRules: this.#options.compactRules,
       ...(this.#options.elementRisk && { elementRisk: 'ranked' as const }),
+      ...(seesScreen && { screenshot: await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page.w) }),
     });
     const judgments = readScreenJudgments(decision.answers);
     // Mobile emulation widens the layout viewport to fit overflowing content, so compare against the device width.

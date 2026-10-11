@@ -31,9 +31,9 @@ await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 const fixtureUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
 
 const chrome = await connectChrome('launch-headless');
-const { profile } = resolveModel({ screenshots: 'off' });
+const { profile, screenshots } = resolveModel();
 const ask = createAsk(profile);
-process.stdout.write(`model: ${profile.name}\n`);
+process.stdout.write(`model: ${profile.name} · screenshots: ${screenshots}\n`);
 const results: { scenario: string; passed: boolean; note?: string; error?: string }[] = [];
 
 const scenario = async (name: string, body: () => Promise<string | void>) => {
@@ -83,6 +83,7 @@ await scenario('start: phone viewport, screenshot, Jev screen understanding', as
   journey = await JourneySession.start(chrome.cdp, ask, {
     startUrl: fixtureUrl,
     outDir,
+    screenshots,
     compactRules: profile.compactRules,
     elementRisk: profile.elementRisk,
   });

@@ -16,12 +16,12 @@ export interface StartOptions extends TaskOptions {
  * `TYPESAFE_API_KEY` for Jev (default), `OPENROUTER_API_KEY` for Clef-omni.
  *
  * @example
- * const runner = createRunner('auto', { model: 'clef' });
+ * const runner = createRunner('auto', { model: 'pplx-decider', screenshots: 'always' });
  * const task = await runner.start({ url: 'https://en.wikipedia.org', goal: 'Open the article on Gödel' });
  * console.log(await task.run());
  */
-export const createRunner = (source: BrowserSource, choice: { model?: string } = {}) => {
-  const { profile } = resolveModel({ ...choice, screenshots: 'off' });
+export const createRunner = (source: BrowserSource, choice: { model?: string; screenshots?: string } = {}) => {
+  const { profile, screenshots } = resolveModel(choice);
   const ask = createAsk(profile);
   let chrome: Promise<ChromeHandle> | undefined;
   const browser = () => (chrome ??= connectChrome(source));
@@ -33,6 +33,7 @@ export const createRunner = (source: BrowserSource, choice: { model?: string } =
       const page = url ? await Tab.open(cdp, url) : await Tab.find(cdp, tab!);
       return new BrowserTask(page, ask, {
         ...options,
+        screenshots: options.screenshots ?? screenshots,
         minConfidence: options.minConfidence ?? profile.minConfidence,
         compactRules: profile.compactRules,
         elementRisk: profile.elementRisk,
@@ -44,6 +45,7 @@ export const createRunner = (source: BrowserSource, choice: { model?: string } =
       return JourneySession.start(cdp, ask, {
         newWindow: source === 'auto',
         ...options,
+        screenshots: options.screenshots ?? screenshots,
         compactRules: profile.compactRules,
         elementRisk: profile.elementRisk,
       });

@@ -1,5 +1,7 @@
 import { StalePage, type PageState, type Tab } from '../browser/tab.ts';
+import { buildActionSpace } from '../jev/action-space.ts';
 import { decide, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
+import type { ScreenshotMode } from '../jev/model.ts';
 
 export interface TaskOptions {
   goal: string;
@@ -11,6 +13,11 @@ export interface TaskOptions {
   maxSteps?: number;
   /** Operation or target confidence below this stops and hands the decision back. */
   minConfidence?: number;
+  /**
+   * `fallback` re-decides with a marked screenshot when a text-only decision would stop as uncertain or
+   * blocked, has DONE rejected, or follows an action that changed nothing. `always` sends one every step.
+   */
+  screenshots?: ScreenshotMode;
   /** Flat operation rules from the model profile (see ModelProfile.compactRules). */
   compactRules?: string;
   /** Judge commit risk for the chosen click by name (see ModelProfile.elementRisk). */
@@ -26,7 +33,7 @@ export interface TaskSummary {
   title: string;
   elapsed_ms: number;
   steps: (StepRecord & { confidence: number })[];
-  jev: { requests: number; input_tokens: number; median_latency_ms: number };
+  jev: { requests: number; input_tokens: number; median_latency_ms: number; screenshots: number };
   done_probability?: number;
   /** Present whenever control returns before DONE: what Jev was deciding and what it saw. */
   stuck?: { operation: string; element?: string; candidates: Candidate[]; page_text: string };
@@ -38,7 +45,7 @@ export interface TraceEntry {
   elapsed_ms: number;
 }
 
-const DEFAULTS = { maxSteps: 40, minConfidence: 0.3, compactRules: '', elementRisk: false };
+const DEFAULTS = { maxSteps: 40, minConfidence: 0.3, screenshots: 'off' as ScreenshotMode, compactRules: '', elementRisk: false };
 // A DONE the completion check rejects usually means content is still loading: wait and re-decide this many times.
 const MAX_REJECTED_DONE = 3;
 
@@ -57,6 +64,7 @@ export class BrowserTask {
   #history: (StepRecord & { confidence: number })[] = [];
   #latencies: number[] = [];
   #inputTokens = 0;
+  #screenshots = 0;
   #confirmedCommit = false;
   #tab: Tab;
   #ask: Ask;
@@ -89,6 +97,7 @@ export class BrowserTask {
     const firstStep = this.#history.length;
     const firstRequest = this.#latencies.length;
     const tokensBefore = this.#inputTokens;
+    const screenshotsBefore = this.#screenshots;
 
     const stop = (status: TaskStatus, reason: string, decision?: Decision): TaskSummary => ({
       status,
@@ -102,6 +111,7 @@ export class BrowserTask {
         requests: this.#latencies.length - firstRequest,
         input_tokens: this.#inputTokens - tokensBefore,
         median_latency_ms: median(this.#latencies.slice(firstRequest)),
+        screenshots: this.#screenshots - screenshotsBefore,
       },
       ...(decision?.doneProbability !== undefined && { done_probability: round(decision.doneProbability) }),
       ...(status !== 'done' && decision && { stuck: stuckOn(decision, page) }),
@@ -109,7 +119,14 @@ export class BrowserTask {
 
     while (executed < maxSteps) {
       if (++decisions > maxSteps * 2) return stop('step_budget', `Made ${maxSteps * 2} decisions without finishing`);
-      const decision = await this.#decide(page);
+      let decision: Decision;
+      try {
+        decision = await this.#decide(page);
+      } catch (error) {
+        if (!(error instanceof StalePage)) throw error;
+        page = await this.#tab.observe();
+        continue;
+      }
       const record = (didExecute: boolean) =>
         this.trace.push({
           decision: { ...decision, action: decision.action?.label },
@@ -170,21 +187,43 @@ export class BrowserTask {
     return stop('step_budget', `Reached ${maxSteps} actions without finishing`);
   }
 
+  // One decision per step; `fallback` takes a second, screenshot-backed look at a shaky or stalled one.
   async #decide(page: PageState): Promise<Decision> {
-    const { goal, values, doneWhen, compactRules, elementRisk } = this.#options;
-    const decision = await decide(this.#ask, {
-      page,
-      goal,
-      values,
-      history: this.#history.slice(-10),
-      doneWhen,
-      checkCommitRisk: true,
-      compactRules,
-      ...(elementRisk && { elementRisk: 'chosen' as const }),
-    });
-    this.#latencies.push(decision.latencyMs);
-    this.#inputTokens += decision.inputTokens;
-    return decision;
+    const { goal, values, doneWhen, screenshots, compactRules, elementRisk } = this.#options;
+    const decideOn = async (withScreenshot: boolean) => {
+      const screenshot = withScreenshot
+        ? await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page.w)
+        : undefined;
+      const decision = await decide(this.#ask, {
+        page,
+        goal,
+        values,
+        history: this.#history.slice(-10),
+        doneWhen,
+        checkCommitRisk: true,
+        screenshot,
+        compactRules,
+        ...(elementRisk && { elementRisk: 'chosen' as const }),
+      });
+      this.#latencies.push(decision.latencyMs);
+      this.#inputTokens += decision.inputTokens;
+      if (screenshot) this.#screenshots++;
+      return decision;
+    };
+    const first = await decideOn(screenshots === 'always');
+    return screenshots === 'fallback' && this.#needsSecondLook(first) ? decideOn(true) : first;
+  }
+
+  #needsSecondLook(decision: Decision) {
+    const { doneWhen } = this.#options;
+    const handBack = this.#handBack(decision)?.[0];
+    const last = this.#history.at(-1);
+    return (
+      handBack === 'uncertain' ||
+      handBack === 'blocked' ||
+      (decision.operation === 'DONE' && !!doneWhen && (decision.doneProbability ?? 0) < 0.5) ||
+      (last?.page_changed === false && last.operation !== 'WAIT')
+    );
   }
 
   // Returns [status, reason] when this decision is the calling agent's to make.

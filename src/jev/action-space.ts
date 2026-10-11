@@ -21,6 +21,14 @@ export interface ActionSpace {
   targets: Partial<Record<TargetOperation, Record<string, PageAction>>>;
   /** Page-level controls that need no target: SCROLL_DOWN, SCROLL_UP, WAIT. */
   controls: Record<string, PageAction>;
+  /** Where each element index sits in the viewport, for numbering a screenshot. Never sent to the model. */
+  marks: ElementMark[];
+}
+
+export interface ElementMark {
+  label: string;
+  node?: number;
+  rect: NonNullable<PageAction['rect']>;
 }
 
 const OPERATION_BY_KIND = { click: 'CLICK', fill: 'TYPE_TEXT', select: 'SELECT' } as const;
@@ -38,6 +46,7 @@ export const buildActionSpace = (actions: PageAction[]): ActionSpace => {
   const indexByNode = new Map<number, string>();
   const targets: ActionSpace['targets'] = {};
   const controls: ActionSpace['controls'] = {};
+  const marks: ElementMark[] = [];
 
   for (const action of actions) {
     if (!(action.kind in OPERATION_BY_KIND)) {
@@ -56,6 +65,7 @@ export const buildActionSpace = (actions: PageAction[]): ActionSpace => {
         ...pick(action, ['role', 'value', 'checked', 'selected', 'expanded']),
         ...(action.kind === 'select' && { value: action.current_value ?? '', options: [] }),
       });
+      if (action.rect) marks.push({ label: index, node: action.node, rect: action.rect });
     }
     const element = elements[Number(index) - 1];
     if (!element.operations.includes(operation)) element.operations.push(operation);
@@ -67,7 +77,7 @@ export const buildActionSpace = (actions: PageAction[]): ActionSpace => {
     }
     (targets[operation] ??= {})[target] = action;
   }
-  return { elements, targets, controls };
+  return { elements, targets, controls, marks };
 };
 
 export const pick = <T extends object, K extends keyof T>(source: T, keys: K[]) =>

@@ -8,6 +8,7 @@ const USAGE = `jev-browse --goal "<outcome>" (--url <url> | --tab <url part>) [o
   --done-when "<evidence>"        visible evidence of success
   --browser auto|launch|launch-headless|http://127.0.0.1:9222   (default: auto, or $JEV_BROWSER)
   --model jev|pplx-decider|clef-omni|clef|clef-flash|gpt-6-luna   decision model (default: jev, or $JEV_MODEL)
+  --screenshots off|fallback|always   marked screenshots, vision models only (default: per model, or $JEV_SCREENSHOTS)
   --max-steps 40
   --keep-open                     leave the tab open (auto/remote browsers)
 
@@ -23,6 +24,7 @@ const { values: args } = parseArgs({
     'done-when': { type: 'string' },
     browser: { type: 'string' },
     model: { type: 'string' },
+    screenshots: { type: 'string' },
     'max-steps': { type: 'string' },
     'keep-open': { type: 'boolean' },
     help: { type: 'boolean', short: 'h' },
@@ -39,6 +41,7 @@ let runner: ReturnType<typeof createRunner>;
 try {
   runner = createRunner(args.browser ?? process.env.JEV_BROWSER ?? 'auto', {
     model: args.model,
+    screenshots: args.screenshots,
   });
 } catch (error) {
   console.error(`jev-browse: ${(error as Error).message}`);

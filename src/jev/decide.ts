@@ -33,6 +33,8 @@ export interface DecisionInput {
   checkCommitRisk: boolean;
   /** Extra judgments over the same page state that ride along in the same request (e.g. screen type, QA). */
   extraQuestions?: Record<string, Question>;
+  /** Base64 JPEG of the viewport with element indexes drawn on it; only for models that read images. */
+  screenshot?: string;
   /** Replaces NEXT_ACTION in the operation head as one flat instruction (Clef-omni reads that better). */
   compactRules?: string;
   /**
@@ -63,6 +65,8 @@ export interface Decision {
   candidates: Candidate[];
   /** Every raw answer, including the target distributions of operations that were not chosen. */
   answers: Record<string, any>;
+  /** The request carried a marked screenshot. */
+  sawScreenshot?: boolean;
   /** With `elementRisk`: commit risk per click target index that was asked about. */
   elementRisks?: Record<string, number>;
   requests: number;
@@ -128,6 +132,7 @@ export const decide = async (ask: Ask, input: DecisionInput): Promise<Decision> 
   await Promise.all(followUps);
   return {
     ...decision,
+    ...(input.screenshot && { sawScreenshot: true }),
     requests,
     inputTokens,
     latencyMs: Math.round(performance.now() - started),
@@ -176,10 +181,23 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
     elements,
     supplied_values: input.values,
     recent_actions: input.history.slice(-10),
+    ...(input.screenshot && { screenshot: SCREENSHOT_NOTE }),
   };
+  // Vision models read image parts only from a top-level state array, ahead of the JSON state.
   // Interfaces lack index signatures, so the plain JSON state needs one cast for the SDK's EntryType.
-  return { state: state as unknown as EntryType, questions };
+  return {
+    state: (input.screenshot ? [imagePart(input.screenshot), state] : state) as unknown as EntryType,
+    questions,
+  };
 };
+
+const SCREENSHOT_NOTE =
+  'The image is the current viewport. Each numbered box marks the element with that index in "elements".';
+
+const imagePart = (jpegBase64: string) => ({
+  type: 'image_url',
+  image_url: { url: `data:image/jpeg;base64,${jpegBase64}` },
+});
 
 const describeTarget = (index: string, action: PageAction) => ({
   element: `[${index}] ${action.label}`,

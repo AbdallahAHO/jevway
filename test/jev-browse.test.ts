@@ -70,6 +70,11 @@ const fakeTab = (pages: PageState[] = [page()]) => {
   let observed = 0;
   const tab = {
     staleOnce: false,
+    screenshots: 0,
+    markedScreenshot: async () => {
+      tab.screenshots++;
+      return 'SCREENSHOT';
+    },
     observe: async () => pages[Math.min(observed++, pages.length - 1)],
     fresh: async () => true,
     act: async (action: PageAction, _page: PageState, text?: string) => {
@@ -123,6 +128,14 @@ describe('Jev request', () => {
     const decision = readDecision(decisionInput, space, { operation });
     expect(decision).toMatchObject({ operation: 'SELECT', targetConfidence: 1 });
     expect(decision.action?.label).toBe('Guests → 2 guests');
+  });
+
+  it('puts a marked screenshot ahead of the JSON state as an image part', () => {
+    const space = buildActionSpace(bookingActions);
+    const { state } = buildRequest({ ...input, values: {}, screenshot: 'AAAA' }, space) as any;
+    expect(state[0]).toEqual({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,AAAA' } });
+    expect(state[1]).toMatchObject({ elements: space.elements, screenshot: expect.stringContaining('numbered box') });
+    expect(Array.isArray(buildRequest({ ...input, values: {} }, space).state)).toBe(false);
   });
 
   it('rejects malformed answers so nothing executes', () => {
@@ -214,6 +227,43 @@ describe('BrowserTask', () => {
     const summary = await new BrowserTask(asTab, ask, { goal: 'Loop' }).run();
     expect(summary).toMatchObject({ status: 'blocked', reason: 'The last 3 actions did not change the page' });
     expect(summary.steps).toHaveLength(3);
+  });
+});
+
+describe('screenshots', () => {
+  const shaky: Record<string, string | number>[] = [{ operation: 'CLICK', click_target: '1', confidence: 0.1 }, { operation: 'DONE' }];
+
+  it('off: a low-confidence step hands back without a screenshot', async () => {
+    const { ask, requests } = scriptedJev(shaky);
+    const { tab, asTab } = fakeTab();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open' }).run();
+    expect(summary.status).toBe('uncertain');
+    expect(tab.screenshots).toBe(0);
+    expect(requests).toHaveLength(1);
+  });
+
+  it('fallback: re-decides the shaky step with a marked screenshot, then acts on that decision', async () => {
+    const { ask, requests } = scriptedJev([...shaky.slice(0, 1), { operation: 'DONE' }]);
+    const { tab, asTab } = fakeTab();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open', screenshots: 'fallback' }).run();
+    expect(summary).toMatchObject({ status: 'done', jev: { requests: 2, screenshots: 1 } });
+    expect(Array.isArray(requests[0].state)).toBe(false);
+    expect((requests[1].state as any)[0].type).toBe('image_url');
+    expect(tab.screenshots).toBe(1);
+  });
+
+  it('fallback: a confident step stays text-only', async () => {
+    const { ask } = scriptedJev([{ operation: 'DONE' }]);
+    const { tab, asTab } = fakeTab();
+    await new BrowserTask(asTab, ask, { goal: 'Open', screenshots: 'fallback' }).run();
+    expect(tab.screenshots).toBe(0);
+  });
+
+  it('always: every decision carries a screenshot', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'DONE' }]);
+    const { asTab } = fakeTab([page({ fingerprint: 'a' }), page({ fingerprint: 'b' })]);
+    await new BrowserTask(asTab, ask, { goal: 'Open', screenshots: 'always' }).run();
+    expect(requests.every((request) => Array.isArray(request.state))).toBe(true);
   });
 });
 

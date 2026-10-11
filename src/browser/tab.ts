@@ -110,6 +110,26 @@ export class Tab {
     return data as string;
   }
 
+  /**
+   * Viewport JPEG with each mark drawn as a numbered box, so a vision model can tie what it sees to an
+   * element index. The overlay is removed before this returns, so it never meets a freshness check or input.
+   *
+   * @example
+   * const jpeg = await tab.markedScreenshot(buildActionSpace(page.actions).marks, page.w);
+   */
+  async markedScreenshot(
+    marks: { label: string; node?: number; rect: NonNullable<PageAction['rect']> }[],
+    viewportWidth: number,
+  ) {
+    await this.#evaluate(`(${DRAW_MARKS})(${JSON.stringify(marks)})`);
+    try {
+      // About 1 megapixel or less is all the model reads; smaller images also keep the request light.
+      return await this.screenshot({ format: 'jpeg', quality: 60, scale: Math.min(1, 1024 / viewportWidth) });
+    } finally {
+      await this.#evaluate(`document.getElementById('${MARKS_ID}')?.remove()`).catch(() => undefined);
+    }
+  }
+
   /** Raw protocol access for diagnostics (console, network) scoped to this tab. */
   send(method: string, params: Record<string, unknown> = {}) {
     return this.#call(method, params);
@@ -265,6 +285,34 @@ const fingerprint = (state: Omit<PageState, 'fingerprint'> & { scroll?: unknown 
   createHash('sha256')
     .update(JSON.stringify([state.url, state.text, state.actions, state.scroll]))
     .digest('hex');
+
+// Numbered boxes in a closed shadow root: invisible to the snapshot's text walk and to page scripts.
+// Covered elements (under a popover or sheet) get no box, so a number never sits on something else.
+const MARKS_ID = '__jev_marks';
+const DRAW_MARKS = `marks => {
+  document.getElementById('${MARKS_ID}')?.remove();
+  const onTop = ({ node, rect: { x, y, w, h } }) => {
+    const e = window.__jevFast?.nodes.get(node);
+    const hit = document.elementFromPoint(x + w / 2, y + h / 2);
+    return !e || !hit || e === hit || e.contains(hit) || hit.contains(e) || (e.labels && [...e.labels].some((l) => l.contains(hit)));
+  };
+  marks = marks.filter(onTop);
+  const host = document.createElement('div');
+  host.id = '${MARKS_ID}';
+  host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647';
+  const root = host.attachShadow({ mode: 'closed' });
+  for (const { label, rect: { x, y, w, h } } of marks) {
+    const box = document.createElement('div');
+    box.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + w + 'px;height:' + h + 'px;outline:2px solid #e11d48;outline-offset:-1px';
+    const tag = document.createElement('span');
+    tag.textContent = label;
+    tag.style.cssText = 'position:absolute;left:-1px;top:' + (y < 18 ? 0 : -18) + 'px;background:#e11d48;color:#fff;font:bold 14px/18px system-ui,sans-serif;padding:0 4px';
+    box.append(tag);
+    root.append(box);
+  }
+  document.documentElement.append(host);
+  return true;
+}`;
 
 // Resolves the observed node, rejects hidden/disabled/covered targets, and applies native selects in-page.
 const RESOLVE_TARGET = `action => {
