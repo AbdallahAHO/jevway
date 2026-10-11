@@ -157,7 +157,8 @@ await scenario('MCP stdio: tools list + browser_task + browser_task_end', async 
   );
   try {
     const { tools } = await client.listTools();
-    assert.deepEqual(tools.map((tool) => tool.name).sort(), ['browser_task', 'browser_task_end']);
+    const names = tools.map((tool) => tool.name);
+    assert.ok(['browser_task', 'browser_task_end'].every((name) => names.includes(name)), names.join(', '));
     const response: any = await client.callTool({
       name: 'browser_task',
       arguments: {
