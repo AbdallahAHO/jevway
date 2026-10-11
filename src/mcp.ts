@@ -9,6 +9,7 @@ import type { BrowserTask } from './task/run-task.ts';
 import { createRunner } from './task/start-task.ts';
 
 // JEV_BROWSER: auto (running Chrome, shared with chrome-devtools-mcp --auto-connect) | launch | launch-headless | http://host:port
+// JEV_MODEL: jev (default) | pplx-decider | clef-omni | clef | clef-flash | gpt-6-luna (see src/jev/model.ts)
 const runner = createRunner(process.env.JEV_BROWSER ?? 'auto');
 const sessions = new Map<string, { task: BrowserTask; ownsTab: boolean }>();
 const journeys = new Map<string, JourneySession>();

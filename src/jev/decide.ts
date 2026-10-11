@@ -9,11 +9,13 @@ import {
 } from '@typesafe-ai/sdk';
 import type { PageAction, PageState } from '../browser/tab.ts';
 import { buildActionSpace, pick, type ActionSpace, type TargetOperation } from './action-space.ts';
-import { COMMIT_RISK, DONE_CHECK, NEXT_ACTION, TARGET, VALUE } from './instructions.ts';
+import { COMMIT_RISK, DONE_CHECK, ELEMENT_COMMIT_RISK, NEXT_ACTION, TARGET, VALUE } from './instructions.ts';
 
 export const NO_SUPPLIED_VALUE = 'NO_SUPPLIED_VALUE';
 // Speculative value heads ride along with the operation request; beyond this, TYPE_TEXT costs one follow-up.
 const MAX_SPECULATIVE_VALUE_FIELDS = 8;
+// Matches the autopilot's tap ranking depth, so every tap it may take has its own risk score.
+const MAX_RISK_TARGETS = 12;
 
 export interface StepRecord {
   operation: string;
@@ -31,6 +33,13 @@ export interface DecisionInput {
   checkCommitRisk: boolean;
   /** Extra judgments over the same page state that ride along in the same request (e.g. screen type, QA). */
   extraQuestions?: Record<string, Question>;
+  /** Replaces NEXT_ACTION in the operation head as one flat instruction (Clef-omni reads that better). */
+  compactRules?: string;
+  /**
+   * Replaces the page-level commit-risk head with one risk question per named click candidate, in a
+   * follow-up request: the chosen CLICK only, or the top ranked taps (journey autopilot acts on those).
+   */
+  elementRisk?: 'chosen' | 'ranked';
 }
 
 export interface Candidate {
@@ -54,6 +63,8 @@ export interface Decision {
   candidates: Candidate[];
   /** Every raw answer, including the target distributions of operations that were not chosen. */
   answers: Record<string, any>;
+  /** With `elementRisk`: commit risk per click target index that was asked about. */
+  elementRisks?: Record<string, number>;
   requests: number;
   inputTokens: number;
   latencyMs: number;
@@ -85,15 +96,42 @@ export const decide = async (ask: Ask, input: DecisionInput): Promise<Decision> 
   let requests = 1;
   let inputTokens = response.usage.input_tokens;
 
+  const followUp = async (questions: Record<string, Question>) => {
+    const answer = await ask({ state: request.state, questions });
+    requests++;
+    inputTokens += answer.usage.input_tokens;
+    return answer.answers;
+  };
+  const followUps: Promise<void>[] = [];
+
   // The chosen field had no speculative value head: ask once more with the field known.
   if (decision.operation === 'TYPE_TEXT' && decision.valueKey === undefined && Object.keys(input.values).length) {
-    const target = targetIndexOf(space, decision.action!);
-    const followUp = await ask({ state: request.state, questions: { value: valueQuestion(input, space, target) } });
-    Object.assign(decision, readValue(followUp.answers.value, input.values));
-    requests++;
-    inputTokens += followUp.usage.input_tokens;
+    const target = targetIndexOf(space, 'TYPE_TEXT', decision.action!);
+    followUps.push(
+      followUp({ value: valueQuestion(input, space, target) }).then((answers) => {
+        Object.assign(decision, readValue(answers.value, input.values));
+      }),
+    );
   }
-  return { ...decision, requests, inputTokens, latencyMs: Math.round(performance.now() - started) };
+  const riskTargets = elementRiskTargets(input, space, decision);
+  if (riskTargets.length) {
+    const questions = Object.fromEntries(riskTargets.map((index) => [`risk_${index}`, riskQuestion(input, space, index)]));
+    followUps.push(
+      followUp(questions).then((answers) => {
+        decision.elementRisks = Object.fromEntries(riskTargets.map((index) => [index, readRisk(answers[`risk_${index}`])]));
+        if (decision.operation === 'CLICK') {
+          decision.commitRisk = decision.elementRisks[targetIndexOf(space, 'CLICK', decision.action!)];
+        }
+      }),
+    );
+  }
+  await Promise.all(followUps);
+  return {
+    ...decision,
+    requests,
+    inputTokens,
+    latencyMs: Math.round(performance.now() - started),
+  };
 };
 
 export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOneRequest => {
@@ -111,10 +149,14 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
     BLOCKED: 'No supported operation can progress.',
   };
   const questions: Record<string, Question> = {
-    operation: choice({ goal: input.goal, rules: NEXT_ACTION }, operations),
+    operation: input.compactRules
+      ? choice(`Goal: ${input.goal}\n${input.compactRules}`, operations)
+      : choice({ goal: input.goal, rules: NEXT_ACTION }, operations),
   };
 
   for (const [operation, candidates] of Object.entries(targets)) {
+    // A lone candidate needs no head (Clef rejects one-option choices); readDecision picks it outright.
+    if (Object.keys(candidates).length < 2) continue;
     questions[`${operation.toLowerCase()}_target`] = choice(
       { goal: input.goal, operation, rules: [NEXT_ACTION, TARGET] },
       Object.fromEntries(Object.entries(candidates).map(([index, action]) => [index, describeTarget(index, action)])),
@@ -125,20 +167,18 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
       questions[`value_for_${index}`] = valueQuestion(input, space, index);
     }
   }
-  if (input.checkCommitRisk && targets.CLICK) questions.commit_risk = noul({ goal: input.goal, rules: COMMIT_RISK });
+  if (input.checkCommitRisk && targets.CLICK && !input.elementRisk) questions.commit_risk = noul({ goal: input.goal, rules: COMMIT_RISK });
   if (input.doneWhen) questions.done_check = noul({ completion_condition: input.doneWhen, rules: DONE_CHECK });
   Object.assign(questions, input.extraQuestions);
 
-  // Interfaces lack index signatures, so the plain JSON state needs one cast for the SDK's EntryType.
-  return {
-    state: {
-      page: pick(input.page, ['url', 'title', 'text']),
-      elements,
-      supplied_values: input.values,
-      recent_actions: input.history.slice(-10),
-    } as unknown as EntryType,
-    questions,
+  const state = {
+    page: pick(input.page, ['url', 'title', 'text']),
+    elements,
+    supplied_values: input.values,
+    recent_actions: input.history.slice(-10),
   };
+  // Interfaces lack index signatures, so the plain JSON state needs one cast for the SDK's EntryType.
+  return { state: state as unknown as EntryType, questions };
 };
 
 const describeTarget = (index: string, action: PageAction) => ({
@@ -179,7 +219,11 @@ export const readDecision = (
   const candidates = space.targets[operation as TargetOperation];
   if (candidates) {
     // Unused target heads can never cause an action; only the chosen operation's head is validated.
-    const targetAnswer = validChoice(answers[`${operation.toLowerCase()}_target`], Object.keys(candidates));
+    const ids = Object.keys(candidates);
+    const targetAnswer =
+      ids.length === 1
+        ? { type: 'choice' as const, choice: ids[0], confidence: 1, probabilities: { [ids[0]]: 1 } }
+        : validChoice(answers[`${operation.toLowerCase()}_target`], ids);
     decision.action = candidates[targetAnswer.choice];
     decision.targetConfidence = targetAnswer.confidence;
     decision.candidates = Object.entries(targetAnswer.probabilities)
@@ -218,8 +262,28 @@ const readValue = (answer: unknown, values: Record<string, string>) => {
   };
 };
 
-const targetIndexOf = (space: ActionSpace, action: PageAction) =>
-  Object.entries(space.targets.TYPE_TEXT!).find(([, candidate]) => candidate === action)![0];
+const targetIndexOf = (space: ActionSpace, operation: TargetOperation, action: PageAction) =>
+  Object.entries(space.targets[operation]!).find(([, candidate]) => candidate === action)![0];
+
+// The chosen click first, then (for the autopilot) the remaining taps by the target head's ranking.
+const elementRiskTargets = (input: DecisionInput, space: ActionSpace, decision: Pick<Decision, 'operation' | 'action' | 'answers'>) => {
+  const clicks = space.targets.CLICK;
+  if (!input.elementRisk || !input.checkCommitRisk || !clicks) return [];
+  const chosen = decision.operation === 'CLICK' ? [targetIndexOf(space, 'CLICK', decision.action!)] : [];
+  if (input.elementRisk === 'chosen') return chosen;
+  const probabilities: Record<string, number> = decision.answers.click_target?.probabilities ?? {};
+  const ranked = Object.keys(clicks).sort((a, b) => (probabilities[b] ?? 0) - (probabilities[a] ?? 0));
+  return [...new Set([...chosen, ...ranked])].slice(0, MAX_RISK_TARGETS);
+};
+
+const riskQuestion = (input: DecisionInput, space: ActionSpace, index: string) =>
+  noul({ goal: input.goal, element: describeTarget(index, space.targets.CLICK![index]), rules: ELEMENT_COMMIT_RISK });
+
+/** A malformed risk answer counts as certain risk: it can only stop a click, never allow one. */
+const readRisk = (answer: any) => {
+  const risk = answer?.noul;
+  return typeof risk === 'number' && Number.isFinite(risk) && risk >= 0 && risk <= 1 ? risk : 1;
+};
 
 /** A malformed answer must never execute anything. */
 export const validChoice = (answer: any, ids: string[]): ChoiceResponse => {

@@ -12,14 +12,13 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { TypeSafeClient } from '@typesafe-ai/sdk';
 import { connectChrome } from '../src/browser/chrome.ts';
 import { Tab } from '../src/browser/tab.ts';
-import { askWith } from '../src/jev/decide.ts';
+import { createAsk, resolveModel } from '../src/jev/model.ts';
 import type { JourneyDoc } from '../src/journeys/journey-doc.ts';
 import { JourneySession, type ScreenReport } from '../src/journeys/journey-session.ts';
 
-if (!process.env.TYPESAFE_API_KEY?.trim()) throw new Error('Set TYPESAFE_API_KEY.');
+
 const outRoot = new URL(`./out/journeys-${new Date().toISOString().replace(/[:.]/g, '-')}/`, import.meta.url).pathname;
 mkdirSync(outRoot, { recursive: true });
 
@@ -32,7 +31,9 @@ await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 const fixtureUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
 
 const chrome = await connectChrome('launch-headless');
-const ask = askWith(new TypeSafeClient({ timeout: 15_000, logLevel: 'off' }));
+const { profile } = resolveModel({ screenshots: 'off' });
+const ask = createAsk(profile);
+process.stdout.write(`model: ${profile.name}\n`);
 const results: { scenario: string; passed: boolean; note?: string; error?: string }[] = [];
 
 const scenario = async (name: string, body: () => Promise<string | void>) => {
@@ -79,7 +80,12 @@ let report!: ScreenReport;
 const ids: Record<string, string> = {};
 
 await scenario('start: phone viewport, screenshot, Jev screen understanding', async () => {
-  journey = await JourneySession.start(chrome.cdp, ask, { startUrl: fixtureUrl, outDir });
+  journey = await JourneySession.start(chrome.cdp, ask, {
+    startUrl: fixtureUrl,
+    outDir,
+    compactRules: profile.compactRules,
+    elementRisk: profile.elementRisk,
+  });
   report = journey.report();
   ids.home = report.screen.id;
   assert.equal(report.screen.type, 'home');

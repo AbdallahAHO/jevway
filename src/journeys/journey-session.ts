@@ -34,6 +34,10 @@ export interface JourneyOptions {
   newWindow?: boolean;
   /** Autopilot backs out of any page whose URL does not start with this (default: the start page's origin). */
   stayWithin?: string;
+  /** Score every ranked tap's commit risk by name (see ModelProfile.elementRisk). */
+  elementRisk?: boolean;
+  /** Flat operation rules from the model profile (see ModelProfile.compactRules). */
+  compactRules?: string;
 }
 
 export interface StepInput {
@@ -349,6 +353,8 @@ export class JourneySession {
       history: this.#recent.slice(-10),
       checkCommitRisk: true,
       extraQuestions: screenQuestions(this.doc.screens.map((screen) => visitedSummary(screen, this.#excerpts))),
+      compactRules: this.#options.compactRules,
+      ...(this.#options.elementRisk && { elementRisk: 'ranked' as const }),
     });
     const judgments = readScreenJudgments(decision.answers);
     // Mobile emulation widens the layout viewport to fit overflowing content, so compare against the device width.

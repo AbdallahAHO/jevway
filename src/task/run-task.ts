@@ -11,6 +11,10 @@ export interface TaskOptions {
   maxSteps?: number;
   /** Operation or target confidence below this stops and hands the decision back. */
   minConfidence?: number;
+  /** Flat operation rules from the model profile (see ModelProfile.compactRules). */
+  compactRules?: string;
+  /** Judge commit risk for the chosen click by name (see ModelProfile.elementRisk). */
+  elementRisk?: boolean;
 }
 
 export type TaskStatus = 'done' | 'needs_input' | 'needs_confirmation' | 'uncertain' | 'blocked' | 'step_budget';
@@ -34,7 +38,7 @@ export interface TraceEntry {
   elapsed_ms: number;
 }
 
-const DEFAULTS = { maxSteps: 40, minConfidence: 0.3 };
+const DEFAULTS = { maxSteps: 40, minConfidence: 0.3, compactRules: '', elementRisk: false };
 // A DONE the completion check rejects usually means content is still loading: wait and re-decide this many times.
 const MAX_REJECTED_DONE = 3;
 
@@ -77,7 +81,7 @@ export class BrowserTask {
   async run(): Promise<TaskSummary> {
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
-    const { maxSteps, values, goal, doneWhen } = this.#options;
+    const { maxSteps, values, doneWhen } = this.#options;
     let page = await this.#tab.observe();
     let executed = 0;
     let decisions = 0;
@@ -105,16 +109,7 @@ export class BrowserTask {
 
     while (executed < maxSteps) {
       if (++decisions > maxSteps * 2) return stop('step_budget', `Made ${maxSteps * 2} decisions without finishing`);
-      const decision = await decide(this.#ask, {
-        page,
-        goal,
-        values,
-        history: this.#history.slice(-10),
-        doneWhen,
-        checkCommitRisk: true,
-      });
-      this.#latencies.push(decision.latencyMs);
-      this.#inputTokens += decision.inputTokens;
+      const decision = await this.#decide(page);
       const record = (didExecute: boolean) =>
         this.trace.push({
           decision: { ...decision, action: decision.action?.label },
@@ -173,6 +168,23 @@ export class BrowserTask {
       }
     }
     return stop('step_budget', `Reached ${maxSteps} actions without finishing`);
+  }
+
+  async #decide(page: PageState): Promise<Decision> {
+    const { goal, values, doneWhen, compactRules, elementRisk } = this.#options;
+    const decision = await decide(this.#ask, {
+      page,
+      goal,
+      values,
+      history: this.#history.slice(-10),
+      doneWhen,
+      checkCommitRisk: true,
+      compactRules,
+      ...(elementRisk && { elementRisk: 'chosen' as const }),
+    });
+    this.#latencies.push(decision.latencyMs);
+    this.#inputTokens += decision.inputTokens;
+    return decision;
   }
 
   // Returns [status, reason] when this decision is the calling agent's to make.

@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StalePage, type PageAction, type PageState, type Tab } from '../src/browser/tab.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
-import { buildRequest, NO_SUPPLIED_VALUE, validChoice, type Ask } from '../src/jev/decide.ts';
+import { buildRequest, decide, NO_SUPPLIED_VALUE, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
+import { resolveModel } from '../src/jev/model.ts';
 import { BrowserTask } from '../src/task/run-task.ts';
 
 // A booking form as the snapshot reports it: two text fields, a native select, a pay button.
@@ -44,7 +45,8 @@ const answer = (choice: string, ids: string[], confidence = 0.95) => ({
   probabilities: Object.fromEntries(ids.map((id) => [id, id === choice ? 1 : 0])),
 });
 
-/** Answers every question in a request with the scripted choice for that step, or its first option. */
+/** Answers every question in a request with the scripted choice for that step, or its first option.
+ * `confidence` sets the operation answer's confidence (default 0.95). */
 const scriptedJev = (steps: Record<string, string | number>[]) => {
   const requests: any[] = [];
   const ask: Ask = async (request) => {
@@ -54,7 +56,8 @@ const scriptedJev = (steps: Record<string, string | number>[]) => {
       Object.entries(request.questions).map(([id, question]: [string, any]) => {
         if (question.type === 'noul') return [id, { type: 'noul', noul: script[id] ?? 0 }];
         const ids = Object.keys(question.criteria);
-        return [id, answer(String(script[id] ?? ids[0]), ids)];
+        const confidence = id === 'operation' ? Number(script.confidence ?? 0.95) : 0.95;
+        return [id, answer(String(script[id] ?? ids[0]), ids, confidence)];
       }),
     );
     return { answers, usage: { input_tokens: 100 } };
@@ -104,13 +107,22 @@ describe('Jev request', () => {
       'operation',
       'type_text_target',
       'click_target',
-      'select_target',
       'commit_risk',
     ]);
     const withValues = buildRequest({ ...input, values: { email: 'a@b.co' }, doneWhen: 'Confirmed' }, space);
     expect(withValues.questions).toHaveProperty('value_for_1');
     expect(withValues.questions).toHaveProperty('done_check');
     expect(Object.keys((withValues.questions.value_for_2 as any).criteria)).toEqual(['email', NO_SUPPLIED_VALUE]);
+  });
+
+  it('picks a lone candidate outright instead of asking a one-option question', () => {
+    // Clef rejects choices with fewer than two options; the guests select here has exactly one.
+    const space = buildActionSpace(bookingActions);
+    const decisionInput = { ...input, values: {} };
+    const operation = answer('SELECT', ['CLICK', 'TYPE_TEXT', 'SELECT', 'WAIT', 'DONE', 'BLOCKED']);
+    const decision = readDecision(decisionInput, space, { operation });
+    expect(decision).toMatchObject({ operation: 'SELECT', targetConfidence: 1 });
+    expect(decision.action?.label).toBe('Guests → 2 guests');
   });
 
   it('rejects malformed answers so nothing executes', () => {
@@ -202,5 +214,58 @@ describe('BrowserTask', () => {
     const summary = await new BrowserTask(asTab, ask, { goal: 'Loop' }).run();
     expect(summary).toMatchObject({ status: 'blocked', reason: 'The last 3 actions did not change the page' });
     expect(summary.steps).toHaveLength(3);
+  });
+});
+
+describe('model choice', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('routes Jev to the TypeSafe API when its key is set, otherwise through OpenRouter', () => {
+    vi.stubEnv('TYPESAFE_API_KEY', '');
+    expect(resolveModel({ model: 'jev' }).profile).toMatchObject({
+      model: 'typesafe/jev-1.13',
+      baseURL: 'https://openrouter.ai/api',
+      apiKeyEnv: 'OPENROUTER_API_KEY',
+    });
+    vi.stubEnv('TYPESAFE_API_KEY', 'ts-key');
+    const direct = resolveModel({ model: 'jev' }).profile;
+    expect(direct).toMatchObject({ model: 'jev-latest', apiKeyEnv: 'TYPESAFE_API_KEY' });
+    expect(direct.baseURL).toBeUndefined();
+  });
+
+  it('defaults to Jev without screenshots and Clef-omni with a screenshot every step', () => {
+    expect(resolveModel({ model: 'jev' })).toMatchObject({ screenshots: 'off' });
+    expect(resolveModel({ model: 'clef-omni' })).toMatchObject({
+      profile: { model: 'cloudflare/clef-omni', apiKeyEnv: 'OPENROUTER_API_KEY' },
+      screenshots: 'always',
+    });
+  });
+
+  it('refuses screenshots for a model that cannot read them, and unknown names', () => {
+    expect(() => resolveModel({ model: 'jev', screenshots: 'always' })).toThrow(/cannot read screenshots/);
+    expect(() => resolveModel({ model: 'gpt' })).toThrow(/Unknown model/);
+    expect(() => resolveModel({ model: 'clef-omni', screenshots: 'sometimes' })).toThrow(/Unknown screenshot mode/);
+  });
+});
+
+describe('per-element commit risk', () => {
+  const input = { page: page(), goal: 'Book', values: {}, history: [], checkCommitRisk: true };
+
+  it('drops the page-level guess and asks about the chosen click by name', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '4', risk_4: 0.92 }]);
+    const decision = await decide(ask, { ...input, elementRisk: 'chosen' });
+    expect(requests[0].questions).not.toHaveProperty('commit_risk');
+    expect(Object.keys(requests[1].questions)).toEqual(['risk_4']);
+    expect((requests[1].questions.risk_4 as any).instructions.element.element).toBe('[4] Confirm booking and pay €412');
+    expect(decision).toMatchObject({ commitRisk: 0.92, elementRisks: { '4': 0.92 }, requests: 2 });
+  });
+
+  it('scores the ranked taps for the autopilot, and a malformed score counts as risky', async () => {
+    const ask: Ask = async (request) => {
+      if (!('operation' in request.questions)) return { answers: { risk_1: { noul: 0.1 } }, usage: { input_tokens: 1 } };
+      return scriptedJev([{ operation: 'WAIT' }]).ask(request);
+    };
+    const decision = await decide(ask, { ...input, elementRisk: 'ranked' });
+    expect(decision.elementRisks).toEqual({ '1': 0.1, '4': 1 });
   });
 });

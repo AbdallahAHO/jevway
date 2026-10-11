@@ -7,10 +7,12 @@ const USAGE = `jev-browse --goal "<outcome>" (--url <url> | --tab <url part>) [o
   --values '{"city":"Lisbon"}'   text values Jev may type
   --done-when "<evidence>"        visible evidence of success
   --browser auto|launch|launch-headless|http://127.0.0.1:9222   (default: auto, or $JEV_BROWSER)
+  --model jev|pplx-decider|clef-omni|clef|clef-flash|gpt-6-luna   decision model (default: jev, or $JEV_MODEL)
   --max-steps 40
   --keep-open                     leave the tab open (auto/remote browsers)
 
-Prints one JSON summary. Exit code 0 only when status is "done". Needs TYPESAFE_API_KEY.`;
+Prints one JSON summary. Exit code 0 only when status is "done".
+Needs TYPESAFE_API_KEY (Jev only) or OPENROUTER_API_KEY (every model).`;
 
 const { values: args } = parseArgs({
   options: {
@@ -20,6 +22,7 @@ const { values: args } = parseArgs({
     values: { type: 'string' },
     'done-when': { type: 'string' },
     browser: { type: 'string' },
+    model: { type: 'string' },
     'max-steps': { type: 'string' },
     'keep-open': { type: 'boolean' },
     help: { type: 'boolean', short: 'h' },
@@ -31,7 +34,17 @@ if (args.help || !args.goal || !(args.url || args.tab)) {
   process.exit(args.help ? 0 : 2);
 }
 
-const runner = createRunner(args.browser ?? process.env.JEV_BROWSER ?? 'auto');
+// Model or key problems are usage errors: report them before any browser starts.
+let runner: ReturnType<typeof createRunner>;
+try {
+  runner = createRunner(args.browser ?? process.env.JEV_BROWSER ?? 'auto', {
+    model: args.model,
+  });
+} catch (error) {
+  console.error(`jev-browse: ${(error as Error).message}`);
+  process.exit(2);
+}
+
 try {
   const task = await runner.start({
     goal: args.goal,

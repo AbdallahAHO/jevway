@@ -11,13 +11,18 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { TypeSafeClient } from '@typesafe-ai/sdk';
 import { connectChrome, type BrowserSource } from '../src/browser/chrome.ts';
 import { Tab } from '../src/browser/tab.ts';
-import { askWith } from '../src/jev/decide.ts';
+import { createAsk, resolveModel } from '../src/jev/model.ts';
 import { BrowserTask, type TaskSummary } from '../src/task/run-task.ts';
 
-if (!process.env.TYPESAFE_API_KEY?.trim()) throw new Error('Set TYPESAFE_API_KEY.');
+// JEV_MODEL picks the decision model, as in the MCP server.
+const { profile } = resolveModel({ screenshots: 'off' });
+const ask = createAsk(profile);
+// Experiment override: measure a model's decisions against ground truth without its hand-back threshold.
+// It doesn't reach the MCP scenario, whose server uses the profile's threshold.
+const minConfidence = Number(process.env.JEV_VERIFY_MIN_CONFIDENCE ?? profile.minConfidence);
+process.stdout.write(`model: ${profile.name} (${profile.model}) · min confidence: ${minConfidence}\n`);
 const source = (process.env.JEV_VERIFY_BROWSER ?? 'launch-headless') as BrowserSource;
 const outDir = new URL(`./out/${new Date().toISOString().replace(/[:.]/g, '-')}/`, import.meta.url);
 mkdirSync(outDir, { recursive: true });
@@ -31,7 +36,6 @@ await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 const fixtureUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/stays.html`;
 
 const chrome = await connectChrome(source);
-const ask = askWith(new TypeSafeClient({ timeout: 15_000, logLevel: 'off' }));
 const results: { scenario: string; passed: boolean; summary?: Partial<TaskSummary>; error?: string }[] = [];
 
 // Reads ground truth through a separate CDP session, not through the agent's tab wrapper.
@@ -72,6 +76,9 @@ const stays = new BrowserTask(stayTab, ask, {
   goal: 'Find stays in Lisbon for 2 guests with free cancellation, then open the details of Casa Flora.',
   values: { destination: 'Lisbon' },
   doneWhen: "Casa Flora's details page is showing.",
+  minConfidence,
+  compactRules: profile.compactRules,
+  elementRisk: profile.elementRisk,
 });
 const staySummaries: TaskSummary[] = [];
 const fixtureState = () => groundTruth(stayTab.targetId, 'window.__fixture');
@@ -133,6 +140,9 @@ await scenario('live web: Wikipedia search → Gödel’s incompleteness theorem
     goal: 'Find and open the Wikipedia article about Gödel’s incompleteness theorems.',
     values: { search_query: 'Gödel incompleteness theorems' },
     doneWhen: "The Wikipedia article titled Gödel's incompleteness theorems is open.",
+    minConfidence,
+  compactRules: profile.compactRules,
+  elementRisk: profile.elementRisk,
   });
   const summary = await task.run();
   saveTrace('wikipedia', task, [summary]);

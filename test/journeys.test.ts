@@ -125,6 +125,23 @@ describe('autopilot policy', () => {
     expect(pickNextMove({ ...input, hasIntent: true })).toEqual({ stop: 'irreversible_action', detail: 'Reserve' });
   });
 
+  it('with per-element risk, gates every tap by its own score and treats unscored taps as risky', () => {
+    // Top tap already tried; the next one is the pay button, which only per-element risk can see.
+    const ranked = decision({ '1': 0.5, '4': 0.3, '2': 0.1, '3': 0.1 }, {
+      action: actions[0],
+      elementRisks: { '1': 0.05, '4': 0.95, '2': 0.1 },
+    });
+    const input = { decision: ranked, judgments: judgments(), space, hasIntent: true };
+    expect(pickNextMove({ ...input, tried: new Set(['CLICK:Where to?']) })).toEqual({
+      stop: 'irreversible_action',
+      detail: 'Reserve',
+    });
+    const unscored = decision({ '3': 0.9, '1': 0.1, '2': 0, '4': 0 }, { action: actions[2], elementRisks: {} });
+    expect(pickNextMove({ ...input, decision: unscored, tried: new Set<string>() })).toMatchObject({
+      stop: 'irreversible_action',
+    });
+  });
+
   it('stops at auth walls, scrolls once when taps run out, then backs out', () => {
     const exhausted = decision({ '1': 1, '2': 0, '3': 0, '4': 0 });
     const allTried = new Set(['CLICK:Where to?', 'CLICK:button', 'CLICK:Casa Flora', 'CLICK:Reserve']);
