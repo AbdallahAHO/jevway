@@ -7,7 +7,7 @@ agent ──browser_task(goal, values, done_when)──▶ jev-browse ──one 
 agent ◀── { status, url, steps, stuck? } ───────┘            (same Chrome chrome-devtools inspects)
 ```
 
-The only thing it needs is `TYPESAFE_API_KEY`. No second LLM is involved: the agent passes the text values it already knows, and Jev *selects* which value goes into which field (a speculative `value_for_<field>` head in the same request).
+The only thing it needs is `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY`. Other decision models, some of which read screenshots, are described [below](#models). No second LLM is involved: the agent passes the text values it already knows, and Jev *selects* which value goes into which field (a speculative `value_for_<field>` head in the same request).
 
 Built on the loop, DOM snapshot, and guards from [browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast) (MIT).
 
@@ -52,6 +52,31 @@ TYPESAFE_API_KEY=… node dist/cli.js --browser launch-headless \
 # prints the JSON summary; exit 0 only when status is "done"
 ```
 
+## Models
+
+`JEV_MODEL` (or `--model`) picks the decision model. All of them speak the same System One API through the same SDK. Jev uses the TypeSafe API when `TYPESAFE_API_KEY` is set. Everything else, and Jev without that key, goes through OpenRouter with `OPENROUTER_API_KEY`.
+
+| `JEV_MODEL` | Model | Screenshots | Fixture + live web (`pnpm verify`) | Journeys |
+| --- | --- | --- | --- | --- |
+| `jev` (default) | `jev-latest` / `typesafe/jev-1.13` | none (text-only) | 6/6, ~300 ms/request | 8/8 |
+| `pplx-decider` | `perplexity/pplx-decider-v1.1-27b` | `always` | 6/6 off and `always`, 0.4–1.3 s/request | 8/8 |
+| `clef-omni` | `cloudflare/clef-omni` | `always` | 4/6 (3/6 off) | 7/8 (8/8 off) |
+| `clef` | `cloudflare/clef` | none (images cost 16k tokens) | 6/6, 0.7–1.2 s/request | — |
+| `clef-flash` | `cloudflare/clef-flash` | `always` | 1/6 | — |
+| `gpt-6-luna` | `openai/gpt-6-luna-decisions` | `always` | 0–1/6: OpenAI refuses target questions (502) | — |
+
+**Jev is still the fastest model that passes everything. Perplexity's decider is the one that passes everything with screenshots. Clef passes text-only, but slower.**
+
+`JEV_SCREENSHOTS` (or `--screenshots`) controls screenshots for the vision models:
+
+- `always`: on every step.
+- `fallback`: only when a text-only decision would stop as uncertain or blocked, has its DONE rejected, or follows an action that changed nothing.
+- `off`: never.
+
+Journeys send one with each screen's judgments whenever the mode isn't `off`. Each observed element index is drawn on the image as a numbered box, taken from the snapshot's own rects. Covered elements get no box, and the overlay is removed before any input. The model still only selects observed ids.
+
+Every model except Jev judges commit risk **per click candidate by name**, in one follow-up request per step, instead of Jev's single page-level guess. Per-model thresholds, rules and results are in [docs/verification.md](docs/verification.md#decision-models-on-openrouter-2026-10-11).
+
 ## Tools
 
 **`browser_task`** takes `goal`, `url` | `tab`, `values`, `done_when`, `session`, `confirm_irreversible`, and `max_steps`. It returns:
@@ -69,7 +94,7 @@ TYPESAFE_API_KEY=… node dist/cli.js --browser launch-headless \
 | `done` | Jev chose DONE **and** a separate `done_when` check passed. A rejected DONE waits and re-decides, up to 3 times. |
 | `needs_input` | A field needs a value that isn't in `values`. Nothing is invented. |
 | `needs_confirmation` | The next click looks irreversible (pay, send, delete, submit). `confirm_irreversible: true` allows exactly one such click. |
-| `uncertain` | Operation or target confidence was below 0.3, or DONE could not be verified. |
+| `uncertain` | Operation or target confidence was below the model threshold (Jev 0.3; per model in `src/jev/model.ts`), or DONE could not be verified. |
 | `blocked` | No supported operation can progress, or 3 actions in a row changed nothing. |
 | `step_budget` | `max_steps` was reached (default 40). |
 
@@ -99,5 +124,5 @@ Traces go to `verify/out/`. Results are in [docs/verification.md](docs/verificat
 ## Limits
 
 - The DOM reader covers common HTML/ARIA controls only. Shadow roots, iframes, canvas, uploads, popup tabs, and nested scrolling aren't supported; use chrome-devtools for those.
-- Confidence and risk thresholds (0.3 and 0.5) are starting points, tuned on a small set of runs.
+- Confidence thresholds (per model, in `src/jev/model.ts`) and the 0.5 risk threshold are starting points, tuned on a small set of runs.
 - The commit-risk check is a speculative page-level judgment ("the click that best advances the goal"), not a per-element classifier.
