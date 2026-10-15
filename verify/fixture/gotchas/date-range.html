@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dashboard</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid #ddd; }
+  header h1 { margin: 0; font-size: 18px; flex: 1; }
+  /* Non-modal popup of plain divs that only look clickable: no role, no tabindex, just a pointer. */
+  #list { position: absolute; top: 48px; right: 16px; width: 200px; background: #fff; border: 1px solid #bbb; z-index: 5; }
+  .item { cursor: pointer; padding: 8px 12px; }
+  .cards { display: flex; gap: 16px; padding: 16px; }
+  .card { flex: 1; padding: 16px; border: 1px solid #ddd; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Dashboard</h1>
+  <button type="button" id="range" aria-haspopup="dialog" aria-expanded="false">Past 1 day</button>
+</header>
+<div id="list" role="dialog" aria-label="Date range" hidden>
+  <div class="item" data-range="30m">Past 30 minutes</div>
+  <div class="item" data-range="1h">Past 1 hour</div>
+  <div class="item" data-range="3h">Past 3 hours</div>
+  <div class="item" data-range="1d">Past 1 day</div>
+  <div class="item" data-range="7d">Past 7 days</div>
+  <div class="item" data-range="30d">Past 30 days</div>
+</div>
+<section class="cards">
+  <div class="card">Traces<br><strong>1,204</strong></div>
+  <div class="card">Total cost<br><strong>$38.20</strong></div>
+  <div class="card">p95 latency<br><strong>2.1 s</strong></div>
+  <div class="card">Errors<br><strong>14</strong></div>
+</section>
+<script>
+  // chaos=1: churn the list every 900 ms, shift the layout every 1.3 s, delay click effects by 300-800 ms.
+  const chaos = new URLSearchParams(location.search).get('chaos') === '1';
+  const later = (effect) => (chaos ? setTimeout(effect, 300 + Math.random() * 500) : effect());
+  if (chaos) {
+    const container = document.getElementById('list');
+    setInterval(() => container.replaceChildren(...container.cloneNode(true).childNodes), 900);
+    const banner = document.createElement('div');
+    banner.style.cssText = 'height:40px;background:#fe9;padding:12px;box-sizing:border-box';
+    banner.textContent = 'New version available';
+    setInterval(() => (banner.isConnected ? banner.remove() : document.body.prepend(banner)), 1300);
+  }
+  window.__fixture = { range: '1d', menuOpen: false };
+  const button = document.getElementById('range');
+  const menu = document.getElementById('list');
+  const setMenu = (open) => {
+    menu.hidden = !open;
+    button.setAttribute('aria-expanded', String(open));
+    window.__fixture.menuOpen = open;
+  };
+
+  document.addEventListener('click', (event) => {
+    const item = event.target.closest('.item');
+    if (event.target.closest('#range')) later(() => setMenu(menu.hidden));
+    if (item) {
+      const { range } = item.dataset;
+      const label = item.textContent;
+      later(() => {
+        window.__fixture.range = range;
+        button.textContent = label;
+        setMenu(false);
+      });
+    }
+  });
+</script>
+</body>
+</html>

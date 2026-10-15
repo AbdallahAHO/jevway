@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Users</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  h1 { margin: 0; padding: 16px; }
+  /* 50px rows: about 15 fit in the 780px viewport. */
+  #list a { display: block; height: 50px; line-height: 50px; padding: 0 16px; border-bottom: 1px solid #eee; }
+  #list span { color: #666; margin-left: 16px; }
+  #detail { padding: 16px; }
+</style>
+</head>
+<body>
+<h1>Users</h1>
+<div id="list"></div>
+<section id="detail" hidden></section>
+<script>
+  // chaos=1: churn the list every 900 ms, shift the layout every 1.3 s, delay click effects by 300-800 ms.
+  const chaos = new URLSearchParams(location.search).get('chaos') === '1';
+  const later = (effect) => (chaos ? setTimeout(effect, 300 + Math.random() * 500) : effect());
+  if (chaos) {
+    const container = document.getElementById('list');
+    setInterval(() => container.replaceChildren(...container.cloneNode(true).childNodes), 900);
+    const banner = document.createElement('div');
+    banner.style.cssText = 'height:40px;background:#fe9;padding:12px;box-sizing:border-box';
+    banner.textContent = 'New version available';
+    setInterval(() => (banner.isConnected ? banner.remove() : document.body.prepend(banner)), 1300);
+  }
+  window.__fixture = { opened: null };
+  const ids = Array.from({ length: 60 }, (_, i) => `u-${String(i + 1).padStart(4, '0')}`);
+  document.getElementById('list').innerHTML = ids
+    .map((id) => `<a href="#" data-id="${id}">${id}<span>user ${id.slice(2)} · free plan</span></a>`)
+    .join('');
+  const detail = document.getElementById('detail');
+  const setOpened = (id) => {
+    window.__fixture.opened = id;
+    document.getElementById('list').hidden = id !== null;
+    detail.hidden = id === null;
+    detail.innerHTML = id && `<h2>User ${id}</h2><a href="#" data-back>Back to users</a>`;
+  };
+
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('a');
+    if (!link) return;
+    event.preventDefault();
+    const { id } = link.dataset;
+    later(() => setOpened(id ?? null));
+  });
+</script>
+</body>
+</html>

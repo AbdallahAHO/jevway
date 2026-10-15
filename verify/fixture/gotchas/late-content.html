@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runs</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  main { padding: 16px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #ddd; }
+  .bar { height: 14px; width: 160px; background: #e4e4e4; border-radius: 4px; }
+  #detail { margin-top: 12px; padding: 12px; border: 1px solid #aaa; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Runs</h1>
+  <table>
+    <thead><tr><th>Name</th><th>Status</th><th>Duration</th></tr></thead>
+    <tbody id="list" aria-busy="true"></tbody>
+  </table>
+  <section id="detail" hidden></section>
+</main>
+<script>
+  // chaos=1: churn the list every 900 ms, shift the layout every 1.3 s, delay click effects by 300-800 ms.
+  const chaos = new URLSearchParams(location.search).get('chaos') === '1';
+  const later = (effect) => (chaos ? setTimeout(effect, 300 + Math.random() * 500) : effect());
+  if (chaos) {
+    const container = document.getElementById('list');
+    setInterval(() => container.replaceChildren(...container.cloneNode(true).childNodes), 900);
+    const banner = document.createElement('div');
+    banner.style.cssText = 'height:40px;background:#fe9;padding:12px;box-sizing:border-box';
+    banner.textContent = 'New version available';
+    setInterval(() => (banner.isConnected ? banner.remove() : document.body.prepend(banner)), 1300);
+  }
+  window.__fixture = { loaded: false, opened: null };
+  const list = document.getElementById('list');
+  // Skeleton rows: grey bars with no text.
+  list.innerHTML = '<tr><td><div class="bar"></div></td><td><div class="bar"></div></td><td><div class="bar"></div></td></tr>'.repeat(5);
+  const runs = [
+    ['nightly-build', 'success', '12m'], ['nightly-eval', 'success', '47m'], ['weekly-eval', 'failed', '2h 03m'],
+    ['smoke-test', 'success', '3m'], ['release-check', 'running', '8m'], ['canary', 'success', '21m'],
+  ];
+  // The real rows arrive 2.5 s after load.
+  setTimeout(() => {
+    list.innerHTML = runs
+      .map(([name, status, duration]) => `<tr><td><a href="#" data-id="${name}">${name}</a></td><td>${status}</td><td>${duration}</td></tr>`)
+      .join('');
+    list.removeAttribute('aria-busy');
+    window.__fixture.loaded = true;
+  }, 2500);
+
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('a[data-id]');
+    if (!link) return;
+    event.preventDefault();
+    const { id } = link.dataset;
+    later(() => {
+      document.getElementById('detail').hidden = false;
+      document.getElementById('detail').textContent = `Run ${id}`;
+      window.__fixture.opened = id;
+    });
+  });
+</script>
+</body>
+</html>

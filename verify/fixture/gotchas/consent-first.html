@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Docs</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  main { padding: 16px; }
+  #q { width: 360px; padding: 6px 8px; }
+  /* A cookie banner that sits over the search box until it is answered. */
+  #consent { position: fixed; left: 40px; top: 40px; width: 520px; padding: 16px; z-index: 10; background: #fff; border: 1px solid #888; box-shadow: 0 4px 24px #0006; }
+  #list a { display: block; padding: 10px 0; border-bottom: 1px solid #eee; }
+  #list small { display: block; color: #666; }
+  #detail { margin-top: 12px; padding: 12px; border: 1px solid #aaa; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Docs</h1>
+  <input type="search" id="q" aria-label="Search docs" placeholder="Search docs">
+  <button type="button" id="go">Search</button>
+  <div id="list"></div>
+  <section id="detail" hidden></section>
+</main>
+<div id="consent" role="dialog" aria-modal="true" aria-label="Cookie consent">
+  <p>We use cookies to remember your searches.</p>
+  <button type="button" data-consent="accepted">Accept all</button>
+  <button type="button" data-consent="rejected">Reject all</button>
+</div>
+<script>
+  // chaos=1: churn the list every 900 ms, shift the layout every 1.3 s, delay click effects by 300-800 ms.
+  const chaos = new URLSearchParams(location.search).get('chaos') === '1';
+  const later = (effect) => (chaos ? setTimeout(effect, 300 + Math.random() * 500) : effect());
+  if (chaos) {
+    const container = document.getElementById('list');
+    setInterval(() => container.replaceChildren(...container.cloneNode(true).childNodes), 900);
+    const banner = document.createElement('div');
+    banner.style.cssText = 'height:40px;background:#fe9;padding:12px;box-sizing:border-box';
+    banner.textContent = 'New version available';
+    setInterval(() => (banner.isConnected ? banner.remove() : document.body.prepend(banner)), 1300);
+  }
+  window.__fixture = { consent: null, query: '', opened: null };
+  const docs = [
+    ['result-1', 'Understanding latency in LLM traces', 'Where the time goes in a single request.'],
+    ['result-2', 'Reducing p95 latency with caching', 'Cache prompts and tool results.'],
+    ['result-3', 'Latency budgets for agents', 'Set a time limit per step.'],
+    ['result-4', 'Streaming and time to first token', 'Perceived latency of long answers.'],
+    ['result-5', 'Setting up a project', 'Create keys and invite your team.'],
+  ];
+
+  const search = () => {
+    const query = document.getElementById('q').value.trim();
+    const hits = docs.filter(([, title, text]) => `${title} ${text}`.toLowerCase().includes(query.toLowerCase()));
+    document.getElementById('list').innerHTML =
+      query && hits.length
+        ? hits.map(([id, title, text]) => `<a href="#" data-id="${id}">${title}<small>${text}</small></a>`).join('')
+        : 'No results';
+    window.__fixture.query = query;
+  };
+  document.getElementById('q').addEventListener('keydown', (event) => event.key === 'Enter' && search());
+
+  document.addEventListener('click', (event) => {
+    const answer = event.target.closest('[data-consent]');
+    if (answer) {
+      const { consent } = answer.dataset;
+      later(() => {
+        document.getElementById('consent').remove();
+        window.__fixture.consent = consent;
+      });
+    }
+    if (event.target.id === 'go') later(search);
+    const link = event.target.closest('#list a');
+    if (link) {
+      event.preventDefault();
+      const { id } = link.dataset;
+      later(() => {
+        document.getElementById('detail').hidden = false;
+        document.getElementById('detail').textContent = `${docs.find(([key]) => key === id)[1]} (${id})`;
+        window.__fixture.opened = id;
+      });
+    }
+  });
+</script>
+</body>
+</html>

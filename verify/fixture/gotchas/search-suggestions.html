@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Traces</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  main { position: relative; max-width: 560px; padding: 16px; }
+  /* Like Langfuse's trace search: an editor div, not an input. */
+  #search { box-sizing: border-box; width: 100%; min-height: 20px; padding: 6px 8px; border: 1px solid #999; }
+  /* Suggestions are painted over the results table and ignore Escape. */
+  #suggestions { position: absolute; left: 16px; right: 16px; top: 54px; z-index: 10; background: #fff; border: 1px solid #888; }
+  #suggestions div { padding: 8px 10px; cursor: pointer; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+  th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #ddd; }
+  #list tr { cursor: pointer; }
+  #detail { margin-top: 12px; padding: 12px; border: 1px solid #aaa; }
+</style>
+</head>
+<body>
+<main>
+  <div id="search" role="combobox" contenteditable="true" aria-label="Search traces" aria-expanded="false" aria-controls="suggestions"></div>
+  <div id="suggestions" role="listbox" aria-label="Suggestions" hidden></div>
+  <table>
+    <thead><tr><th>Name</th><th>Input</th></tr></thead>
+    <tbody id="list"></tbody>
+  </table>
+  <section id="detail" hidden></section>
+</main>
+<script>
+  // chaos=1: churn the list every 900 ms, shift the layout every 1.3 s, delay click effects by 300-800 ms.
+  const chaos = new URLSearchParams(location.search).get('chaos') === '1';
+  const later = (effect) => (chaos ? setTimeout(effect, 300 + Math.random() * 500) : effect());
+  if (chaos) {
+    const container = document.getElementById('list');
+    setInterval(() => container.replaceChildren(...container.cloneNode(true).childNodes), 900);
+    const banner = document.createElement('div');
+    banner.style.cssText = 'height:40px;background:#fe9;padding:12px;box-sizing:border-box';
+    banner.textContent = 'New version available';
+    setInterval(() => (banner.isConnected ? banner.remove() : document.body.prepend(banner)), 1300);
+  }
+  window.__fixture = { query: '', suggestionsOpen: false, opened: null };
+  const traces = [
+    ['trace-sql', 'text-to-sql', 'Show revenue by month for 2025'],
+    ['trace-paris', 'weather-agent', 'What is the weather in Paris this weekend?'],
+    ['trace-summary', 'summarizer', 'Summarize the Q3 planning notes'],
+    ['trace-berlin', 'weather-agent', 'What is the weather in Berlin tomorrow?'],
+    ['trace-train', 'travel-agent', 'Find a train from Berlin to Munich on Friday'],
+    ['trace-translate', 'translator', 'Translate the release notes into German'],
+    ['trace-tokyo', 'weather-agent', 'Will the weather in Tokyo be rainy on Friday?'],
+    ['trace-refund', 'support-bot', 'How do I get a refund for my order?'],
+    ['trace-review', 'code-review', 'Review this pull request for race conditions'],
+    ['trace-lisbon', 'weather-agent', 'Is the weather in Lisbon good for a beach day?'],
+    ['trace-invoice', 'extractor', 'Extract the total from this invoice'],
+    ['trace-haiku', 'poet', 'Write a haiku about autumn'],
+    ['trace-hotel', 'travel-agent', 'Book a hotel in Berlin near the main station'],
+    ['trace-sentiment', 'classifier', 'Classify the sentiment of these reviews'],
+    ['trace-recipe', 'chef', 'Suggest a vegetarian dinner under 30 minutes'],
+    ['trace-billing', 'support-bot', 'Where can I change my billing address?'],
+    ['trace-churn', 'text-to-sql', 'List customers who churned last quarter'],
+    ['trace-hello', 'chatbot', 'Hello, what can you do?'],
+    ['trace-seo', 'writer', 'Draft a meta description for the pricing page'],
+    ['trace-math', 'tutor', 'Explain the chain rule with an example'],
+  ];
+  const suggestions = ['weather', 'weather-agent', 'weather alerts', 'weather forecast'];
+  const search = document.getElementById('search');
+  const menu = document.getElementById('suggestions');
+  const list = document.getElementById('list');
+
+  const showRows = (query) => {
+    const rows = traces.filter(([, name, input]) => `${name} ${input}`.toLowerCase().includes(query.toLowerCase()));
+    list.innerHTML = rows.map(([id, name, input]) => `<tr data-id="${id}"><td>${name}</td><td>${input}</td></tr>`).join('');
+    window.__fixture.query = query;
+  };
+  const setMenu = (open) => {
+    menu.hidden = !open;
+    search.setAttribute('aria-expanded', String(open));
+    window.__fixture.suggestionsOpen = open;
+  };
+  showRows('');
+
+  search.addEventListener('input', () => {
+    menu.innerHTML = suggestions.map((text) => `<div role="option">${text}</div>`).join('');
+    setMenu(search.innerText.trim() !== '');
+  });
+  // Enter filters the table; the list stays open, and Escape is not handled at all.
+  search.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    showRows(search.innerText.trim());
+  });
+  // The suggestion list closes only on a press outside it and the search bar.
+  document.addEventListener('pointerdown', (event) => {
+    if (!menu.contains(event.target) && !search.contains(event.target)) setMenu(false);
+  });
+  document.addEventListener('click', (event) => {
+    const option = event.target.closest('[role=option]');
+    const row = event.target.closest('#list tr');
+    if (option) {
+      const text = option.textContent;
+      later(() => ((search.innerText = text), showRows(text)));
+    }
+    if (row) {
+      const { id } = row.dataset;
+      later(() => {
+        document.getElementById('detail').hidden = false;
+        document.getElementById('detail').textContent = `Trace ${id}: ${traces.find(([key]) => key === id)[2]}`;
+        window.__fixture.opened = id;
+      });
+    }
+  });
+</script>
+</body>
+</html>
