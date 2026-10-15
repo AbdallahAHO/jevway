@@ -359,7 +359,7 @@ export class JourneySession {
       extraQuestions: screenQuestions(this.doc.screens.map((screen) => visitedSummary(screen, this.#excerpts))),
       compactRules: this.#options.compactRules,
       ...(this.#options.elementRisk && { elementRisk: 'ranked' as const }),
-      ...(seesScreen && { screenshot: await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page.w) }),
+      ...(seesScreen && { screenshot: await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page) }),
     });
     const judgments = readScreenJudgments(decision.answers);
     // Mobile emulation widens the layout viewport to fit overflowing content, so compare against the device width.

@@ -192,7 +192,7 @@ export class BrowserTask {
     const { goal, values, doneWhen, screenshots, compactRules, elementRisk } = this.#options;
     const decideOn = async (withScreenshot: boolean) => {
       const screenshot = withScreenshot
-        ? await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page.w)
+        ? await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page)
         : undefined;
       const decision = await decide(this.#ask, {
         page,

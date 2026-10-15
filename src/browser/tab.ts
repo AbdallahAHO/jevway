@@ -115,16 +115,19 @@ export class Tab {
    * element index. The overlay is removed before this returns, so it never meets a freshness check or input.
    *
    * @example
-   * const jpeg = await tab.markedScreenshot(buildActionSpace(page.actions).marks, page.w);
+   * const jpeg = await tab.markedScreenshot(buildActionSpace(page.actions).marks, page);
    */
   async markedScreenshot(
     marks: { label: string; node?: number; rect: NonNullable<PageAction['rect']> }[],
-    viewportWidth: number,
+    viewport: { w: number; h: number },
   ) {
+    const pixelRatio = Number(await this.#evaluate('devicePixelRatio')) || 1;
     await this.#evaluate(`(${DRAW_MARKS})(${JSON.stringify(marks)})`);
     try {
-      // About 1 megapixel or less is all the model reads; smaller images also keep the request light.
-      return await this.screenshot({ format: 'jpeg', quality: 60, scale: Math.min(1, 1024 / viewportWidth) });
+      // Output pixels are CSS pixels × scale × pixel ratio. Stay within 1024 wide and 1536 tall: models read about
+      // a megapixel, and Jev rejects any side over 1568 px (a phone at 2× is 786×1704 unscaled).
+      const scale = Math.min(1, 1024 / (viewport.w * pixelRatio), 1536 / (viewport.h * pixelRatio));
+      return await this.screenshot({ format: 'jpeg', quality: 60, scale });
     } finally {
       await this.#evaluate(`document.getElementById('${MARKS_ID}')?.remove()`).catch(() => undefined);
     }
