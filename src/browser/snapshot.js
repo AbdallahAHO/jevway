@@ -179,21 +179,31 @@
     const text = (e.closest('tr,[role="row"],li,label')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     return text && 'Select: ' + text;
   };
-  for (const e of [...roots.flatMap(deepQuery), ...popupItems]) {
-    if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
+  const candidates = [...roots.flatMap(deepQuery), ...popupItems];
+  const eligible = (e) => safe(e) && visible(e) && !e.matches(':disabled') && !e.closest('[aria-disabled="true"]');
+  const outOfView = (r) => {
+    const x = r.x + r.width / 2,
+      y = r.y + r.height / 2;
+    return r.width <= 0 || r.height <= 0 || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight;
+  };
+  // jev-browse: an off-screen link, button or row holding a value the caller supplied is likely the target, but
+  // only when nothing on screen holds it, and at most 5 are listed: a common value ("ERROR") would flood the list.
+  const holdsWanted = (e, rname) =>
+    ['link', 'button', 'row'].includes(rname) && wanted.some((w) => (e.innerText || '').toLowerCase().includes(w));
+  const wantedOnscreen =
+    wanted.length > 0 &&
+    candidates.some((e) => eligible(e) && !outOfView(cache.clickRect(e)) && holdsWanted(e, role(e)));
+  let wantedListed = 0;
+  for (const e of candidates) {
+    if (!eligible(e)) continue;
     const r = cache.clickRect(e),
-      x = r.x + r.width / 2,
       y = r.y + r.height / 2,
       rname = role(e);
     // jev-browse: a sortable header scrolled sideways out of its table is still a choice; clicking scrolls it in.
     const sideways = rname === 'columnheader' && y >= 0 && y < innerHeight && e.getBoundingClientRect().width > 0;
-    const offscreen = r.width <= 0 || r.height <= 0 || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight;
-    // jev-browse: an off-screen link, button or row holding a value the caller supplied is likely the target.
-    const wantedOffscreen =
-      offscreen &&
-      wanted.length > 0 &&
-      ['link', 'button', 'row'].includes(rname) &&
-      wanted.some((w) => (e.innerText || '').toLowerCase().includes(w));
+    const offscreen = outOfView(r);
+    const wantedOffscreen = offscreen && !wantedOnscreen && wantedListed < 5 && holdsWanted(e, rname);
+    if (wantedOffscreen) wantedListed++;
     if (!rname || (offscreen && !sideways && !wantedOffscreen)) continue;
     if (rname === 'gridcell' && e.querySelector('button,[role="button"]')) continue;
     const base = {
