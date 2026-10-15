@@ -27,7 +27,8 @@
     "verify:reader": "node verify/reader.ts",
     "verify:journeys": "node --env-file-if-exists=.env verify/journeys.ts",
     "verify:real": "node --env-file-if-exists=.env verify/real-world.ts",
-    "verify:langfuse": "node --env-file-if-exists=.env verify/langfuse.ts"
+    "verify:langfuse": "node --env-file-if-exists=.env verify/langfuse.ts",
+    "verify:redteam": "node --env-file-if-exists=.env verify/redteam.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
