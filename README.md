@@ -54,11 +54,11 @@ TYPESAFE_API_KEY=… node dist/cli.js --browser launch-headless \
 
 ## Models
 
-`JEV_MODEL` (or `--model`) picks the decision model. All of them speak the same System One API through the same SDK. Jev uses the TypeSafe API when `TYPESAFE_API_KEY` is set. Everything else, and Jev without that key, goes through OpenRouter with `OPENROUTER_API_KEY`.
+`JEV_MODEL` (or `--model`) picks the decision model. All of them speak the same System One API through the same SDK. With `TYPESAFE_API_KEY` set, Jev runs on the TypeSafe API as `jev-1.14.0`: screenshots go in as `assets` and Box questions are available. Everything else, and Jev without that key, goes through OpenRouter with `OPENROUTER_API_KEY`. OpenRouter drops TypeSafe's `assets` map, so Box only runs on the direct route.
 
 | `JEV_MODEL` | Model | Screenshots | Fixture + live web (`pnpm verify`) | Journeys |
 | --- | --- | --- | --- | --- |
-| `jev` (default) | `typesafe/jev-1.14` (OpenRouter) / `jev-latest` (TypeSafe API, text-only) | `fallback` | 6/6 off and `fallback`, 5–6/6 `always`, ~250 ms/request | 8/8 off and `always` |
+| `jev` (default) | `jev-1.14.0` (TypeSafe API: `assets` + Box) / `typesafe/jev-1.14` (OpenRouter) | `fallback` | direct: 7/7 `fallback` and `always`, 6/6 off, ~240 ms/request | 8/8 off and `always` |
 | `pplx-decider` | `perplexity/pplx-decider-v1.1-27b` | `always` | 6/6 off and `always`, 0.4–1.3 s/request | 8/8 |
 | `clef-omni` | `cloudflare/clef-omni` | `always` | 4/6 (3/6 off) | 7/8 (8/8 off) |
 | `clef` | `cloudflare/clef` | none (images cost 16k tokens) | 6/6, 0.7–1.2 s/request | — |
@@ -75,11 +75,21 @@ TYPESAFE_API_KEY=… node dist/cli.js --browser launch-headless \
 
 Journeys send one with each screen's judgments whenever the mode isn't `off`. Each observed element index is drawn on the image as a numbered box, taken from the snapshot's own rects. Covered elements get no box, and the overlay is removed before any input. The model still only selects observed ids.
 
+### Box (Jev 1.14 on the TypeSafe API)
+
+On every request that carries a screenshot, Box questions run alongside the decision. Box answers always land back on an **observed element** (`src/jev/box.ts`), with one opt-in exception:
+
+- **Cross-check:** Box asks where the next click belongs. If it confidently points at a different element than Jev chose, and the box doesn't also cover Jev's choice, the step hands back as `uncertain`.
+- **Covered check:** for a chosen click, a follow-up asks whether the target is visibly unobstructed and boxes it. A clearly covered target is fed back as history ("covered; clear it first") up to twice, then hands back.
+- **Rescue:** when Jev is BLOCKED, unsure, or claims DONE that `done_when` rejects, and the box confidently covers an observed element, jev-browse clicks that element. It is still gated by the box's own commit-risk score.
+- **Coordinate clicks (opt-in):** `allow_coordinate_clicks` / `--allow-coordinate-clicks`. When Jev is stuck and the box matches nothing the DOM reader reported (canvas, iframe), jev-browse clicks the box centre after a hit-test. Irreversible-looking clicks still need `confirm_irreversible`.
+- **Journeys:** each screen's primary action is boxed (a dashed outline in the viewer, `primary_action` in reports). A tappable control with no DOM element becomes a `control_not_in_dom` QA finding.
+
 Every model except Jev judges commit risk **per click candidate by name**, in one follow-up request per step, instead of Jev's single page-level guess. Per-model thresholds, rules and results are in [docs/verification.md](docs/verification.md#decision-models-on-openrouter-2026-10-11).
 
 ## Tools
 
-**`browser_task`** takes `goal`, `url` | `tab`, `values`, `done_when`, `session`, `confirm_irreversible`, and `max_steps`. It returns:
+**`browser_task`** takes `goal`, `url` | `tab`, `values`, `done_when`, `session`, `confirm_irreversible`, `max_steps`, and `allow_coordinate_clicks` (new sessions only). It returns:
 
 ```json
 { "session": "be63210d", "status": "needs_input", "reason": "Blocked: no supplied value for \"Email address\"",
@@ -91,7 +101,7 @@ Every model except Jev judges commit risk **per click candidate by name**, in on
 
 | Status | Meaning |
 | --- | --- |
-| `done` | Jev chose DONE **and** a separate `done_when` check passed. A rejected DONE waits and re-decides, up to 3 times. |
+| `done` | Jev chose DONE **and** a separate `done_when` check passed, or that check alone scored ≥ 0.9. A rejected DONE waits and re-decides, up to 3 times. |
 | `needs_input` | A field needs a value that isn't in `values`. Nothing is invented. |
 | `needs_confirmation` | The next click looks irreversible (pay, send, delete, submit). `confirm_irreversible: true` allows exactly one such click. |
 | `uncertain` | Operation or target confidence was below the model threshold (Jev 0.3; per model in `src/jev/model.ts`), or DONE could not be verified. |
@@ -102,7 +112,8 @@ Every model except Jev judges commit risk **per click candidate by name**, in on
 
 ## Safety
 
-- Model output only ever selects an observed element index. It never becomes a selector, coordinate, script, or text.
+- Model output only ever selects an observed element index. It never becomes a selector, script, or text, and it becomes a coordinate only through the opt-in coordinate click (stuck, a confident box matching no observed element, a hit-test, and the commit-risk gate).
+- Typing uses real key events per character, so autocompletes register it. Enter is a separate fixed key, offered only right after typing into a search-like field, and pressed only while that field still has focus.
 - Every input re-checks the page for freshness and for covered targets first (from jev-ultrafast).
 - Page text is treated as untrusted data in every instruction.
 
@@ -111,18 +122,23 @@ Every model except Jev judges commit risk **per click candidate by name**, in on
 ```bash
 pnpm test      # offline: action space, request shape, answer validation, task-loop rules
 pnpm verify    # live: headless Chrome + real Jev, checked against independent ground truth
+pnpm verify:real   # live public sites, a fresh browser per run, 5 runs each (JEV_REAL_RUNS, JEV_REAL_ONLY)
 ```
 
 `pnpm verify` runs:
 
 - **Local booking fixture:** async autocomplete, native select, checkbox, async results, then open a result. Next, `needs_input` for a missing email, then `needs_confirmation` on "Confirm booking and pay", then the confirmed booking. All four scenarios share one session.
 - **Real Wikipedia search.**
+- **Canvas-only control** (Box profiles with screenshots): no click without the opt-in, and the game starts with it.
 - **MCP stdio round trip.**
+
+`pnpm verify:real` runs Wikipedia, MDN, GitHub, Hacker News, npm, Booking.com and Google Flights. Every task stops before login or payment, passes are checked against the final URL, and bot walls (Cloudflare, captchas) are reported apart from failures.
 
 Traces go to `verify/out/`. Results are in [docs/verification.md](docs/verification.md).
 
 ## Limits
 
-- The DOM reader covers common HTML/ARIA controls only. Shadow roots, iframes, canvas, uploads, popup tabs, and nested scrolling aren't supported; use chrome-devtools for those.
+- The DOM reader covers common HTML/ARIA controls, including inside open shadow roots. Closed shadow roots, iframes, canvas, uploads, popup tabs, and nested scrolling aren't read. Box can see canvas and iframe controls, and click them with the opt-in; otherwise use chrome-devtools.
+- Only on-screen elements are listed; Jev scrolls to reveal more.
 - Confidence thresholds (per model, in `src/jev/model.ts`) and the 0.5 risk threshold are starting points, tuned on a small set of runs.
-- The commit-risk check is a speculative page-level judgment ("the click that best advances the goal"), not a per-element classifier.
+- Jev's commit-risk check is a speculative page-level judgment ("the click that best advances the goal"). Other models score each candidate, and Box rescues use the box's own score.

@@ -101,3 +101,79 @@ Jev 1.14 is served on OpenRouter as `typesafe/jev-1.14-20261014`. The `jev` prof
 | `pnpm verify:journeys` | **8/8** | — | **8/8** after the size fix |
 
 The `always` misses were all the same case. Jev reached Casa Flora correctly, but with the screenshot attached its `done_when` check scored 0.35–0.46, against the 0.5 bar. Text-only, that check passes. This matches TypeSafe's note that multimodal is weaker than text, and it is why `fallback` is the default. Screenshots also picked up visual journey patterns (`bottom_navigation`) that the text-only run missed.
+
+## Jev 1.14 on the TypeSafe API: assets, Box, and real sites (2026-10-15)
+
+Setup: `jev-1.14.0` on the TypeSafe API with SDK 0.7.0. Screenshots go in as an `assets` image under `state.screenshot`, with `TypeSafe-Danger-Zone-Images: true`. Headless Chrome on macOS (arm64).
+
+**Images through the direct API.** On the cookie-wall screenshot, one request with the image and 4 questions took 376 ms and 1,488 tokens:
+
+- Modal detection: 1.0.
+- Colour of "Accept all": black at 1.0.
+- Box on "Accept all": 70–75 % of the height (actual ~72 %), confidence 0.77.
+- Box on the search bar: 10–17 % (actual ~13 %), confidence 0.87.
+
+Through OpenRouter, the same Jev model had answered the colour question at chance.
+
+**`pnpm verify`, direct route**
+
+| Mode | Result |
+| --- | --- |
+| off | 6/6 (the canvas scenario needs screenshots and is skipped) |
+| `fallback` (default) | 7/7 |
+| `always` | 7/7 |
+
+`always` passed three runs in a row after the box-padding fix. The new canvas scenario checks both halves of the opt-in. Without `allowCoordinateClicks`, a Start button drawn on a `<canvas>` got no click (ground truth: not started, 0 misses). With the opt-in, one `CLICK_AT` "canvas @ 280,265" started the game. The box had confidence 0.93, presence 0.99 and commit risk 0.01.
+
+**`pnpm verify:journeys`, direct route:** 8/8 with screenshots off and 8/8 with `always`. Primary-action boxes land on the expected controls ("Confirm and pay" 0.83 on checkout, "Where to?" on home). There were no `control_not_in_dom` findings, as expected: the fixture has no canvas controls.
+
+### Real sites (`pnpm verify:real`, 5 runs each)
+
+A fresh headless Chrome per run, with ground truth from the final URL. Bot walls don't count.
+
+| Site | off | `fallback` (default) | `always` |
+| --- | --- | --- | --- |
+| Wikipedia → Rosetta Stone | 5/5 | 5/5 | 5/5 |
+| MDN → `Array.prototype.flat` | 5/5 | 5/5 | 5/5 |
+| GitHub → vercel/next.js | 2/5 | 5/5 | 5/5 |
+| Hacker News → first story's comments | 5/5 | 5/5 | 5/5 |
+| npm → zod | bot wall ×5 | bot wall ×5 | bot wall ×5 |
+| Booking.com → Lisbon results with dates | 0/5 | 0/5 | 0/5 |
+| Google Flights → LIS→BER one-way with a date | 5/5 | 5/5 (4/5 on the final re-run) | 5/5 |
+| **Total (excluding bot walls)** | **22/30** | **25/30** (24/30 re-run) | **25/30** |
+| Median request | ~230 ms | ~240 ms | 300–700 ms |
+| Screenshots | 0 | 32 | 301 |
+
+`fallback` matches `always` on passes, at about half the time and a tenth of the screenshots, so it stays the default. On GitHub, Jev picked the right step after typing, but at 0.15–0.28 confidence; one screenshot-backed second look per run fixed it.
+
+**What the real sites exposed and what changed**
+
+1. **Search fields that only submit on Enter** (GitHub, npm). PRESS_ENTER is a fixed key, offered only right after typing into a search-like field, and pressed only while that field still has focus.
+2. **Controls in open shadow DOM** (MDN's `<mdn-search-button>`). The snapshot now reads open shadow roots, and every hit-test resolves through them.
+3. **Autocompletes that ignore `insertText`** (Booking showed "Trending destinations" for "Lisbon"). Typing now sends real key events per character; text with line breaks keeps the one-shot insert.
+4. **A typed value swallowed by a popup.** History now records `value_kept: false`, so Jev retypes instead of treating the field as filled.
+5. **Busy pages with rotating content** made every retype stale. Typing now uses the element-level freshness check that clicks already used.
+6. **A next-step head that wanders on after reaching the goal** (Hacker News: done check 0.91, operation "click the logo"). A `done_when` judgment ≥ 0.9 now ends the task as done.
+7. **Covering banners and below-the-fold dates.** Two rules were added to `NEXT_ACTION`: dismiss covering consent and sign-in layers (preferring Decline, Reject or Close), and scroll to reveal a missing date or option before paging. The fixture still passes with them.
+8. **Ground truth that passed falsely.** Google Flights put `tfs=` in the URL from the form state alone, so the check now requires `/travel/flights/search`. npm served Cloudflare's challenge at `/package/zod` itself, so a bot wall now overrides the URL.
+
+**What Box contributed on real sites** (`always`, 35 runs):
+
+- **Cross-check:** of 118 click steps with a matched box, 81 agreed with Jev. The 37 disagreements were all loose boxes that also covered Jev's choice (padded 16 px), so none caused a stop.
+- **Covered check:** fed back as history 8 times. None of those runs failed.
+- **Rescue:** never fired on these sites.
+
+On real sites Box is a safety net, not a measured success gain. Its clear win is the canvas case, which no DOM reader can do.
+
+**Thresholds tuned on these runs** (one machine, these sites):
+
+- Box counts at ≥ 0.5 presence and confidence.
+- A target counts as covered below 0.1 visibility *and* below 0.1 box overlap. Dense calendar grids scored 0.15–0.3 visibility while plainly visible.
+- `done_when` evidence ends the task at ≥ 0.9.
+
+### Still open
+
+- **Booking.com is 0/5 in every mode.** It is A/B-tested between "Search in your own words" and "Enter destination", its calendar opens below the fold of a 780 px viewport, and it served a `chal_t=` challenge on 2 of 15 runs. Runs either stall at low confidence or hit the step budget.
+- **npm** blocks headless Chrome with Cloudflare. In visible (non-headless) Chrome the search reached `/package/zod`, but the challenge was served there too.
+- **Navigation errors end a run.** Google Flights' one failure was "Page did not settle within 1s" while opening the tab.
+- **Each cell is 5 runs on one machine and one network.** Sites change their layouts.
