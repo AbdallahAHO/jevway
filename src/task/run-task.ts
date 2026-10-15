@@ -181,9 +181,10 @@ export class BrowserTask {
   }
 
   async run(): Promise<TaskSummary> {
-    await this.#recording?.start(this.#tab);
+    // The recording is for people: a browser failure while recording must not change or hang the run's outcome.
+    await this.#recording?.start(this.#tab).catch(() => undefined);
     const summary = await this.#loop();
-    await this.#recording?.finish(this.#tab, summary);
+    await this.#recording?.finish(this.#tab, summary).catch(() => undefined);
     return summary;
   }
 

@@ -346,6 +346,22 @@ describe('screenshots', () => {
     expect(readFileSync(join(recordDir, 'index.html'), 'utf8')).toContain('<img src="01.jpg"');
   });
 
+  it('returns the run\'s own status when its recording cannot start or take the final shot', async () => {
+    const { ask } = scriptedJev([{ operation: 'DONE' }]);
+    const { tab, asTab } = fakeTab();
+    const dropped = async () => {
+      throw new Error('Browser connection closed');
+    };
+    tab.send = dropped;
+    tab.markedScreenshot = async (_marks, _viewport, options) => {
+      if (options?.sharp) return dropped();
+      return 'SCREENSHOT';
+    };
+    const recordDir = mkdtempSync(join(tmpdir(), 'jev-record-'));
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open', recordDir }).run();
+    expect(summary.status).toBe('done');
+  });
+
   it('holds each video frame until the next, without freezing on idle stretches', () => {
     expect(frameDurations([10, 10.2, 19, 19.01]).map((s) => Number(s.toFixed(3)))).toEqual([0.2, 1.5, 0.033, 1.5]);
   });
