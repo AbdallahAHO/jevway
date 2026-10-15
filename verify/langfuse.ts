@@ -135,7 +135,7 @@ const JOBS: Job[] = [
     job: 'When the classifier seems off, I want to check one human-labelled example against the chat it came from, so I can trust the ground truth.',
     goal: `Go to Datasets, open the conversation-signal-groundtruth-v0 dataset, open one of its items, and then open the trace that item came from. ${READ_ONLY}`,
     terseGoal: `Open the source trace of a conversation-signal-groundtruth-v0 dataset item. ${READ_ONLY}`,
-    doneWhen: 'The source trace of a conversation-signal-groundtruth-v0 dataset item is open.',
+    doneWhen: "A trace's own view is open: a trace ID heading with its tree of observations (not a dataset item page).",
     check: 'A trace is open (traceId/peek in the URL or a /traces/ page)',
     passes: (url) => openTrace(url),
   },
