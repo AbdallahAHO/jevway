@@ -86,3 +86,18 @@ Before per-element risk, `clef-omni` with screenshots off paid in this scenario.
 - **Jev's autopilot gate.** Jev keeps the page-level commit-risk head, so its autopilot still checks only the top-ranked tap. Jev passed the journeys run 8/8, but a lower-ranked irreversible tap isn't scored.
 - **Screenshots go out twice.** The per-element risk follow-up reuses the decision's `state`, so in `always` mode each click step sends the screenshot twice. That's why `pplx-decider` used 65k tokens on the fixture with `always` and 34k with screenshots off.
 - **One run per cell.** Settings other than Jev's are tuned on these runs and should be re-checked on real sites.
+
+## Jev 1.14 with images (2026-10-15)
+
+Jev 1.14 is served on OpenRouter as `typesafe/jev-1.14-20261014`. The `jev` profile now uses it on OpenRouter; with `TYPESAFE_API_KEY` set, `jev` stays text-only on `jev-latest`. These runs used a separate `jev-1.14` profile with identical settings, before it replaced 1.13 in `jev`.
+
+**Image input.** TypeSafe's native image format (an `assets` map with the `TypeSafe-Danger-Zone-Images` header) does not survive OpenRouter: the map is dropped. Requests the docs say must fail (an unreferenced asset, invalid base64) returned 200, and token counts matched with and without the image. OpenRouter's own `image_url` parts at the front of a `state` array do work. On "what color is the Accept all button?" Jev 1.14 put P(black) at 1.0, using about 1,000 tokens per image, with or without the header. The direct TypeSafe route would need the `assets` format and SDK 0.7.0, which isn't wired up.
+
+**Size limit.** Jev rejects images over 1568 px on any side. A phone viewport at 2× pixel ratio came out at 786×1704, so screenshots are now scaled to fit within 1024×1536 output pixels.
+
+| Run | Screenshots off | `fallback` (default) | `always` |
+| --- | --- | --- | --- |
+| `pnpm verify` | **6/6**, ~250 ms median | **6/6** (no screenshot needed) | 6/6 once, 5/6 twice |
+| `pnpm verify:journeys` | **8/8** | — | **8/8** after the size fix |
+
+The `always` misses were all the same case. Jev reached Casa Flora correctly, but with the screenshot attached its `done_when` check scored 0.35–0.46, against the 0.5 bar. Text-only, that check passes. This matches TypeSafe's note that multimodal is weaker than text, and it is why `fallback` is the default. Screenshots also picked up visual journey patterns (`bottom_navigation`) that the text-only run missed.

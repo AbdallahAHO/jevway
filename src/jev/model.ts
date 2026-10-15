@@ -28,7 +28,7 @@ export interface ModelProfile {
 
 type Profile = Omit<ModelProfile, 'name'> & {
   /** A direct route used instead when its key is set (Jev on the TypeSafe API). */
-  direct?: Pick<ModelProfile, 'model' | 'apiKeyEnv'>;
+  direct?: Pick<ModelProfile, 'model' | 'apiKeyEnv' | 'vision' | 'defaultScreenshots'>;
 };
 
 /**
@@ -38,13 +38,15 @@ type Profile = Omit<ModelProfile, 'name'> & {
  */
 export const MODELS = {
   jev: {
-    model: 'typesafe/jev-1.13',
+    model: 'typesafe/jev-1.14',
     baseURL: OPENROUTER,
     apiKeyEnv: 'OPENROUTER_API_KEY',
-    direct: { model: 'jev-latest', apiKeyEnv: 'TYPESAFE_API_KEY' },
-    // Jev rejects images (HTTP 400 max_tokens_exceeded).
-    vision: false,
-    defaultScreenshots: 'off',
+    // The TypeSafe API wants images in its own `assets` map, which isn't wired up: text-only there.
+    direct: { model: 'jev-latest', apiKeyEnv: 'TYPESAFE_API_KEY', vision: false, defaultScreenshots: 'off' },
+    // OpenRouter turns `image_url` state parts into Jev 1.14 images.
+    vision: true,
+    // With a screenshot every step its done check dipped under 0.5 on a correct page (2 of 3 runs); text-first wins.
+    defaultScreenshots: 'fallback',
     minConfidence: 0.3,
     elementRisk: false,
   },

@@ -58,14 +58,14 @@ TYPESAFE_API_KEY=… node dist/cli.js --browser launch-headless \
 
 | `JEV_MODEL` | Model | Screenshots | Fixture + live web (`pnpm verify`) | Journeys |
 | --- | --- | --- | --- | --- |
-| `jev` (default) | `jev-latest` / `typesafe/jev-1.13` | none (text-only) | 6/6, ~300 ms/request | 8/8 |
+| `jev` (default) | `typesafe/jev-1.14` (OpenRouter) / `jev-latest` (TypeSafe API, text-only) | `fallback` | 6/6 off and `fallback`, 5–6/6 `always`, ~250 ms/request | 8/8 off and `always` |
 | `pplx-decider` | `perplexity/pplx-decider-v1.1-27b` | `always` | 6/6 off and `always`, 0.4–1.3 s/request | 8/8 |
 | `clef-omni` | `cloudflare/clef-omni` | `always` | 4/6 (3/6 off) | 7/8 (8/8 off) |
 | `clef` | `cloudflare/clef` | none (images cost 16k tokens) | 6/6, 0.7–1.2 s/request | — |
 | `clef-flash` | `cloudflare/clef-flash` | `always` | 1/6 | — |
 | `gpt-6-luna` | `openai/gpt-6-luna-decisions` | `always` | 0–1/6: OpenAI refuses target questions (502) | — |
 
-**Jev is still the fastest model that passes everything. Perplexity's decider is the one that passes everything with screenshots. Clef passes text-only, but slower.**
+**Jev 1.14 is the fastest model that passes everything, and it reads screenshots. Perplexity's decider also passes everything with screenshots, but slower. Clef passes text-only, and is slower still.**
 
 `JEV_SCREENSHOTS` (or `--screenshots`) controls screenshots for the vision models:
 

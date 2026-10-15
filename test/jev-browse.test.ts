@@ -272,19 +272,25 @@ describe('model choice', () => {
 
   it('routes Jev to the TypeSafe API when its key is set, otherwise through OpenRouter', () => {
     vi.stubEnv('TYPESAFE_API_KEY', '');
+    expect(resolveModel({ model: 'jev' })).toMatchObject({
+      profile: { model: 'typesafe/jev-1.14', baseURL: 'https://openrouter.ai/api', apiKeyEnv: 'OPENROUTER_API_KEY' },
+      screenshots: 'fallback',
+    });
     expect(resolveModel({ model: 'jev' }).profile).toMatchObject({
-      model: 'typesafe/jev-1.13',
+      model: 'typesafe/jev-1.14',
       baseURL: 'https://openrouter.ai/api',
       apiKeyEnv: 'OPENROUTER_API_KEY',
     });
     vi.stubEnv('TYPESAFE_API_KEY', 'ts-key');
-    const direct = resolveModel({ model: 'jev' }).profile;
-    expect(direct).toMatchObject({ model: 'jev-latest', apiKeyEnv: 'TYPESAFE_API_KEY' });
-    expect(direct.baseURL).toBeUndefined();
+    const direct = resolveModel({ model: 'jev' });
+    expect(direct).toMatchObject({ profile: { model: 'jev-latest', apiKeyEnv: 'TYPESAFE_API_KEY' }, screenshots: 'off' });
+    expect(direct.profile.baseURL).toBeUndefined();
+    // The direct route can't carry `image_url` parts.
+    expect(() => resolveModel({ model: 'jev', screenshots: 'always' })).toThrow(/cannot read screenshots/);
   });
 
-  it('defaults to Jev without screenshots and Clef-omni with a screenshot every step', () => {
-    expect(resolveModel({ model: 'jev' })).toMatchObject({ screenshots: 'off' });
+  it('defaults Clef to text-only and Clef-omni to a screenshot every step', () => {
+    expect(resolveModel({ model: 'clef' })).toMatchObject({ screenshots: 'off' });
     expect(resolveModel({ model: 'clef-omni' })).toMatchObject({
       profile: { model: 'cloudflare/clef-omni', apiKeyEnv: 'OPENROUTER_API_KEY' },
       screenshots: 'always',
@@ -292,7 +298,7 @@ describe('model choice', () => {
   });
 
   it('refuses screenshots for a model that cannot read them, and unknown names', () => {
-    expect(() => resolveModel({ model: 'jev', screenshots: 'always' })).toThrow(/cannot read screenshots/);
+    expect(() => resolveModel({ model: 'clef', screenshots: 'always' })).toThrow(/cannot read screenshots/);
     expect(() => resolveModel({ model: 'gpt' })).toThrow(/Unknown model/);
     expect(() => resolveModel({ model: 'clef-omni', screenshots: 'sometimes' })).toThrow(/Unknown screenshot mode/);
   });
