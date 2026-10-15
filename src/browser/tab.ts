@@ -309,7 +309,28 @@ export class Tab {
     await this.cdp.send('Target.closeTarget', { targetId: this.targetId }).catch(() => undefined);
   }
 
+  // A control that appears only on hover: move the pointer onto where it sits, then wait for it to show. Pointer move
+  // only (no click, no focus), so a touch screen, which has no hover, skips it.
+  async #revealByHover(action: PageAction) {
+    const node = `window.__jevFast?.nodes.get(${Number(action.node)})`;
+    const centre = await this.#evaluate(`(() => {
+      const e = ${node};
+      if (!e?.isConnected) return null;
+      const r = e.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    })()`);
+    if (!centre) throw new TargetUnreachable('Target changed or is covered');
+    await this.#call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: centre.x, y: centre.y });
+    for (let waited = 0; waited <= 500; waited += 50) {
+      const shown = await this.#evaluate(`${node}?.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) === true`);
+      if (shown) return;
+      await sleep(50);
+    }
+    throw new TargetUnreachable('Hovering did not reveal the control');
+  }
+
   async #input(action: PageAction, text?: string) {
+    if (action.hover && !this.#touch) await this.#revealByHover(action);
     const target = await this.#evaluate(`(${RESOLVE_TARGET})(${JSON.stringify(action)})`).catch((error) => {
       if (action.kind === 'select') throw new Error('Dropdown execution was interrupted; inspect before retrying.');
       throw error;

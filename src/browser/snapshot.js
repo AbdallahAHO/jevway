@@ -196,6 +196,30 @@
       y = r.y + r.height / 2;
     return r.width <= 0 || r.height <= 0 || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight;
   };
+  // jev-browse: a control shown only while its container is hovered (a panel's menu, a row's Delete) is in the DOM with
+  // visibility:hidden or opacity:0. It is listed as "appears on hover", capped at 20, and the executor moves the pointer
+  // onto it before the click. display:none is not laid out and touch screens have no hover, so neither counts.
+  const canHover = !matchMedia('(hover: none)').matches;
+  const hoverSuffix = ' (appears on hover)';
+  const standIns = new Set(labelOf.values());
+  let hoverListed = 0;
+  const hiddenUntilHover = (e) => {
+    if (getComputedStyle(e).visibility === 'hidden') return true;
+    for (let p = e, depth = 0; p && depth <= 3; p = p.parentElement, depth++)
+      if (getComputedStyle(p).opacity === '0') return true;
+    return false;
+  };
+  const revealedByHover = (e) =>
+    canHover &&
+    hoverListed < 20 &&
+    !standIns.has(e) &&
+    safe(e) &&
+    !e.closest('[aria-hidden="true"],[inert],[aria-disabled="true"]') &&
+    !e.matches(':disabled') &&
+    hiddenUntilHover(e) &&
+    !outOfView(e.getBoundingClientRect()) &&
+    Boolean(role(e)) &&
+    name(e).trim() !== '';
   // jev-browse: an off-screen link, button or row holding a value the caller supplied is likely the target, but
   // only when nothing on screen holds it, and at most 5 are listed: a common value ("ERROR") would flood the list.
   const holdsWanted = (e, rname) =>
@@ -205,7 +229,9 @@
     candidates.some((e) => eligible(e) && !outOfView(cache.clickRect(e)) && holdsWanted(e, role(e)));
   let wantedListed = 0;
   for (const e of candidates) {
-    if (!eligible(e)) continue;
+    const shown = eligible(e);
+    const hover = !shown && revealedByHover(e);
+    if (!shown && !hover) continue;
     const hiddenInput = labelOf.get(e),
       r = cache.clickRect(e),
       y = r.y + r.height / 2,
@@ -217,20 +243,25 @@
     if (wantedOffscreen) wantedListed++;
     if (!rname || (offscreen && !sideways && !wantedOffscreen)) continue;
     if (rname === 'gridcell' && e.querySelector('button,[role="button"]')) continue;
+    if (hover) hoverListed++;
+    const suffix = hover ? hoverSuffix : '';
     const base = {
       node: identity(e),
       role: rname,
       // jev-browse: a row is what it shows; its name would also pull in nested controls ("Select row"). Labels are
       // capped: table rows holding whole JSON payloads otherwise blow the request past the model's token limit.
-      label: cap(
-        (rname === 'row' || hiddenInput
-          ? e.innerText.replace(/\s+/g, ' ').trim()
-          : unnamedToggle(e, rname)
-            ? rowContext(e)
-            : name(e).replace(/\s+/g, ' ').trim()) || rname,
-      ),
+      label:
+        cap(
+          (rname === 'row' || hiddenInput
+            ? e.innerText.replace(/\s+/g, ' ').trim()
+            : unnamedToggle(e, rname)
+              ? rowContext(e)
+              : name(e).replace(/\s+/g, ' ').trim()) || rname,
+          200 - suffix.length,
+        ) + suffix,
       rect: { x: r.x, y: r.y, w: r.width, h: r.height },
     };
+    if (hover) base.hover = true;
     for (const key of ['checked', 'selected', 'expanded']) {
       const value = e.getAttribute('aria-' + key);
       if (value !== null) base[key] = value;
