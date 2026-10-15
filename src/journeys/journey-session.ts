@@ -5,7 +5,7 @@ import { DEVICES, type Device, type DeviceName } from '../browser/devices.ts';
 import { StalePage, Tab, type PageAction, type PageState } from '../browser/tab.ts';
 import { buildActionSpace, type ActionSpace } from '../jev/action-space.ts';
 import { decide, type Ask, type Decision, type StepRecord } from '../jev/decide.ts';
-import type { ScreenshotMode } from '../jev/model.ts';
+import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
 import { watchDiagnostics, type DiagnosticsWatcher } from './diagnostics.ts';
 import { buildFlows, hotspotOf, type JourneyDoc, type JourneyStep } from './journey-doc.ts';
 import { pickNextMove } from './pick-next-move.ts';
@@ -41,6 +41,7 @@ export interface JourneyOptions {
   elementRisk?: boolean;
   /** Flat operation rules from the model profile (see ModelProfile.compactRules). */
   compactRules?: string;
+  imageTransport?: ImageTransport;
 }
 
 export interface StepInput {
@@ -358,6 +359,7 @@ export class JourneySession {
       checkCommitRisk: true,
       extraQuestions: screenQuestions(this.doc.screens.map((screen) => visitedSummary(screen, this.#excerpts))),
       compactRules: this.#options.compactRules,
+      imageTransport: this.#options.imageTransport,
       ...(this.#options.elementRisk && { elementRisk: 'ranked' as const }),
       ...(seesScreen && { screenshot: await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page) }),
     });

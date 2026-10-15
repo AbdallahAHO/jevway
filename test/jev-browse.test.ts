@@ -47,7 +47,7 @@ const answer = (choice: string, ids: string[], confidence = 0.95) => ({
 
 /** Answers every question in a request with the scripted choice for that step, or its first option.
  * `confidence` sets the operation answer's confidence (default 0.95). */
-const scriptedJev = (steps: Record<string, string | number>[]) => {
+const scriptedJev = (steps: Record<string, any>[]) => {
   const requests: any[] = [];
   const ask: Ask = async (request) => {
     requests.push(request);
@@ -283,10 +283,14 @@ describe('model choice', () => {
     });
     vi.stubEnv('TYPESAFE_API_KEY', 'ts-key');
     const direct = resolveModel({ model: 'jev' });
-    expect(direct).toMatchObject({ profile: { model: 'jev-latest', apiKeyEnv: 'TYPESAFE_API_KEY' }, screenshots: 'off' });
+    expect(direct).toMatchObject({
+      profile: { model: 'jev-1.14.0', apiKeyEnv: 'TYPESAFE_API_KEY', imageTransport: 'assets' },
+      screenshots: 'fallback',
+    });
     expect(direct.profile.baseURL).toBeUndefined();
-    // The direct route can't carry `image_url` parts.
-    expect(() => resolveModel({ model: 'jev', screenshots: 'always' })).toThrow(/cannot read screenshots/);
+    // OpenRouter drops TypeSafe's `assets` map, so screenshots go as `image_url` parts there.
+    vi.stubEnv('TYPESAFE_API_KEY', '');
+    expect(resolveModel({ model: 'jev' }).profile).toMatchObject({ imageTransport: 'image_url' });
   });
 
   it('defaults Clef to text-only and Clef-omni to a screenshot every step', () => {
@@ -323,5 +327,17 @@ describe('per-element commit risk', () => {
     };
     const decision = await decide(ask, { ...input, elementRisk: 'ranked' });
     expect(decision.elementRisks).toEqual({ '1': 0.1, '4': 1 });
+  });
+});
+
+describe('screenshots as TypeSafe assets', () => {
+  const input = { page: page(), goal: 'Pay', values: {}, history: [], checkCommitRisk: true };
+
+  it('places the screenshot as an asset under `screenshot` instead of an image_url part', () => {
+    const space = buildActionSpace(bookingActions);
+    const { state } = buildRequest({ ...input, screenshot: 'AAAA', imageTransport: 'assets' }, space) as any;
+    expect(Array.isArray(state)).toBe(false);
+    expect(state.screenshot.constructor.name).toBe('Image');
+    expect(state.elements).toEqual(space.elements);
   });
 });

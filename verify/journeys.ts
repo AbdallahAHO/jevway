@@ -14,7 +14,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { connectChrome } from '../src/browser/chrome.ts';
 import { Tab } from '../src/browser/tab.ts';
-import { createAsk, resolveModel } from '../src/jev/model.ts';
+import { createAsk, profileOptions, resolveModel } from '../src/jev/model.ts';
 import type { JourneyDoc } from '../src/journeys/journey-doc.ts';
 import { JourneySession, type ScreenReport } from '../src/journeys/journey-session.ts';
 
@@ -84,8 +84,7 @@ await scenario('start: phone viewport, screenshot, Jev screen understanding', as
     startUrl: fixtureUrl,
     outDir,
     screenshots,
-    compactRules: profile.compactRules,
-    elementRisk: profile.elementRisk,
+    ...profileOptions(profile),
   });
   report = journey.report();
   ids.home = report.screen.id;

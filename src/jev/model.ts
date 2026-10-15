@@ -4,6 +4,8 @@ import { NEXT_ACTION_COMPACT } from './instructions.ts';
 
 /** When a decision request carries a marked viewport screenshot. */
 export type ScreenshotMode = 'off' | 'fallback' | 'always';
+/** How a screenshot travels: TypeSafe's `assets` map, or OpenRouter's `image_url` parts in a `state` array. */
+export type ImageTransport = 'assets' | 'image_url';
 
 const OPENROUTER = 'https://openrouter.ai/api';
 
@@ -24,12 +26,16 @@ export interface ModelProfile {
   compactRules?: string;
   /** Judge commit risk per click candidate by name instead of one page-level guess (one extra request). */
   elementRisk: boolean;
+  imageTransport: ImageTransport;
 }
 
-type Profile = Omit<ModelProfile, 'name'> & {
-  /** A direct route used instead when its key is set (Jev on the TypeSafe API). */
-  direct?: Pick<ModelProfile, 'model' | 'apiKeyEnv' | 'vision' | 'defaultScreenshots'>;
+type Route = Omit<ModelProfile, 'name' | 'imageTransport'> & Partial<Pick<ModelProfile, 'imageTransport'>>;
+type Profile = Route & {
+  /** A direct route used instead when its key is set (Jev on the TypeSafe API); it overrides these fields. */
+  direct?: Partial<Route> & Pick<ModelProfile, 'model' | 'apiKeyEnv' | 'imageTransport'>;
 };
+
+const IMAGES_HEADER = { 'TypeSafe-Danger-Zone-Images': 'true' };
 
 /**
  * Decision models that speak the System One API (`/v1/systemone`), all through the same SDK.
@@ -41,8 +47,8 @@ export const MODELS = {
     model: 'typesafe/jev-1.14',
     baseURL: OPENROUTER,
     apiKeyEnv: 'OPENROUTER_API_KEY',
-    // The TypeSafe API wants images in its own `assets` map, which isn't wired up: text-only there.
-    direct: { model: 'jev-latest', apiKeyEnv: 'TYPESAFE_API_KEY', vision: false, defaultScreenshots: 'off' },
+    // Pinned to the first Jev that reads images. OpenRouter drops the `assets` map, so images go as `image_url` there.
+    direct: { model: 'jev-1.14.0', apiKeyEnv: 'TYPESAFE_API_KEY', imageTransport: 'assets' },
     // OpenRouter turns `image_url` state parts into Jev 1.14 images.
     vision: true,
     // With a screenshot every step its done check dipped under 0.5 on a correct page (2 of 3 runs); text-first wins.
@@ -106,7 +112,7 @@ export type ModelName = keyof typeof MODELS;
 
 /**
  * Resolves the model and screenshot mode from explicit choices, then `JEV_MODEL` / `JEV_SCREENSHOTS`.
- * Jev uses the TypeSafe API when `TYPESAFE_API_KEY` is set, otherwise OpenRouter.
+ * Jev uses the TypeSafe API (images as `assets`) when `TYPESAFE_API_KEY` is set, otherwise OpenRouter.
  * Screenshots on a model that cannot read images are a configuration error, not a silent no-op.
  *
  * @example
@@ -119,10 +125,11 @@ export const resolveModel = ({
   if (!(model in MODELS)) throw new Error(`Unknown model "${model}"; use ${Object.keys(MODELS).join(' | ')}.`);
   const { direct, ...route }: Profile = MODELS[model as ModelName];
   const name = model as ModelName;
+  const openRouter = { imageTransport: 'image_url' as const };
   const profile: ModelProfile =
     direct && process.env[direct.apiKeyEnv]?.trim()
       ? { ...route, ...direct, baseURL: undefined, name }
-      : { ...route, name };
+      : { ...openRouter, ...route, name };
   const mode = screenshots ?? profile.defaultScreenshots;
   if (!['off', 'fallback', 'always'].includes(mode)) {
     throw new Error(`Unknown screenshot mode "${mode}"; use off | fallback | always.`);
@@ -130,6 +137,14 @@ export const resolveModel = ({
   if (mode !== 'off' && !profile.vision) throw new Error(`${profile.name} cannot read screenshots.`);
   return { profile, screenshots: mode as ScreenshotMode };
 };
+
+/** The decision settings a profile hands to tasks and journeys. */
+export const profileOptions = ({ minConfidence, compactRules, elementRisk, imageTransport }: ModelProfile) => ({
+  minConfidence,
+  compactRules,
+  elementRisk,
+  imageTransport,
+});
 
 /** An `Ask` bound to the profile's API root, key and model. */
 export const createAsk = (profile: ModelProfile): Ask => {
@@ -142,6 +157,7 @@ export const createAsk = (profile: ModelProfile): Ask => {
       defaultModel: profile.model,
       timeout: 15_000,
       logLevel: 'off',
+      ...(profile.imageTransport === 'assets' && { defaultHeaders: IMAGES_HEADER }),
       // SDK 0.7 sends zstd bodies by default; only the TypeSafe API is known to accept them.
       ...(profile.baseURL && { compression: false }),
     }),

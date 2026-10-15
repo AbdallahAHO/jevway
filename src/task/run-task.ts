@@ -1,7 +1,7 @@
 import { StalePage, type PageState, type Tab } from '../browser/tab.ts';
 import { buildActionSpace } from '../jev/action-space.ts';
 import { decide, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
-import type { ScreenshotMode } from '../jev/model.ts';
+import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
 
 export interface TaskOptions {
   goal: string;
@@ -22,6 +22,7 @@ export interface TaskOptions {
   compactRules?: string;
   /** Judge commit risk for the chosen click by name (see ModelProfile.elementRisk). */
   elementRisk?: boolean;
+  imageTransport?: ImageTransport;
 }
 
 export type TaskStatus = 'done' | 'needs_input' | 'needs_confirmation' | 'uncertain' | 'blocked' | 'step_budget';
@@ -45,7 +46,14 @@ export interface TraceEntry {
   elapsed_ms: number;
 }
 
-const DEFAULTS = { maxSteps: 40, minConfidence: 0.3, screenshots: 'off' as ScreenshotMode, compactRules: '', elementRisk: false };
+const DEFAULTS = {
+  maxSteps: 40,
+  minConfidence: 0.3,
+  screenshots: 'off' as ScreenshotMode,
+  compactRules: '',
+  elementRisk: false,
+  imageTransport: 'image_url' as ImageTransport,
+};
 // A DONE the completion check rejects usually means content is still loading: wait and re-decide this many times.
 const MAX_REJECTED_DONE = 3;
 
@@ -189,7 +197,7 @@ export class BrowserTask {
 
   // One decision per step; `fallback` takes a second, screenshot-backed look at a shaky or stalled one.
   async #decide(page: PageState): Promise<Decision> {
-    const { goal, values, doneWhen, screenshots, compactRules, elementRisk } = this.#options;
+    const { goal, values, doneWhen, screenshots, compactRules, elementRisk, imageTransport } = this.#options;
     const decideOn = async (withScreenshot: boolean) => {
       const screenshot = withScreenshot
         ? await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page)
@@ -203,6 +211,7 @@ export class BrowserTask {
         checkCommitRisk: true,
         screenshot,
         compactRules,
+        imageTransport,
         ...(elementRisk && { elementRisk: 'chosen' as const }),
       });
       this.#latencies.push(decision.latencyMs);

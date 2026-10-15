@@ -1,5 +1,6 @@
 import {
   choice,
+  Image,
   noul,
   type ChoiceResponse,
   type EntryType,
@@ -10,6 +11,7 @@ import {
 import type { PageAction, PageState } from '../browser/tab.ts';
 import { buildActionSpace, pick, type ActionSpace, type TargetOperation } from './action-space.ts';
 import { COMMIT_RISK, DONE_CHECK, ELEMENT_COMMIT_RISK, NEXT_ACTION, TARGET, VALUE } from './instructions.ts';
+import type { ImageTransport } from './model.ts';
 
 export const NO_SUPPLIED_VALUE = 'NO_SUPPLIED_VALUE';
 // Speculative value heads ride along with the operation request; beyond this, TYPE_TEXT costs one follow-up.
@@ -35,6 +37,8 @@ export interface DecisionInput {
   extraQuestions?: Record<string, Question>;
   /** Base64 JPEG of the viewport with element indexes drawn on it; only for models that read images. */
   screenshot?: string;
+  /** How the screenshot is sent (default `image_url`). */
+  imageTransport?: ImageTransport;
   /** Replaces NEXT_ACTION in the operation head as one flat instruction (Clef-omni reads that better). */
   compactRules?: string;
   /**
@@ -183,12 +187,15 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
     recent_actions: input.history.slice(-10),
     ...(input.screenshot && { screenshot: SCREENSHOT_NOTE }),
   };
-  // Vision models read image parts only from a top-level state array, ahead of the JSON state.
+  // TypeSafe takes the image as an asset in place under `screenshot`; OpenRouter vision models read image parts
+  // only from a top-level state array, ahead of the JSON state.
   // Interfaces lack index signatures, so the plain JSON state needs one cast for the SDK's EntryType.
-  return {
-    state: (input.screenshot ? [imagePart(input.screenshot), state] : state) as unknown as NonNullable<EntryType>,
-    questions,
-  };
+  const withImage = !input.screenshot
+    ? state
+    : input.imageTransport === 'assets'
+      ? { ...state, screenshot: Image.fromBase64(input.screenshot), screenshot_note: SCREENSHOT_NOTE }
+      : [imagePart(input.screenshot), state];
+  return { state: withImage as unknown as NonNullable<EntryType>, questions };
 };
 
 const SCREENSHOT_NOTE =

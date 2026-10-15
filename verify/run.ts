@@ -13,7 +13,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { connectChrome, type BrowserSource } from '../src/browser/chrome.ts';
 import { Tab } from '../src/browser/tab.ts';
-import { createAsk, resolveModel } from '../src/jev/model.ts';
+import { createAsk, profileOptions, resolveModel } from '../src/jev/model.ts';
 import { BrowserTask, type TaskSummary } from '../src/task/run-task.ts';
 
 // JEV_MODEL / JEV_SCREENSHOTS pick the decision model and screenshot mode, as in the MCP server.
@@ -77,9 +77,8 @@ const stays = new BrowserTask(stayTab, ask, {
   values: { destination: 'Lisbon' },
   doneWhen: "Casa Flora's details page is showing.",
   screenshots,
+  ...profileOptions(profile),
   minConfidence,
-  compactRules: profile.compactRules,
-  elementRisk: profile.elementRisk,
 });
 const staySummaries: TaskSummary[] = [];
 const fixtureState = () => groundTruth(stayTab.targetId, 'window.__fixture');
@@ -142,9 +141,8 @@ await scenario('live web: Wikipedia search → Gödel’s incompleteness theorem
     values: { search_query: 'Gödel incompleteness theorems' },
     doneWhen: "The Wikipedia article titled Gödel's incompleteness theorems is open.",
     screenshots,
-    minConfidence,
-  compactRules: profile.compactRules,
-  elementRisk: profile.elementRisk,
+    ...profileOptions(profile),
+  minConfidence,
   });
   const summary = await task.run();
   saveTrace('wikipedia', task, [summary]);
