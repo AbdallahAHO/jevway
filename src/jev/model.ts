@@ -26,6 +26,8 @@ export interface ModelProfile {
   compactRules?: string;
   /** Judge commit risk per click candidate by name instead of one page-level guess (one extra request). */
   elementRisk: boolean;
+  /** Also ask the page-level commit-risk question when `elementRisk` is on; the click is risky if either says so. */
+  pageRisk: boolean;
   imageTransport: ImageTransport;
   /** Box questions over the screenshot: target cross-check, covered check, rescue (Jev 1.14 on the TypeSafe API). */
   box: boolean;
@@ -56,7 +58,8 @@ export const MODELS = {
     // With a screenshot every step its done check dipped under 0.5 on a correct page (2 of 3 runs); text-first wins.
     defaultScreenshots: 'fallback',
     minConfidence: 0.3,
-    elementRisk: false,
+    elementRisk: true,
+    pageRisk: true,
   },
   clef: {
     model: 'cloudflare/clef',
@@ -68,6 +71,7 @@ export const MODELS = {
     // Like Clef-omni, its correct steps scored 0.18–0.3; Jev's 0.3 stops them.
     minConfidence: 0.05,
     elementRisk: true,
+    pageRisk: false,
   },
   'clef-flash': {
     model: 'cloudflare/clef-flash',
@@ -77,6 +81,7 @@ export const MODELS = {
     defaultScreenshots: 'always',
     minConfidence: 0.3,
     elementRisk: true,
+    pageRisk: false,
   },
   'clef-omni': {
     model: 'cloudflare/clef-omni',
@@ -89,6 +94,7 @@ export const MODELS = {
     minConfidence: 0.05,
     compactRules: NEXT_ACTION_COMPACT,
     elementRisk: true,
+    pageRisk: false,
   },
   'pplx-decider': {
     model: 'perplexity/pplx-decider-v1.1-27b',
@@ -98,6 +104,7 @@ export const MODELS = {
     defaultScreenshots: 'always',
     minConfidence: 0.3,
     elementRisk: true,
+    pageRisk: false,
   },
   'gpt-6-luna': {
     model: 'openai/gpt-6-luna-decisions',
@@ -107,6 +114,7 @@ export const MODELS = {
     defaultScreenshots: 'always',
     minConfidence: 0.3,
     elementRisk: true,
+    pageRisk: false,
   },
 } as const satisfies Record<string, Profile>;
 
@@ -141,10 +149,11 @@ export const resolveModel = ({
 };
 
 /** The decision settings a profile hands to tasks and journeys. */
-export const profileOptions = ({ minConfidence, compactRules, elementRisk, imageTransport, box }: ModelProfile) => ({
+export const profileOptions = ({ minConfidence, compactRules, elementRisk, pageRisk, imageTransport, box }: ModelProfile) => ({
   minConfidence,
   compactRules,
   elementRisk,
+  pageRisk,
   imageTransport,
   box,
 });

@@ -24,6 +24,8 @@ export interface TaskOptions {
   compactRules?: string;
   /** Judge commit risk for the chosen click by name (see ModelProfile.elementRisk). */
   elementRisk?: boolean;
+  /** With `elementRisk`, also ask the page-level question and take the higher risk (see ModelProfile.pageRisk). */
+  pageRisk?: boolean;
   imageTransport?: ImageTransport;
   /** Box checks on screenshot decisions (see ModelProfile.box). */
   box?: boolean;
@@ -66,6 +68,7 @@ const DEFAULTS = {
   screenshots: 'off' as ScreenshotMode,
   compactRules: '',
   elementRisk: false,
+  pageRisk: false,
   imageTransport: 'image_url' as ImageTransport,
   box: false,
   allowCoordinateClicks: false,
@@ -412,7 +415,7 @@ export class BrowserTask {
 
   // One decision per step; `fallback` takes a second, screenshot-backed look at a shaky or stalled one.
   async #decide(page: PageState): Promise<Decision> {
-    const { goal, values, doneWhen, screenshots, compactRules, elementRisk, imageTransport, box } = this.#options;
+    const { goal, values, doneWhen, screenshots, compactRules, elementRisk, pageRisk, imageTransport, box } = this.#options;
     const decideOn = async (withScreenshot: boolean) => {
       const screenshot = withScreenshot
         ? await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page)
@@ -428,7 +431,7 @@ export class BrowserTask {
         compactRules,
         imageTransport,
         box,
-        ...(elementRisk && { elementRisk: 'chosen' as const }),
+        ...(elementRisk && { elementRisk: 'chosen' as const, pageRisk }),
       }).catch((error) => {
         // Only the model call is tagged: a failed screenshot above is a browser error and keeps its own type.
         throw new ModelCallError(messageOf(error));

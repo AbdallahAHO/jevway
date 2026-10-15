@@ -423,6 +423,38 @@ describe('per-element commit risk', () => {
     const decision = await decide(ask, { ...input, elementRisk: 'ranked' });
     expect(decision.elementRisks).toEqual({ '1': 0.1, '4': 1 });
   });
+
+  describe('with the page-level question kept (Jev)', () => {
+    const run = async (script: Record<string, any>) => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '4', ...script }]);
+      const { asTab, acted } = fakeTab();
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Pay', maxSteps: 1, elementRisk: true, pageRisk: true }).run();
+      return { summary, acted };
+    };
+
+    it('holds the click when only the chosen element looks irreversible', async () => {
+      const { summary, acted } = await run({ commit_risk: 0.2, risk_4: 0.8 });
+      expect(summary.status).toBe('needs_confirmation');
+      expect(acted).toEqual([]);
+    });
+
+    it('holds the click when only the page looks irreversible: the higher of the two wins', async () => {
+      const { summary, acted } = await run({ commit_risk: 0.8, risk_4: 0.1 });
+      expect(summary.status).toBe('needs_confirmation');
+      expect(acted).toEqual([]);
+    });
+
+    it('lets the click through when both questions find it safe', async () => {
+      const { acted } = await run({ commit_risk: 0.1, risk_4: 0.1 });
+      expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
+    });
+
+    it('asks the page-level question only when pageRisk is on', () => {
+      const space = buildActionSpace(bookingActions);
+      expect(buildRequest({ ...input, elementRisk: 'chosen', pageRisk: true }, space).questions).toHaveProperty('commit_risk');
+      expect(buildRequest({ ...input, elementRisk: 'chosen', pageRisk: false }, space).questions).not.toHaveProperty('commit_risk');
+    });
+  });
 });
 
 describe('box geometry', () => {

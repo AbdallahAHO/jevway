@@ -65,6 +65,8 @@ export interface DecisionInput {
    * follow-up request: the chosen CLICK only, or the top ranked taps (journey autopilot acts on those).
    */
   elementRisk?: 'chosen' | 'ranked';
+  /** With `elementRisk`: keep the page-level commit-risk head too; a chosen click takes the higher of the two. */
+  pageRisk?: boolean;
 }
 
 export interface NextClick {
@@ -186,7 +188,8 @@ export const decide = async (ask: Ask, input: DecisionInput): Promise<Decision> 
       followUp(questions).then((answers) => {
         decision.elementRisks = Object.fromEntries(riskTargets.map((index) => [index, readRisk(answers[`risk_${index}`])]));
         if (decision.operation === 'CLICK') {
-          decision.commitRisk = decision.elementRisks[targetIndexOf(space, 'CLICK', decision.action!)];
+          const elementRisk = decision.elementRisks[targetIndexOf(space, 'CLICK', decision.action!)];
+          decision.commitRisk = input.pageRisk ? Math.max(decision.commitRisk ?? 0, elementRisk) : elementRisk;
         }
       }),
     );
@@ -234,7 +237,7 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
       questions[`value_for_${index}`] = valueQuestion(input, space, index);
     }
   }
-  if (input.checkCommitRisk && targets.CLICK && !input.elementRisk) questions.commit_risk = noul({ goal: input.goal, rules: COMMIT_RISK });
+  if (input.checkCommitRisk && targets.CLICK && (!input.elementRisk || input.pageRisk)) questions.commit_risk = noul({ goal: input.goal, rules: COMMIT_RISK });
   if (input.doneWhen) questions.done_check = noul({ completion_condition: input.doneWhen, rules: DONE_CHECK });
   if (input.box && input.screenshot) {
     questions.next_click_box = { type: 'box', instructions: NEXT_CLICK_BOX(input.goal) };
