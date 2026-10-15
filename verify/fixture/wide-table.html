@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Traces</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; display: flex; height: 100vh; }
+  nav { width: 200px; flex: none; background: #f3f3f3; padding: 16px; }
+  main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  /* Like Langfuse's traces table: a scroll box far narrower than its rows, so each row's centre sits off-screen. */
+  .scroll { overflow: auto; flex: 1; }
+  table { border-collapse: collapse; width: 3200px; }
+  td, th { border-bottom: 1px solid #ddd; padding: 6px 10px; text-align: left; white-space: nowrap; }
+  tbody tr, th.sortable { cursor: pointer; }
+  tbody tr:hover { background: #eef; }
+  #detail { display: none; position: fixed; inset: 0 0 0 auto; width: 420px; background: #fff; border-left: 1px solid #ccc; padding: 16px; }
+</style>
+</head>
+<body>
+<nav>Tracing</nav>
+<main>
+  <h1>Traces</h1>
+  <div class="scroll">
+    <table>
+      <thead><tr><th><input type="checkbox" aria-label="Select all"></th><th class="sortable" aria-sort="descending">Start time</th><th>Name</th><th>Input</th><th>Output</th><th>Metadata</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</main>
+<section id="detail" role="dialog" aria-modal="false" aria-label="Trace detail"><h2></h2><p>Input: <span class="input"></span></p><p>Output: <span class="output"></span></p></section>
+<script>
+  window.__fixture = { opened: null, selected: [] };
+  const traces = [
+    ['15:19:13', 'handle-chatbot-message', 'What can I use Langfuse for?', 'Langfuse is an open-source platform…'],
+    ['15:02:44', 'play-round', '{"round":1}', '{"move":"rock"}'],
+    ['14:39:49', 'sentiment-classifier', 'I love it', 'positive'],
+  ];
+  const body = document.querySelector('tbody');
+  traces.forEach(([time, name, input, output], i) => {
+    const row = document.createElement('tr');
+    row.innerHTML = `<td><input type="checkbox" aria-label="Select row"></td><td>2026-10-15 ${time}</td><td>${name}</td><td>${input}</td><td>${output}</td><td>${'{"scope":"sdk"} '.repeat(30)}</td>`;
+    row.querySelector('input').addEventListener('click', (event) => {
+      event.stopPropagation();
+      window.__fixture.selected.push(i);
+    });
+    row.addEventListener('click', () => {
+      window.__fixture.opened = name;
+      const detail = document.getElementById('detail');
+      detail.querySelector('h2').textContent = `Trace: ${name}`;
+      detail.querySelector('.input').textContent = input;
+      detail.querySelector('.output').textContent = output;
+      detail.style.display = 'block';
+    });
+    body.append(row);
+  });
+</script>
+</body>
+</html>

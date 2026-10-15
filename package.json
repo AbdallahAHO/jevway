@@ -25,7 +25,8 @@
     "mcp": "node --env-file-if-exists=.env src/mcp.ts",
     "cli": "node --env-file-if-exists=.env src/cli.ts",
     "verify:journeys": "node --env-file-if-exists=.env verify/journeys.ts",
-    "verify:real": "node --env-file-if-exists=.env verify/real-world.ts"
+    "verify:real": "node --env-file-if-exists=.env verify/real-world.ts",
+    "verify:langfuse": "node --env-file-if-exists=.env verify/langfuse.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

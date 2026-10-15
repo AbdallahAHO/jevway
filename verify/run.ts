@@ -27,11 +27,14 @@ const source = (process.env.JEV_VERIFY_BROWSER ?? 'launch-headless') as BrowserS
 const outDir = new URL(`./out/${new Date().toISOString().replace(/[:.]/g, '-')}/`, import.meta.url);
 mkdirSync(outDir, { recursive: true });
 
-// Serve the fixtures on a random local port: /canvas.html, anything else is the stays fixture.
+// Serve the fixtures on a random local port: /canvas.html, /wide-table.html, anything else is the stays fixture.
 const fixture = readFileSync(new URL('./fixture/stays.html', import.meta.url));
-const canvasFixture = readFileSync(new URL('./fixture/canvas.html', import.meta.url));
+const otherFixtures: Record<string, Buffer> = {
+  '/canvas.html': readFileSync(new URL('./fixture/canvas.html', import.meta.url)),
+  '/wide-table.html': readFileSync(new URL('./fixture/wide-table.html', import.meta.url)),
+};
 const server = createServer((request, response) =>
-  response.writeHead(200, { 'content-type': 'text/html' }).end(request.url === '/canvas.html' ? canvasFixture : fixture),
+  response.writeHead(200, { 'content-type': 'text/html' }).end(otherFixtures[request.url ?? ''] ?? fixture),
 );
 await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 const fixtureUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/stays.html`;
@@ -166,6 +169,31 @@ if (profile.box && screenshots !== 'off') {
   });
 }
 
+// Rows wider than their scroll box (Langfuse's traces table): the row, not its checkbox, must be listed and opened.
+await scenario('fixture: wide table row opens its detail (recorded)', async () => {
+  const tab = await Tab.open(chrome.cdp, fixtureUrl.replace('/stays.html', '/wide-table.html'));
+  const { actions } = await tab.observe();
+  const rows = actions.filter((action) => action.role === 'row');
+  assert.equal(rows.length, 3, `expected 3 clickable rows, snapshot listed ${rows.length}`);
+  assert.ok(actions.some((a) => a.role === 'columnheader' && a.label.startsWith('Start time')), 'sortable header not listed');
+  const task = new BrowserTask(tab, ask, {
+    ...profileOptions(profile),
+    minConfidence,
+    screenshots,
+    goal: 'Open the most recent trace (the top row) to see its detail. Do not select or delete anything.',
+    doneWhen: 'The trace detail panel for handle-chatbot-message is showing its input and output.',
+    maxSteps: 5,
+    recordDir: new URL('wide-table/', outDir).pathname,
+  });
+  const summary = await task.run();
+  saveTrace('wide-table', task, [summary]);
+  const state = await groundTruth(tab.targetId, 'window.__fixture');
+  await tab.close();
+  assert.equal(state.opened, 'handle-chatbot-message', `opened ${state.opened}: ${summary.reason}`);
+  assert.deepEqual(state.selected, [], 'ticked a row checkbox instead of opening the row');
+  return summary;
+});
+
 await scenario('live web: Wikipedia search → Gödel’s incompleteness theorems article', async () => {
   const tab = await Tab.open(chrome.cdp, 'https://en.wikipedia.org/wiki/Main_Page');
   const task = new BrowserTask(tab, ask, {
@@ -174,11 +202,15 @@ await scenario('live web: Wikipedia search → Gödel’s incompleteness theorem
     doneWhen: "The Wikipedia article titled Gödel's incompleteness theorems is open.",
     screenshots,
     ...profileOptions(profile),
-  minConfidence,
+    minConfidence,
   });
   const summary = await task.run();
   saveTrace('wikipedia', task, [summary]);
-  const url = await groundTruth(tab.targetId, 'decodeURIComponent(location.pathname)');
+  // A redirect alias (/wiki/Gödel_incompleteness_theorems) shows the same article: compare its canonical link.
+  const url = await groundTruth(
+    tab.targetId,
+    `decodeURIComponent(new URL(document.querySelector('link[rel="canonical"]')?.href ?? location.href).pathname)`,
+  );
   await tab.close();
   expectStatus(summary, 'done');
   assert.equal(url, "/wiki/Gödel's_incompleteness_theorems");
