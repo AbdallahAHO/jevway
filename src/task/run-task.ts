@@ -33,6 +33,8 @@ export interface TaskOptions {
    * output becomes a coordinate. Still gated by commit risk.
    */
   allowCoordinateClicks?: boolean;
+  /** After an action that changed nothing yet, or a WAIT, keep observing up to this long for the page to change before deciding again. */
+  changeWaitMs?: number;
   /** Save a sharp screenshot before every action, plus the final page and an index.html viewer, here. */
   recordDir?: string;
 }
@@ -67,7 +69,10 @@ const DEFAULTS = {
   imageTransport: 'image_url' as ImageTransport,
   box: false,
   allowCoordinateClicks: false,
+  changeWaitMs: 1500,
 };
+// How often a page that has not reacted yet is looked at again while waiting for it to change.
+const CHANGE_POLL_MS = 150;
 /**
  * Loop guards, measured on Jev 1.14 against the Langfuse demo suite (2026-10-15, 3 runs per job). Provisional:
  * revisit with the 10-run variance data before changing; other models must not inherit retuned values blindly.
@@ -351,6 +356,8 @@ export class BrowserTask {
 
         const before = page.fingerprint;
         page = await this.#tab.observe();
+        // A slow click handler or a loading page hasn't reacted yet: a person waits a moment before trying again.
+        if (page.fingerprint === before) page = await this.#awaitChange(before, page);
         const field = decision.operation === 'TYPE_TEXT' && page.actions.find((a) => a.kind === 'fill' && a.node === action.node);
         this.#history.push({
           operation: decision.operation,
@@ -367,7 +374,8 @@ export class BrowserTask {
         if (wandering(this.#history.slice(firstStep))) {
           return stop('uncertain', `Jev was unsure for ${GUARDS.wanderSteps} actions in a row (confidence under ${GUARDS.wanderConfidence})`, decision);
         }
-        this.#outcomes.push({ action: `${decision.operation} ${element}`, print: page.fingerprint });
+        // Waiting is bounded by maxSteps and the wander guard; a shimmering skeleton must not look like a toggle loop.
+        if (decision.operation !== 'WAIT') this.#outcomes.push({ action: `${decision.operation} ${element}`, print: page.fingerprint });
         if (togglingInPlace(this.#outcomes)) {
           return stop('blocked', `"${element}" only toggles the page back and forth (${GUARDS.toggleLoop}× in a row)`, decision);
         }
@@ -379,6 +387,16 @@ export class BrowserTask {
     } catch (error) {
       return stop('blocked', describeError(error));
     }
+  }
+
+  // Keeps observing a page that still looks like `before`; stops at the first change or after changeWaitMs.
+  async #awaitChange(before: string, page: PageState): Promise<PageState> {
+    const deadline = performance.now() + this.#options.changeWaitMs;
+    while (page.fingerprint === before && performance.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, CHANGE_POLL_MS));
+      page = await this.#tab.observe();
+    }
+    return page;
   }
 
   // A transient model error (5xx, 429, network, timeout) gets one more try; any other error ends the run.

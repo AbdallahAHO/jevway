@@ -202,6 +202,7 @@ describe('BrowserTask', () => {
       goal: 'Enter email',
       values: { email: 'ada@example.com' },
       doneWhen: 'x',
+      changeWaitMs: 0,
     });
     const summary = await task.run();
     expect(summary.status).toBe('done');
@@ -261,7 +262,7 @@ describe('BrowserTask', () => {
     ]);
     const { tab, asTab, acted } = fakeTab([page({ fingerprint: 'a' }), page({ fingerprint: 'b' })]);
     tab.staleOnce = true;
-    const summary = await new BrowserTask(asTab, ask, { goal: 'Open' }).run();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open', changeWaitMs: 0 }).run();
     expect(summary.status).toBe('done');
     expect(acted).toHaveLength(1);
     expect(summary.jev.requests).toBe(3);
@@ -270,7 +271,7 @@ describe('BrowserTask', () => {
   it('stops as blocked when three actions change nothing', async () => {
     const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
     const { asTab } = fakeTab();
-    const summary = await new BrowserTask(asTab, ask, { goal: 'Loop' }).run();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Loop', changeWaitMs: 0 }).run();
     expect(summary).toMatchObject({ status: 'blocked', reason: 'The last 3 actions did not change the page' });
     expect(summary.steps).toHaveLength(3);
   });
@@ -611,7 +612,7 @@ describe('loop gotchas', () => {
 
   it('waits on an unsure WAIT instead of handing back', async () => {
     const { ask } = scriptedJev([{ operation: 'WAIT', confidence: 0.2 }, { operation: 'DONE' }]);
-    const summary = await new BrowserTask(fakeTab().asTab, ask, { goal: 'Load' }).run();
+    const summary = await new BrowserTask(fakeTab().asTab, ask, { goal: 'Load', changeWaitMs: 0 }).run();
     expect(summary.status).toBe('done');
   });
 
@@ -670,6 +671,39 @@ describe('loop gotchas', () => {
     const pages = ['x', 'a', 'b', 'c', 'd', 'e'].map((fingerprint) => page({ fingerprint }));
     const summary = await new BrowserTask(fakeTab(pages).asTab, ask, { goal: 'Page through', maxSteps: 5 }).run();
     expect(summary.status).toBe('step_budget');
+  });
+
+  describe('waiting for the page to react', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('waits for a slow click handler instead of clicking again', async () => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'DONE' }]);
+      const pages = ['a', 'a', 'a', 'b'].map((fingerprint) => page({ fingerprint }));
+      const { asTab, acted } = fakeTab(pages);
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Filter the list', changeWaitMs: 1000 }).run();
+      expect(summary.status).toBe('done');
+      expect(acted).toHaveLength(1);
+      expect(summary.steps).toMatchObject([{ operation: 'CLICK', page_changed: true }]);
+    });
+
+    it('still ends as blocked when nothing ever changes, the wait only delays it', async () => {
+      vi.useFakeTimers();
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
+      const running = new BrowserTask(fakeTab().asTab, ask, { goal: 'Loop', changeWaitMs: 300 }).run();
+      await vi.advanceTimersByTimeAsync(2000);
+      const summary = await running;
+      expect(summary).toMatchObject({ status: 'blocked', reason: 'The last 3 actions did not change the page' });
+      expect(summary.steps).toHaveLength(3);
+    });
+
+    it('does not count WAITs on a shimmering skeleton as a toggle or repeat loop', async () => {
+      const { ask } = scriptedJev([...Array.from({ length: 8 }, () => ({ operation: 'WAIT' })), { operation: 'DONE' }]);
+      const shimmer = Array.from({ length: 20 }, (_, i) => page({ fingerprint: i % 2 ? 's2' : 's1' }));
+      const { asTab } = fakeTab([...shimmer, page({ fingerprint: 'loaded' })]);
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Wait for the list' }).run();
+      expect(summary.status).not.toBe('blocked');
+      expect(summary.steps).toHaveLength(8);
+    });
   });
 });
 
