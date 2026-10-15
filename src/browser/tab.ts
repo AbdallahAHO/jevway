@@ -8,7 +8,7 @@ import { DEVICES, type Device } from './devices.ts';
 const READ_STATE = readFileSync(new URL('./snapshot.js', import.meta.url), 'utf8');
 const MARKER = `(() => { const state=${READ_STATE}; return state?.marker ?? null; })()`;
 
-export type ActionKind = 'click' | 'fill' | 'select' | 'scroll' | 'wait';
+export type ActionKind = 'click' | 'fill' | 'select' | 'scroll' | 'wait' | 'enter';
 
 export interface PageAction {
   id: string;
@@ -133,6 +133,20 @@ export class Tab {
     }
   }
 
+  // A fixed Enter key into the field just typed into, only while that exact field still has focus.
+  async #pressEnter(action: PageAction) {
+    const focused = await this.#evaluate(`(() => {
+      const e = window.__jevFast?.nodes.get(${Number(action.node)});
+      let active = document.activeElement;
+      while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+      return Boolean(e) && active === e;
+    })()`);
+    if (!focused) throw new StalePage('The typed field lost focus');
+    const key = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
+    await this.#call('Input.dispatchKeyEvent', { type: 'keyDown', ...key, text: '\r' });
+    await this.#call('Input.dispatchKeyEvent', { type: 'keyUp', ...key });
+  }
+
   /** Raw protocol access for diagnostics (console, network) scoped to this tab. */
   send(method: string, params: Record<string, unknown> = {}) {
     return this.#call(method, params);
@@ -195,7 +209,8 @@ export class Tab {
 
   /** Clicks/selects compare the target's own guard; everything else compares the whole-page marker. */
   async fresh(page: PageState, action?: PageAction): Promise<boolean> {
-    if (action && (action.kind === 'click' || action.kind === 'select')) {
+    // Element-level for targeted input: busy pages (rotating banners) change the page marker constantly.
+    if (action && ['click', 'select', 'fill'].includes(action.kind)) {
       const current = await this.#evaluate(
         `(() => { const c=window.__jevFast; return c ? [c.pageKey(), c.guard(c.nodes.get(${Number(action.node)}))] : null; })()`,
       ).catch(() => null);
@@ -207,6 +222,7 @@ export class Tab {
   async act(action: PageAction, page: PageState, text?: string) {
     if (!(await this.fresh(page, action))) throw new StalePage('Page changed since this decision');
     if (action.kind === 'wait') return sleep(100);
+    if (action.kind === 'enter') return this.#pressEnter(action);
     if (action.kind === 'scroll') {
       await this.#call('Input.dispatchMouseEvent', {
         type: 'mouseWheel',
@@ -279,7 +295,13 @@ export class Tab {
       commands: ['selectAll'],
     });
     await this.#call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', modifiers });
-    await this.#call('Input.insertText', { text: text ?? '' });
+    // Real key events per character: autocompletes such as Booking's ignore a one-shot insertText. A line break
+    // as a key event would be Enter (a form submit), so text with line breaks is inserted in one go instead.
+    if (!text || /[\r\n]/.test(text)) return void (await this.#call('Input.insertText', { text: text ?? '' }));
+    for (const char of text) {
+      await this.#call('Input.dispatchKeyEvent', { type: 'keyDown', key: char, text: char });
+      await this.#call('Input.dispatchKeyEvent', { type: 'keyUp', key: char });
+    }
   }
 
   // Read-only wait: two animation frames, or visible autocomplete options (≤200ms) after typing into a combobox.
@@ -314,6 +336,17 @@ const fingerprint = (state: Omit<PageState, 'fingerprint'> & { scroll?: unknown 
     .update(JSON.stringify([state.url, state.text, state.actions, state.scroll]))
     .digest('hex');
 
+// The element at a point, looking through open shadow roots (a plain elementFromPoint stops at the host).
+const DEEP_HIT = `(x, y) => {
+  let hit = document.elementFromPoint(x, y);
+  while (hit?.shadowRoot) {
+    const inner = hit.shadowRoot.elementFromPoint(x, y);
+    if (!inner || inner === hit) break;
+    hit = inner;
+  }
+  return hit;
+}`;
+
 // Numbered boxes in a closed shadow root: invisible to the snapshot's text walk and to page scripts.
 // Covered elements (under a popover or sheet) get no box, so a number never sits on something else.
 const MARKS_ID = '__jev_marks';
@@ -321,7 +354,7 @@ const DRAW_MARKS = `marks => {
   document.getElementById('${MARKS_ID}')?.remove();
   const onTop = ({ node, rect: { x, y, w, h } }) => {
     const e = window.__jevFast?.nodes.get(node);
-    const hit = document.elementFromPoint(x + w / 2, y + h / 2);
+    const hit = (${DEEP_HIT})(x + w / 2, y + h / 2);
     return !e || !hit || e === hit || e.contains(hit) || hit.contains(e) || (e.labels && [...e.labels].some((l) => l.contains(hit)));
   };
   marks = marks.filter(onTop);
@@ -345,7 +378,7 @@ const DRAW_MARKS = `marks => {
 // What a coordinate click would land on; null outside the viewport or on hidden/disabled content.
 const HIT_TEST = `(x, y) => {
   if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return null;
-  const e = document.elementFromPoint(x, y);
+  const e = (${DEEP_HIT})(x, y);
   if (!e || e.closest(':disabled,[aria-disabled="true"],[inert]')) return null;
   if (!e.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return null;
   const name = (e.getAttribute('aria-label') || e.getAttribute('title') || e.innerText || '').trim().replace(/\\s+/g, ' ');
@@ -360,7 +393,7 @@ const RESOLVE_TARGET = `action => {
   if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
   const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
   if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-  if (!e.contains(document.elementFromPoint(x,y))) return null;
+  if (!e.contains((${DEEP_HIT})(x,y))) return null;
   if (action.kind==='select') {
     if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
         !o.disabled && !o.closest('optgroup[disabled]'))) return null;

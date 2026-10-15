@@ -37,6 +37,8 @@ export interface StepRecord {
   element: string;
   value_key?: string;
   page_changed?: boolean;
+  /** For TYPE_TEXT: false when the field no longer holds the typed text (a popup swallowed it, a reset). */
+  value_kept?: boolean;
   /** Set when the step was not executed because the screenshot showed its target covered. */
   not_executed?: string;
 }

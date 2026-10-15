@@ -124,7 +124,12 @@
   );
   const roots = modals.length ? modals.filter((m) => !modals.some((o) => o !== m && o.contains(m))) : [document.body];
   const actions = [];
-  for (const e of roots.flatMap((root) => [...root.querySelectorAll(selector)])) {
+  // jev-browse: controls inside open shadow roots (web components such as MDN's search button) count too.
+  const deepQuery = (root) => [
+    ...root.querySelectorAll(selector),
+    ...[...root.querySelectorAll('*')].filter((host) => host.shadowRoot).flatMap((host) => deepQuery(host.shadowRoot)),
+  ];
+  for (const e of roots.flatMap(deepQuery)) {
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const r = e.getBoundingClientRect(),
       x = r.x + r.width / 2,

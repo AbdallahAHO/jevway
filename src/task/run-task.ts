@@ -1,4 +1,4 @@
-import { StalePage, type PageState, type Tab } from '../browser/tab.ts';
+import { StalePage, type PageAction, type PageState, type Tab } from '../browser/tab.ts';
 import { buildActionSpace } from '../jev/action-space.ts';
 import { centerOf, contains } from '../jev/box.ts';
 import { decide, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
@@ -73,6 +73,10 @@ const BOX_SURE = 0.5;
 const COVERED_BELOW = 0.1;
 // ...and only when its box also barely overlaps where the DOM puts it.
 const COVERED_OVERLAP_BELOW = 0.1;
+// A `done_when` judgment this sure ends the task, whatever the next-step head prefers (it may wander on).
+const DONE_EVIDENT = 0.9;
+// Enter is offered only after typing into a field like these; elsewhere it could submit a form.
+const SEARCH_LIKE = /search|query|find/i;
 // A covered target is fed back as history so Jev can clear it (dismiss a popover); this many times per run.
 const MAX_COVERED_RETRIES = 2;
 // Boxes on small targets land a row off (13 px checkboxes); pad before asking whether one covers the chosen control.
@@ -95,6 +99,8 @@ export class BrowserTask {
   #inputTokens = 0;
   #screenshots = 0;
   #confirmedCommit = false;
+  /** The search-like field typed into by the last executed action, if any: PRESS_ENTER may submit it. */
+  #lastTyped: PageAction | undefined;
   #tab: Tab;
   #ask: Ask;
 
@@ -157,6 +163,10 @@ export class BrowserTask {
         page = await this.#tab.observe();
         continue;
       }
+      if (doneWhen && (decision.doneProbability ?? 0) >= DONE_EVIDENT) {
+        this.trace.push({ decision: { ...decision, action: decision.action?.label }, executed: false, elapsed_ms: elapsed() });
+        return stop('done', `Completion condition verified: ${doneWhen}`, decision);
+      }
       const record = (didExecute: boolean) =>
         this.trace.push({
           decision: { ...decision, action: decision.action?.label },
@@ -217,15 +227,19 @@ export class BrowserTask {
       }
       record(true);
       executed++;
+      this.#lastTyped = decision.operation === 'TYPE_TEXT' && isSearchLike(action) ? action : undefined;
       // A confirmation covers exactly one risky click.
       if (isRiskyClick(decision)) this.#confirmedCommit = false;
 
       const before = page.fingerprint;
       page = await this.#tab.observe();
+      const field = decision.operation === 'TYPE_TEXT' && page.actions.find((a) => a.kind === 'fill' && a.node === action.node);
       this.#history.push({
         operation: decision.operation,
         element,
         ...(decision.valueKey && { value_key: decision.valueKey }),
+        // A field that is gone (navigated, submitted) can't say; one still on the page must show what was typed.
+        ...(field && { value_kept: field.value === text }),
         page_changed: page.fingerprint !== before,
         confidence: round(Math.min(decision.confidence, decision.targetConfidence ?? 1)),
       });
@@ -244,7 +258,7 @@ export class BrowserTask {
         ? await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page)
         : undefined;
       const decision = await decide(this.#ask, {
-        page,
+        page: this.#withEnter(page),
         goal,
         values,
         history: this.#history.slice(-10),
@@ -275,6 +289,19 @@ export class BrowserTask {
       (decision.operation === 'DONE' && !!doneWhen && (decision.doneProbability ?? 0) < 0.5) ||
       (last?.page_changed === false && last.operation !== 'WAIT')
     );
+  }
+
+  // Right after typing into a search-like field that is still there, Enter can submit it (GitHub, npm, Booking).
+  #withEnter(page: PageState): PageState {
+    const field = this.#lastTyped;
+    if (!field || !page.actions.some((action) => action.kind === 'fill' && action.node === field.node)) return page;
+    const enter: PageAction = {
+      id: 'press_enter',
+      kind: 'enter',
+      node: field.node,
+      label: `Press Enter in "${field.label}" to submit what was typed`,
+    };
+    return { ...page, actions: [...page.actions, enter] };
   }
 
   // Stuck (BLOCKED, or DONE that the completion check rejects) or unsure, but the screenshot confidently shows a
@@ -380,6 +407,9 @@ export class BrowserTask {
 // Optional MCP/CLI arguments arrive as explicit undefined; they must not erase defaults or earlier values.
 const definedOnly = <T extends object>(options: T) =>
   Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)) as T;
+
+const isSearchLike = (field: PageAction) =>
+  ['searchbox', 'combobox'].includes(field.role ?? '') || SEARCH_LIKE.test(field.label);
 
 const isRiskyClick = (decision: Decision) =>
   ['CLICK', 'CLICK_AT'].includes(decision.operation) && (decision.commitRisk ?? 0) >= 0.5;

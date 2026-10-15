@@ -5,6 +5,9 @@ Do not repeat satisfied steps. Fill required fields before submitting. A typed q
 its matching autocomplete suggestion selected. For date pickers, CLICK the field, date, then confirmation.
 Set every requested filter/control; a matching result alone does not prove a requested filter was set.
 Do not toggle a checkbox, switch, or radio already in the requested state.
+If a cookie or consent banner, sign-in prompt, or popover covers controls you need, dismiss it first
+(prefer Decline, Reject, Close, or Dismiss). Only on-screen elements are listed: if a needed date, option, or
+button is missing, SCROLL_DOWN to reveal it before paging a calendar or list.
 Submit populated search fields before opening a result; a populated field alone is not an applied search.
 WAIT only when the needed control is absent/disabled, or submitted results are still loading.
 If Search/Submit is visible and the required fields are ready, CLICK it immediately.

@@ -499,3 +499,60 @@ describe('Box in the task loop', () => {
     expect(summary.steps[0]).toMatchObject({ operation: 'CLICK_AT', element: 'canvas @ 150,425' });
   });
 });
+
+describe('real-site robustness', () => {
+  const searchPage = (overrides: Partial<PageState> = {}) =>
+    page({
+      actions: [
+        { id: 'e1', kind: 'fill', node: 10, role: 'searchbox', label: 'Search packages', value: '' },
+        { id: 'e2', kind: 'fill', node: 11, role: 'textbox', label: 'Email address', value: '' },
+        { id: 'wait', kind: 'wait', label: 'Wait for the page to update' },
+      ],
+      ...overrides,
+    });
+
+  it('offers Enter only right after typing into a search-like field, and presses it on that field', async () => {
+    const { ask, requests } = scriptedJev([
+      { operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: 'query' },
+      { operation: 'PRESS_ENTER' },
+      { operation: 'DONE' },
+    ]);
+    const { asTab, acted } = fakeTab([searchPage({ fingerprint: 'a' }), searchPage({ fingerprint: 'b' }), searchPage({ fingerprint: 'c' })]);
+    await new BrowserTask(asTab, ask, { goal: 'Find zod', values: { query: 'zod' } }).run();
+    expect(Object.keys((requests[0].questions.operation as any).criteria)).not.toContain('PRESS_ENTER');
+    expect(Object.keys((requests[1].questions.operation as any).criteria)).toContain('PRESS_ENTER');
+    expect(acted).toEqual([
+      { label: 'Search packages', text: 'zod' },
+      { label: 'Press Enter in "Search packages" to submit what was typed' },
+    ]);
+  });
+
+  it('never offers Enter after typing into a field that is not search-like', async () => {
+    const { ask, requests } = scriptedJev([
+      { operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: 'email' },
+      { operation: 'DONE' },
+    ]);
+    const { asTab } = fakeTab([searchPage({ fingerprint: 'a' }), searchPage({ fingerprint: 'b' })]);
+    await new BrowserTask(asTab, ask, { goal: 'Enter email', values: { email: 'a@b.co' } }).run();
+    expect(Object.keys((requests[1].questions.operation as any).criteria)).not.toContain('PRESS_ENTER');
+  });
+
+  it("ends as done when the caller's completion evidence is plainly met, without acting", async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1', done_check: 0.95 }]);
+    const { asTab, acted } = fakeTab();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open it', doneWhen: 'It is open' }).run();
+    expect(summary).toMatchObject({ status: 'done', done_probability: 0.95 });
+    expect(acted).toEqual([]);
+  });
+
+  it('records when a typed value did not stick, so Jev does not treat the field as filled', async () => {
+    const { ask } = scriptedJev([
+      { operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: 'email' },
+      { operation: 'DONE' },
+    ]);
+    // The field still reads empty after typing: a popup swallowed the input.
+    const { asTab } = fakeTab([searchPage({ fingerprint: 'a' }), searchPage({ fingerprint: 'b' })]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Enter email', values: { email: 'a@b.co' } }).run();
+    expect(summary.steps[0]).toMatchObject({ operation: 'TYPE_TEXT', value_kept: false });
+  });
+});
