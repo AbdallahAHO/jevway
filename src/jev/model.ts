@@ -142,6 +142,8 @@ export const createAsk = (profile: ModelProfile): Ask => {
       defaultModel: profile.model,
       timeout: 15_000,
       logLevel: 'off',
+      // SDK 0.7 sends zstd bodies by default; only the TypeSafe API is known to accept them.
+      ...(profile.baseURL && { compression: false }),
     }),
   );
 };

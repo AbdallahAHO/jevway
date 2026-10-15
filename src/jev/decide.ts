@@ -76,7 +76,7 @@ export interface Decision {
 
 export type Ask = (
   request: SystemOneRequest,
-) => Promise<{ answers: Record<string, any>; usage: { input_tokens: number } }>;
+) => Promise<{ answers: Record<string, any>; usage: { input_tokens: number | null } }>;
 
 export const askWith =
   (client: TypeSafeClient): Ask =>
@@ -98,12 +98,12 @@ export const decide = async (ask: Ask, input: DecisionInput): Promise<Decision> 
   const response = await ask(request);
   const decision = readDecision(input, space, response.answers);
   let requests = 1;
-  let inputTokens = response.usage.input_tokens;
+  let inputTokens = response.usage.input_tokens ?? 0;
 
   const followUp = async (questions: Record<string, Question>) => {
     const answer = await ask({ state: request.state, questions });
     requests++;
-    inputTokens += answer.usage.input_tokens;
+    inputTokens += answer.usage.input_tokens ?? 0;
     return answer.answers;
   };
   const followUps: Promise<void>[] = [];
@@ -186,7 +186,7 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
   // Vision models read image parts only from a top-level state array, ahead of the JSON state.
   // Interfaces lack index signatures, so the plain JSON state needs one cast for the SDK's EntryType.
   return {
-    state: (input.screenshot ? [imagePart(input.screenshot), state] : state) as unknown as EntryType,
+    state: (input.screenshot ? [imagePart(input.screenshot), state] : state) as unknown as NonNullable<EntryType>,
     questions,
   };
 };
