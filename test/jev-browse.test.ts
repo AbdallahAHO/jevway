@@ -1,9 +1,13 @@
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StalePage, type PageAction, type PageState, type Tab } from '../src/browser/tab.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
 import { buildRequest, decide, NO_SUPPLIED_VALUE, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
 import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
 import { resolveModel } from '../src/jev/model.ts';
+import { describeStep, frameDurations, videoOffset } from '../src/task/recording.ts';
 import { BrowserTask } from '../src/task/run-task.ts';
 
 const NAME_RECT = { x: 20, y: 100, w: 350, h: 40 };
@@ -91,17 +95,28 @@ const fakeTab = (pages: PageState[] = [page()]) => {
   const tab = {
     staleOnce: false,
     screenshots: 0,
+    recorded: 0,
     clicksAt: [] as { x: number; y: number }[],
     clickAt: async (point: { x: number; y: number }) => {
       tab.clicksAt.push(point);
       return 'canvas';
     },
-    markedScreenshot: async () => {
-      tab.screenshots++;
+    markedScreenshot: async (_marks: unknown, _viewport: unknown, options?: { sharp?: boolean }) => {
+      if (options?.sharp) tab.recorded++;
+      else tab.screenshots++;
       return 'SCREENSHOT';
     },
     observe: async () => pages[Math.min(observed++, pages.length - 1)],
     fresh: async () => true,
+    wanted: [] as string[],
+    want: (texts: string[]) => {
+      tab.wanted = texts;
+    },
+    dismissPopup: async () => {
+      acted.push({ label: 'dismissPopup' });
+    },
+    send: async () => ({}),
+    onEvent: () => () => true,
     act: async (action: PageAction, _page: PageState, text?: string) => {
       if (tab.staleOnce) {
         tab.staleOnce = false;
@@ -289,6 +304,54 @@ describe('screenshots', () => {
     const { asTab } = fakeTab([page({ fingerprint: 'a' }), page({ fingerprint: 'b' })]);
     await new BrowserTask(asTab, ask, { goal: 'Open', screenshots: 'always' }).run();
     expect(requests.every((request) => Array.isArray(request.state))).toBe(true);
+  });
+
+  it('records a sharp shot before each action and of the final page, never sent to the model', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'DONE' }]);
+    const { tab, asTab } = fakeTab([page({ fingerprint: 'a' }), page({ fingerprint: 'b' })]);
+    const recordDir = mkdtempSync(join(tmpdir(), 'jev-record-'));
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open', recordDir }).run();
+    expect(summary.status).toBe('done');
+    expect(tab.recorded).toBe(2);
+    expect(tab.screenshots).toBe(0);
+    expect(requests.some((request) => Array.isArray(request.state))).toBe(false);
+    expect(readdirSync(recordDir).sort()).toEqual(['01.jpg', '02.jpg', 'index.html', 'summary.json']);
+    const { steps } = JSON.parse(readFileSync(join(recordDir, 'summary.json'), 'utf8'));
+    expect(steps.map((s: { operation: string }) => s.operation)).toEqual(['CLICK', 'done']);
+    expect(steps[0].description).toMatch(/^Click "/);
+    expect(readFileSync(join(recordDir, 'index.html'), 'utf8')).toContain('<img src="01.jpg"');
+  });
+
+  it('holds each video frame until the next, without freezing on idle stretches', () => {
+    expect(frameDurations([10, 10.2, 19, 19.01]).map((s) => Number(s.toFixed(3)))).toEqual([0.2, 1.5, 0.033, 1.5]);
+  });
+
+  it('places each step in the video by the frames shown before it', () => {
+    const times = [100, 100.5, 110];
+    expect(videoOffset(times, frameDurations(times), 105)).toBe(2);
+  });
+
+  it('describes steps as plain sentences, cutting long row labels at a word', () => {
+    expect(describeStep({ operation: 'TYPE_TEXT', element: 'Search', valueKey: 'search_query' })).toBe(
+      'Type the "search_query" value into "Search"',
+    );
+    const row = describeStep({ operation: 'CLICK', element: `2026-10-15 15:19:13 handle-chatbot-message ${'x '.repeat(60)}` });
+    expect(row).toMatch(/^Click "2026-10-15 15:19:13 handle-chatbot-message[^"]*…"$/);
+    expect(row.length).toBeLessThan(85);
+  });
+
+  it('replaces the shot of an action the page moved away from with its retry', async () => {
+    const click = { operation: 'CLICK', click_target: '1' };
+    const { ask } = scriptedJev([click, click, { operation: 'DONE' }]);
+    const { tab, asTab } = fakeTab([page({ fingerprint: 'a' }), page({ fingerprint: 'a' }), page({ fingerprint: 'b' })]);
+    tab.staleOnce = true;
+    const recordDir = mkdtempSync(join(tmpdir(), 'jev-record-'));
+    await new BrowserTask(asTab, ask, { goal: 'Open', recordDir }).run();
+    const { steps } = JSON.parse(readFileSync(join(recordDir, 'summary.json'), 'utf8'));
+    expect(steps.map((s: { file: string; operation: string }) => [s.file, s.operation])).toEqual([
+      ['01.jpg', 'CLICK'],
+      ['02.jpg', 'done'],
+    ]);
   });
 });
 

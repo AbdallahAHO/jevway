@@ -49,9 +49,15 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
         .describe(
           'Opt-in (new session only): when no listed element can progress but the screenshot shows a control (canvas, iframe), click the centre of its box after a hit-test. Needs Jev 1.14 on the TypeSafe API; irreversible clicks still need confirmation.',
         ),
+      record_dir: z
+        .string()
+        .optional()
+        .describe(
+          'New session only: save a sharp screenshot before every action (target outlined), the final page, summary.json and an index.html viewer in this folder.',
+        ),
     },
   },
-  async ({ goal, url, tab, values, done_when, session, confirm_irreversible, max_steps, allow_coordinate_clicks }) => {
+  async ({ goal, url, tab, values, done_when, session, confirm_irreversible, max_steps, allow_coordinate_clicks, record_dir }) => {
     try {
       const id = session ?? randomUUID().slice(0, 8);
       let entry = sessions.get(id);
@@ -73,6 +79,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
           doneWhen: done_when,
           maxSteps: max_steps,
           allowCoordinateClicks: allow_coordinate_clicks,
+          recordDir: record_dir,
         });
         entry = { task, ownsTab: Boolean(url) };
         sessions.set(id, entry);

@@ -123,6 +123,7 @@ export class Tab {
   /**
    * Viewport JPEG with each mark drawn as a numbered box, so a vision model can tie what it sees to an
    * element index. The overlay is removed before this returns, so it never meets a freshness check or input.
+   * `sharp` is for people (step recordings): native pixel ratio at high quality, never sent to a model.
    *
    * @example
    * const jpeg = await tab.markedScreenshot(buildActionSpace(page.actions).marks, page);
@@ -130,10 +131,13 @@ export class Tab {
   async markedScreenshot(
     marks: { label: string; node?: number; rect: NonNullable<PageAction['rect']> }[],
     viewport: { w: number; h: number },
+    { sharp = false } = {},
   ) {
     const pixelRatio = Number(await this.#evaluate('devicePixelRatio')) || 1;
     await this.#evaluate(`(${DRAW_MARKS})(${JSON.stringify(marks)})`);
     try {
+      // Rendered at 2× CSS pixels whatever the screen: Chrome re-rasterises at the clip scale, so text stays crisp.
+      if (sharp) return await this.screenshot({ format: 'jpeg', quality: 90, scale: 2 / pixelRatio });
       // Output pixels are CSS pixels × scale × pixel ratio. Stay within 1024 wide and 1536 tall: models read about
       // a megapixel, and Jev rejects any side over 1568 px (a phone at 2× is 786×1704 unscaled).
       const scale = Math.min(1, 1024 / (viewport.w * pixelRatio), 1536 / (viewport.h * pixelRatio));

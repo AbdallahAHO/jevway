@@ -3,6 +3,7 @@ import { buildActionSpace } from '../jev/action-space.ts';
 import { centerOf, contains } from '../jev/box.ts';
 import { decide, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
 import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
+import { Recording } from './recording.ts';
 
 export interface TaskOptions {
   goal: string;
@@ -32,6 +33,8 @@ export interface TaskOptions {
    * output becomes a coordinate. Still gated by commit risk.
    */
   allowCoordinateClicks?: boolean;
+  /** Save a sharp screenshot before every action, plus the final page and an index.html viewer, here. */
+  recordDir?: string;
 }
 
 export type TaskStatus = 'done' | 'needs_input' | 'needs_confirmation' | 'uncertain' | 'blocked' | 'step_budget';
@@ -93,7 +96,7 @@ const BOX_PADDING = 16;
  */
 export class BrowserTask {
   readonly trace: TraceEntry[] = [];
-  #options: Required<Omit<TaskOptions, 'doneWhen'>> & Pick<TaskOptions, 'doneWhen'>;
+  #options: Required<Omit<TaskOptions, 'doneWhen' | 'recordDir'>> & Pick<TaskOptions, 'doneWhen'>;
   #history: (StepRecord & { confidence: number })[] = [];
   #latencies: number[] = [];
   #inputTokens = 0;
@@ -103,11 +106,13 @@ export class BrowserTask {
   #lastTyped: PageAction | undefined;
   #tab: Tab;
   #ask: Ask;
+  #recording: Recording | undefined;
 
-  constructor(tab: Tab, ask: Ask, options: TaskOptions) {
+  constructor(tab: Tab, ask: Ask, { recordDir, ...options }: TaskOptions) {
     this.#tab = tab;
     this.#ask = ask;
     this.#options = { ...DEFAULTS, values: {}, ...definedOnly(options) };
+    if (recordDir) this.#recording = new Recording(recordDir);
   }
 
   get tab() {
@@ -116,12 +121,20 @@ export class BrowserTask {
 
   /** Merge new values, a new goal, or a one-time confirmation for the next irreversible click. */
   update(patch: Partial<TaskOptions> & { confirmIrreversible?: boolean }) {
-    const { confirmIrreversible, values, ...options } = patch;
+    const { confirmIrreversible, values, recordDir: _recordDir, ...options } = patch;
     this.#options = { ...this.#options, ...definedOnly(options), values: { ...this.#options.values, ...values } };
     if (confirmIrreversible) this.#confirmedCommit = true;
   }
 
   async run(): Promise<TaskSummary> {
+    await this.#recording?.start(this.#tab);
+    const summary = await this.#loop();
+    await this.#recording?.finish(this.#tab, summary);
+    return summary;
+  }
+
+  async #loop(): Promise<TaskSummary> {
+    this.#tab.want(Object.values(this.#options.values));
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
     const { maxSteps, values, doneWhen } = this.#options;
@@ -212,6 +225,18 @@ export class BrowserTask {
       const text = decision.valueKey ? values[decision.valueKey] : undefined;
       let element: string;
       try {
+        await this.#recording?.step(
+          this.#tab,
+          page,
+          {
+            operation: decision.operation,
+            element: action.label,
+            valueKey: decision.valueKey ?? undefined,
+            option: action.kind === 'select' ? String(action.value) : undefined,
+            confidence: round(Math.min(decision.confidence, decision.targetConfidence ?? 1)),
+          },
+          decision.operation === 'CLICK_AT' ? decision.nextClick!.rect : action.rect,
+        );
         if (decision.operation === 'CLICK_AT') {
           const point = centerOf(decision.nextClick!.rect);
           element = `${await this.#tab.clickAt(point, page)} @ ${Math.round(point.x)},${Math.round(point.y)}`;
@@ -222,6 +247,7 @@ export class BrowserTask {
       } catch (error) {
         if (!(error instanceof StalePage)) throw error;
         record(false);
+        this.#recording?.discardLast();
         page = await this.#tab.observe();
         continue;
       }
