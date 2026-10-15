@@ -10,12 +10,15 @@
   th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #ddd; }
   .bar { height: 14px; width: 160px; background: #e4e4e4; border-radius: 4px; }
   #detail { margin-top: 12px; padding: 12px; border: 1px solid #aaa; }
+  #detail h2 { margin: 0 0 8px; }
+  #detail dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0 0 12px; }
+  #detail dd { margin: 0; }
 </style>
 </head>
 <body>
 <main>
   <h1>Runs</h1>
-  <table>
+  <table id="run-list">
     <thead><tr><th>Name</th><th>Status</th><th>Duration</th></tr></thead>
     <tbody id="list" aria-busy="true"></tbody>
   </table>
@@ -50,14 +53,28 @@
     window.__fixture.loaded = true;
   }, 2500);
 
+  // Opening a run replaces the list with the run's own panel, as real apps do; "Back to runs" returns to the list.
+  const table = document.getElementById('run-list');
+  const detail = document.getElementById('detail');
   document.addEventListener('click', (event) => {
+    if (event.target.closest('#back')) {
+      event.preventDefault();
+      later(() => {
+        detail.hidden = true;
+        table.hidden = false;
+        window.__fixture.opened = null;
+      });
+      return;
+    }
     const link = event.target.closest('a[data-id]');
     if (!link) return;
     event.preventDefault();
     const { id } = link.dataset;
+    const [, status, duration] = runs.find(([name]) => name === id);
     later(() => {
-      document.getElementById('detail').hidden = false;
-      document.getElementById('detail').textContent = `Run ${id}`;
+      table.hidden = true;
+      detail.hidden = false;
+      detail.innerHTML = `<h2>Run ${id}</h2><dl><dt>Status</dt><dd>${status}</dd><dt>Duration</dt><dd>${duration}</dd></dl><a href="#" id="back">Back to runs</a>`;
       window.__fixture.opened = id;
     });
   });
