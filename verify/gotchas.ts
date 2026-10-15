@@ -9,7 +9,8 @@
  *
  * Profiles: `normal` (plain page), `slow` (400 ms latency, 50 KB/s, 4x CPU throttling), `churn` (?chaos=1: the list is
  * rebuilt every 900 ms, a 40 px banner comes and goes every 1.3 s, click effects land 300-800 ms late).
- * Every scenario asserts the page's own state (window.__fixture), never Jev's DONE.
+ * A run passes (✔) only when the page's own state (window.__fixture) shows the goal reached AND the run ended `done`;
+ * ◐ is a goal reached with another status (the calling agent would think it failed), ✘ a goal not reached.
  */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -34,7 +35,10 @@ interface RunResult {
   scenario: string;
   profile: Profile;
   run: number;
+  /** Strict: the page shows the goal reached and the run ended `done`. */
   passed: boolean;
+  /** The page's own state shows the goal reached, whatever status the run ended with. */
+  reached: boolean;
   /** `task.run()` (or the browser around it) threw: it should always hand back a summary instead. */
   crashed: boolean;
   summary?: TaskSummary;
@@ -178,7 +182,7 @@ const openTab: Record<Profile, (url: string) => Promise<Tab>> = {
 };
 
 const runOnce = async (scenario: Scenario, profile: Profile, run: number): Promise<RunResult> => {
-  const result: RunResult = { scenario: scenario.id, profile, run, passed: false, crashed: false };
+  const result: RunResult = { scenario: scenario.id, profile, run, passed: false, reached: false, crashed: false };
   let tab: Tab | undefined;
   try {
     tab = await openTab[profile](`${origin}/${scenario.id}.html`);
@@ -194,11 +198,13 @@ const runOnce = async (scenario: Scenario, profile: Profile, run: number): Promi
     result.summary = await task.run();
     // Under churn the last click's effect can still be on its way (up to 800 ms) when the run ends.
     if (profile === 'churn') await sleep(1000);
-    result.passed = Boolean(await groundTruth(tab.targetId, scenario.passes));
+    result.reached = Boolean(await groundTruth(tab.targetId, scenario.passes));
+    result.passed = result.reached && result.summary.status === 'done';
     result.fixture = await groundTruth(tab.targetId, 'window.__fixture');
   } catch (error) {
     result.crashed = true;
     result.passed = false;
+    result.reached = false;
     result.error = (error as Error).message;
   } finally {
     await tab?.close();
@@ -210,7 +216,8 @@ const oneLine = (text: string, max = 300) => text.replace(/\s+/g, ' ').slice(0, 
 
 const describe = (result: RunResult) => {
   const { summary } = result;
-  const head = `${result.passed ? '✔' : '✘'} ${result.scenario} ${result.profile} #${result.run}`;
+  const mark = result.passed ? '✔' : result.reached ? '◐' : '✘';
+  const head = `${mark} ${result.scenario} ${result.profile} #${result.run}`;
   if (result.crashed) return `${head} — crashed${summary ? ` after ${summary.steps.length} actions` : ''} · ${oneLine(result.error ?? '')}`;
   if (!summary) return head;
   const timing = `${summary.status} in ${summary.elapsed_ms}ms · ${summary.steps.length} actions`;
@@ -236,9 +243,14 @@ try {
 }
 
 const passedIn = (rows: RunResult[]) => rows.filter((row) => row.passed).length;
-const cell = (rows: RunResult[]) => `${passedIn(rows)}/${rows.length}`;
+// Goal reached on the page, but the run ended with a status other than `done`.
+const reachedOnlyIn = (rows: RunResult[]) => rows.filter((row) => row.reached && !row.passed).length;
+const cell = (rows: RunResult[]) => {
+  const reachedOnly = reachedOnlyIn(rows);
+  return `${passedIn(rows)}/${rows.length}${reachedOnly ? ` (+${reachedOnly} reached)` : ''}`;
+};
 const idWidth = Math.max(...scenarios.map((scenario) => scenario.id.length), 'scenario'.length);
-const line = (name: string, cells: string[]) => `${name.padEnd(idWidth)}  ${cells.map((text) => text.padStart(11)).join('')}\n`;
+const line = (name: string, cells: string[]) => `${name.padEnd(idWidth)}  ${cells.map((text) => text.padStart(24)).join('')}\n`;
 
 process.stdout.write(`\n${line('scenario', profiles)}`);
 for (const scenario of scenarios) {
@@ -252,5 +264,8 @@ process.stdout.write(
   })),
 );
 const crashes = results.filter((result) => result.crashed).length;
-process.stdout.write(`\n${passedIn(results)}/${results.length} runs passed · ${crashes} crashed · report in ${outDir.pathname}report.json\n`);
+const reachedOnly = reachedOnlyIn(results);
+process.stdout.write(
+  `\n${passedIn(results)}/${results.length} runs passed (done, goal reached)${reachedOnly ? ` · ${reachedOnly} more reached the goal without ending done` : ''} · ${crashes} crashed · report in ${outDir.pathname}report.json\n`,
+);
 process.exitCode = passedIn(results) === results.length ? 0 : 1;
