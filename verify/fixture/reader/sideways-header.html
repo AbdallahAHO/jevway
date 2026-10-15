@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sideways header</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  .box { width: 600px; overflow: auto; }
+  /* The sortable column starts at x=2500, far past the 600px scroll box and the viewport. */
+  table { border-collapse: collapse; width: 3000px; table-layout: fixed; }
+  th, td { padding: 6px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid #ddd; }
+  th:nth-child(-n+4) { width: 625px; }
+  th.sortable { cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="box">
+  <table>
+    <thead><tr><th>Time</th><th>Name</th><th>Input</th><th>Output</th><th class="sortable">Latency</th></tr></thead>
+    <tbody>
+      <tr><td>10:01</td><td>alpha</td><td>in</td><td>out</td><td>120 ms</td></tr>
+      <tr><td>10:02</td><td>beta</td><td>in</td><td>out</td><td>80 ms</td></tr>
+    </tbody>
+  </table>
+</div>
+<script>
+  window.__fixture = { sorted: null };
+  document.querySelector('th.sortable').addEventListener('click', () => (window.__fixture.sorted = 'latency'));
+</script>
+</body>
+</html>

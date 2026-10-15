@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shadow root</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<x-search></x-search>
+<script>
+  window.__fixture = { clicked: false };
+  // A web component whose button lives in an open shadow root, like MDN's search button.
+  customElements.define('x-search', class extends HTMLElement {
+    connectedCallback() {
+      const root = this.attachShadow({ mode: 'open' });
+      root.innerHTML = '<button type="button">Search</button>';
+      root.querySelector('button').addEventListener('click', () => (window.__fixture.clicked = true));
+    }
+  });
+</script>
+</body>
+</html>

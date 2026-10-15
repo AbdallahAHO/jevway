@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wanted value on screen</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  .top { padding: 16px; }
+  .spacer { height: 900px; }
+  td { padding: 6px 10px; border-bottom: 1px solid #eee; }
+  tbody tr { cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="top"><a href="#">ERROR log</a></div>
+<div class="spacer"></div>
+<table><tbody id="rows"></tbody></table>
+<script>
+  window.__fixture = { opened: null };
+  const rows = document.getElementById('rows');
+  for (let i = 1; i <= 50; i++) {
+    const row = document.createElement('tr');
+    const id = String(i).padStart(3, '0');
+    row.innerHTML = `<td>ERROR</td><td>timeout ${id}</td>`;
+    row.addEventListener('click', () => (window.__fixture.opened = id));
+    rows.append(row);
+  }
+</script>
+</body>
+</html>

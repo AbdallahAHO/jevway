@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Header with button</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  table { border-collapse: collapse; width: 800px; }
+  th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #ddd; }
+  th.sortable { cursor: pointer; }
+</style>
+</head>
+<body>
+<table>
+  <thead>
+    <tr>
+      <th class="sortable">Start time <button type="button" aria-label="Drag to reorder">⋮</button></th>
+      <th>Name</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>10:01</td><td>alpha</td></tr>
+  </tbody>
+</table>
+<script>
+  window.__fixture = { sorted: null };
+  document.querySelector('th.sortable').addEventListener('click', () => (window.__fixture.sorted = 'start-time'));
+</script>
+</body>
+</html>

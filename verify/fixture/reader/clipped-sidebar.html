@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Clipped sidebar</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; display: flex; }
+  /* 30 links of 24px (720px) in a 300px scroll box: the last one is inside the viewport but clipped by the box. */
+  nav { width: 200px; height: 300px; overflow: auto; flex: none; background: #f3f3f3; }
+  nav a { display: block; height: 24px; line-height: 24px; padding: 0 12px; }
+  main { flex: 1; padding: 16px; }
+</style>
+</head>
+<body>
+<nav id="nav"></nav>
+<main>Content</main>
+<script>
+  window.__fixture = { nav: null };
+  const nav = document.getElementById('nav');
+  for (let i = 1; i <= 30; i++) {
+    const link = document.createElement('a');
+    link.href = '#';
+    link.textContent = `Item ${i}`;
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      window.__fixture.nav = link.textContent;
+    });
+    nav.append(link);
+  }
+</script>
+</body>
+</html>

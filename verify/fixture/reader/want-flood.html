@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wanted value floods</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  /* The spacer pushes every row below the fold, so nothing wanted is on screen. */
+  .spacer { height: 900px; padding: 16px; }
+  td { padding: 6px 10px; border-bottom: 1px solid #eee; }
+  tbody tr { cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="spacer">Events</div>
+<table><tbody id="rows"></tbody></table>
+<script>
+  window.__fixture = { opened: null };
+  const rows = document.getElementById('rows');
+  for (let i = 1; i <= 300; i++) {
+    const row = document.createElement('tr');
+    const id = String(i).padStart(3, '0');
+    row.innerHTML = `<td>ERROR</td><td>timeout ${id}</td>`;
+    row.addEventListener('click', () => (window.__fixture.opened = id));
+    rows.append(row);
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Popup items</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  .popup { position: absolute; top: 56px; left: 16px; width: 180px; background: #fff; border: 1px solid #bbb; }
+  /* Plain divs that only look clickable: no role, no tabindex, just a pointer. */
+  .item { cursor: pointer; padding: 8px 12px; }
+</style>
+</head>
+<body>
+<button type="button" aria-haspopup="dialog" aria-expanded="true">Date range</button>
+<div class="popup" role="dialog" aria-label="Date range">
+  <div class="item">Today</div>
+  <div class="item">Past 7 days</div>
+  <div class="item">Past 30 days</div>
+</div>
+<script>
+  window.__fixture = { range: null };
+  for (const item of document.querySelectorAll('.item')) {
+    item.addEventListener('click', () => (window.__fixture.range = item.textContent));
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Below the fold</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  /* 50px rows: about 15 fit in the 780px viewport. */
+  a { display: block; height: 50px; line-height: 50px; padding: 0 12px; border-bottom: 1px solid #eee; }
+</style>
+</head>
+<body>
+<script>
+  window.__fixture = { opened: null };
+  for (let i = 1; i <= 60; i++) {
+    const link = document.createElement('a');
+    link.href = '#';
+    link.textContent = `u-${String(i).padStart(4, '0')}`;
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      window.__fixture.opened = link.textContent;
+    });
+    document.body.append(link);
+  }
+</script>
+</body>
+</html>

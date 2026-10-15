@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>JSON row</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  .box { width: 600px; overflow: auto; }
+  td { padding: 6px 10px; white-space: nowrap; border-bottom: 1px solid #eee; }
+  tbody tr { cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="box">
+  <table>
+    <tbody>
+      <tr><td>trace-1</td><td id="payload"></td></tr>
+    </tbody>
+  </table>
+</div>
+<script>
+  window.__fixture = { opened: null };
+  // A 5 000-character JSON payload, like the input of a traced LLM call.
+  const blob = JSON.stringify({ spans: Array.from({ length: 400 }, (_, i) => ({ id: i, ok: true })) }).slice(0, 5000);
+  document.getElementById('payload').textContent = blob;
+  document.querySelector('tr').addEventListener('click', () => (window.__fixture.opened = 'trace-1'));
+</script>
+</body>
+</html>

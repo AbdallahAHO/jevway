@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Escape ignored</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  #form { position: absolute; left: 40px; top: 40px; margin: 0; }
+  /* A suggestion list painted over the button. */
+  #menu { position: absolute; left: 0; top: 0; width: 300px; height: 150px; z-index: 10; background: #fff; border: 1px solid #888; }
+  #menu div { padding: 6px 10px; }
+</style>
+</head>
+<body>
+<form id="form" onsubmit="return false"><button type="button" id="save">Save</button></form>
+<div id="menu" role="listbox" aria-label="Suggestions">
+  <div role="option">Suggestion one</div>
+  <div role="option">Suggestion two</div>
+</div>
+<script>
+  window.__fixture = { saved: 0, menuOpen: true };
+  const menu = document.getElementById('menu');
+  // Escape is ignored on purpose: the list closes only on a press outside it.
+  document.addEventListener('pointerdown', (event) => {
+    if (menu.contains(event.target)) return;
+    menu.hidden = true;
+    window.__fixture.menuOpen = false;
+  });
+  document.getElementById('save').addEventListener('click', () => window.__fixture.saved++);
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sticky cover</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  /* A fixed site header that paints over whatever scrolls under it. */
+  header { position: fixed; top: 0; left: 0; right: 0; height: 60px; z-index: 5; background: #222; color: #fff; padding: 20px 16px; box-sizing: border-box; }
+  .before { height: 1000px; }
+  .after { height: 3000px; }
+  #target { height: 30px; }
+</style>
+</head>
+<body>
+<header>Site header</header>
+<div class="before"></div>
+<button type="button" id="target">Add to basket</button>
+<div class="after"></div>
+<script>
+  window.__fixture = { added: 0 };
+  document.getElementById('target').addEventListener('click', () => window.__fixture.added++);
+</script>
+</body>
+</html>

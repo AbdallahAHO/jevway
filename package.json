@@ -24,6 +24,7 @@
     "verify": "node --env-file-if-exists=.env verify/run.ts",
     "mcp": "node --env-file-if-exists=.env src/mcp.ts",
     "cli": "node --env-file-if-exists=.env src/cli.ts",
+    "verify:reader": "node verify/reader.ts",
     "verify:journeys": "node --env-file-if-exists=.env verify/journeys.ts",
     "verify:real": "node --env-file-if-exists=.env verify/real-world.ts",
     "verify:langfuse": "node --env-file-if-exists=.env verify/langfuse.ts"

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wide rows</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  /* A scroll box far narrower than its table, so each row's centre sits off-screen. */
+  .box { width: 600px; overflow: auto; }
+  table { border-collapse: collapse; width: 3000px; }
+  td, th { padding: 6px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid #ddd; }
+  tbody tr { cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="box">
+  <table>
+    <thead><tr><th>Time</th><th>Name</th><th>Output</th></tr></thead>
+    <tbody>
+      <tr data-name="alpha"><td>10:01</td><td>alpha</td><td>first row</td></tr>
+      <tr data-name="beta"><td>10:02</td><td>beta</td><td>second row</td></tr>
+      <tr data-name="gamma"><td>10:03</td><td>gamma</td><td>third row</td></tr>
+    </tbody>
+  </table>
+</div>
+<script>
+  window.__fixture = { opened: null };
+  for (const row of document.querySelectorAll('tbody tr')) {
+    row.addEventListener('click', () => (window.__fixture.opened = row.dataset.name));
+  }
+</script>
+</body>
+</html>
