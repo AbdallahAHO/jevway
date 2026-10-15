@@ -41,7 +41,7 @@ export interface RunJobsOptions {
   /** The report heading, given how many jobs were selected. */
   title: (jobCount: number) => string;
   startUrl: string;
-  /** The app's origin: its local and session storage are cleared before every run. */
+  /** The app's origin. Storage is now cleared from inside each run's tab, so the runner no longer reads this. */
   origin: string;
   browser: BrowserSource;
   jobs: Job[];
@@ -49,7 +49,7 @@ export interface RunJobsOptions {
   before?: (tab: Tab) => Promise<void>;
 }
 
-export const runJobs = async ({ name, title, startUrl, origin, browser, jobs, before }: RunJobsOptions) => {
+export const runJobs = async ({ name, title, startUrl, browser, jobs, before }: RunJobsOptions) => {
   const knob = (suffix: string) => `JEV_${name.toUpperCase()}_${suffix}`;
   const { profile, screenshots } = resolveModel();
   const ask = createAsk(profile);
@@ -78,14 +78,14 @@ export const runJobs = async ({ name, title, startUrl, origin, browser, jobs, be
       results.push(result);
       for (let run = 1; run <= runs; run++) {
         const dir = `${job.id}/run-${run}/`;
-        // Each run starts clean: apps remember date ranges and views in browser storage, which leaked one run's
-        // choices into the next (a 30-day range set on Home made the next run "done" with no action). Login cookies stay.
-        await chrome.cdp
-          .send('Storage.clearDataForOrigin', { origin, storageTypes: 'local_storage,session_storage' })
-          .catch(() => undefined);
         const tab = await Tab.open(chrome.cdp, startUrl, { device });
         let ready = false;
         try {
+          // Each run starts clean: apps remember date ranges and views in storage, which leaked one run's choices into
+          // the next. Cleared from inside the page because the browser-level Storage.clearDataForOrigin fails with
+          // "Internal error" on launched headless Chrome. Login cookies stay.
+          await tab.evaluate('localStorage.clear(); sessionStorage.clear()');
+          await tab.navigate(startUrl);
           await before?.(tab);
           ready = true;
           const task = new BrowserTask(tab, ask, {
