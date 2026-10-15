@@ -10,7 +10,20 @@ import {
 } from '@typesafe-ai/sdk';
 import type { PageAction, PageState } from '../browser/tab.ts';
 import { buildActionSpace, pick, type ActionSpace, type TargetOperation } from './action-space.ts';
-import { COMMIT_RISK, DONE_CHECK, ELEMENT_COMMIT_RISK, NEXT_ACTION, TARGET, VALUE } from './instructions.ts';
+import { matchTarget, overlap, readBox, toViewportRect, type Rect } from './box.ts';
+import {
+  COMMIT_RISK,
+  DONE_CHECK,
+  ELEMENT_COMMIT_RISK,
+  NEXT_ACTION,
+  NEXT_CLICK_BOX,
+  NEXT_CLICK_COMMIT_RISK,
+  NEXT_CLICK_PRESENT,
+  TARGET,
+  TARGET_BOX,
+  TARGET_VISIBLE,
+  VALUE,
+} from './instructions.ts';
 import type { ImageTransport } from './model.ts';
 
 export const NO_SUPPLIED_VALUE = 'NO_SUPPLIED_VALUE';
@@ -24,6 +37,8 @@ export interface StepRecord {
   element: string;
   value_key?: string;
   page_changed?: boolean;
+  /** Set when the step was not executed because the screenshot showed its target covered. */
+  not_executed?: string;
 }
 
 export interface DecisionInput {
@@ -39,6 +54,8 @@ export interface DecisionInput {
   screenshot?: string;
   /** How the screenshot is sent (default `image_url`). */
   imageTransport?: ImageTransport;
+  /** Ask Box questions over the screenshot (needs `assets` transport on Jev 1.14). */
+  box?: boolean;
   /** Replaces NEXT_ACTION in the operation head as one flat instruction (Clef-omni reads that better). */
   compactRules?: string;
   /**
@@ -46,6 +63,19 @@ export interface DecisionInput {
    * follow-up request: the chosen CLICK only, or the top ranked taps (journey autopilot acts on those).
    */
   elementRisk?: 'chosen' | 'ranked';
+}
+
+export interface NextClick {
+  /** Viewport CSS pixels. */
+  rect: Rect;
+  confidence: number;
+  /** Probability that a control worth clicking next is visible at all (Box always answers with some box). */
+  present: number;
+  commitRisk: number;
+  /** The observed click target the box points at, when it overlaps one enough to count. */
+  match?: string;
+  matchLabel?: string;
+  matchOverlap: number;
 }
 
 export interface Candidate {
@@ -73,6 +103,14 @@ export interface Decision {
   sawScreenshot?: boolean;
   /** With `elementRisk`: commit risk per click target index that was asked about. */
   elementRisks?: Record<string, number>;
+  /** The chosen target's index (CLICK, TYPE_TEXT or SELECT). */
+  target?: string;
+  /** With `box`: where the screenshot says the next click belongs, and the observed click target it overlaps. */
+  nextClick?: NextClick;
+  /** With `box`, for a chosen CLICK: is the target visibly unobstructed, and does its boxed position match the DOM. */
+  targetCheck?: { visible: number; overlap: number };
+  /** Set when a BLOCKED decision was turned into a click from the screenshot's `nextClick`. */
+  via?: 'box';
   requests: number;
   inputTokens: number;
   latencyMs: number;
@@ -118,6 +156,24 @@ export const decide = async (ask: Ask, input: DecisionInput): Promise<Decision> 
     followUps.push(
       followUp({ value: valueQuestion(input, space, target) }).then((answers) => {
         Object.assign(decision, readValue(answers.value, input.values));
+      }),
+    );
+  }
+  // Is the chosen click target visibly unobstructed, and does the model see it where the DOM says it is?
+  if (input.box && input.screenshot && decision.operation === 'CLICK') {
+    const index = decision.target!;
+    const label = decision.action!.label;
+    followUps.push(
+      followUp({
+        target_visible: noul(TARGET_VISIBLE(label, index)),
+        target_box: { type: 'box', instructions: TARGET_BOX(label, index) },
+      }).then((answers) => {
+        const box = readBox(answers.target_box);
+        const rect = decision.action!.rect;
+        decision.targetCheck = {
+          visible: typeof answers.target_visible?.noul === 'number' ? answers.target_visible.noul : 0,
+          overlap: box && rect ? overlap(toViewportRect(box.edges, input.page), rect) : 0,
+        };
       }),
     );
   }
@@ -178,6 +234,11 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
   }
   if (input.checkCommitRisk && targets.CLICK && !input.elementRisk) questions.commit_risk = noul({ goal: input.goal, rules: COMMIT_RISK });
   if (input.doneWhen) questions.done_check = noul({ completion_condition: input.doneWhen, rules: DONE_CHECK });
+  if (input.box && input.screenshot) {
+    questions.next_click_box = { type: 'box', instructions: NEXT_CLICK_BOX(input.goal) };
+    questions.next_click_present = noul(NEXT_CLICK_PRESENT(input.goal));
+    questions.next_click_commit_risk = noul({ goal: input.goal, rules: NEXT_CLICK_COMMIT_RISK });
+  }
   Object.assign(questions, input.extraQuestions);
 
   const state = {
@@ -241,6 +302,20 @@ export const readDecision = (
     ...(answers.done_check && { doneProbability: answers.done_check.noul }),
   };
 
+  const nextClickBox = readBox(answers.next_click_box);
+  if (nextClickBox) {
+    const rect = toViewportRect(nextClickBox.edges, input.page);
+    const { index, overlap: matchOverlap } = matchTarget(rect, space.targets.CLICK ?? {});
+    decision.nextClick = {
+      rect,
+      confidence: nextClickBox.confidence,
+      present: answers.next_click_present?.noul ?? 0,
+      // Unknown risk counts as certain: it can only stop a click.
+      commitRisk: answers.next_click_commit_risk?.noul ?? 1,
+      ...(index && { match: index, matchLabel: space.targets.CLICK![index].label }),
+      matchOverlap,
+    };
+  }
   const candidates = space.targets[operation as TargetOperation];
   if (candidates) {
     // Unused target heads can never cause an action; only the chosen operation's head is validated.
@@ -250,6 +325,7 @@ export const readDecision = (
         ? { type: 'choice' as const, choice: ids[0], confidence: 1, probabilities: { [ids[0]]: 1 } }
         : validChoice(answers[`${operation.toLowerCase()}_target`], ids);
     decision.action = candidates[targetAnswer.choice];
+    decision.target = targetAnswer.choice;
     decision.targetConfidence = targetAnswer.confidence;
     decision.candidates = Object.entries(targetAnswer.probabilities)
       .sort(([, a], [, b]) => b - a)

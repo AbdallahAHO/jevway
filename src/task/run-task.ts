@@ -1,5 +1,6 @@
 import { StalePage, type PageState, type Tab } from '../browser/tab.ts';
 import { buildActionSpace } from '../jev/action-space.ts';
+import { centerOf, contains } from '../jev/box.ts';
 import { decide, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
 import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
 
@@ -23,6 +24,14 @@ export interface TaskOptions {
   /** Judge commit risk for the chosen click by name (see ModelProfile.elementRisk). */
   elementRisk?: boolean;
   imageTransport?: ImageTransport;
+  /** Box checks on screenshot decisions (see ModelProfile.box). */
+  box?: boolean;
+  /**
+   * Opt-in: when Jev is BLOCKED and the screenshot shows a control the DOM reader never reported (canvas,
+   * iframe), click the centre of its box after a hit-test. Off by default: it is the one path where model
+   * output becomes a coordinate. Still gated by commit risk.
+   */
+  allowCoordinateClicks?: boolean;
 }
 
 export type TaskStatus = 'done' | 'needs_input' | 'needs_confirmation' | 'uncertain' | 'blocked' | 'step_budget';
@@ -53,9 +62,21 @@ const DEFAULTS = {
   compactRules: '',
   elementRisk: false,
   imageTransport: 'image_url' as ImageTransport,
+  box: false,
+  allowCoordinateClicks: false,
 };
 // A DONE the completion check rejects usually means content is still loading: wait and re-decide this many times.
 const MAX_REJECTED_DONE = 3;
+// Box answers count only when the model is at least this sure a control is there and where it is.
+const BOX_SURE = 0.5;
+// The chosen target counts as covered on screen below this visibility (dense grids of outlines score 0.15–0.3).
+const COVERED_BELOW = 0.1;
+// ...and only when its box also barely overlaps where the DOM puts it.
+const COVERED_OVERLAP_BELOW = 0.1;
+// A covered target is fed back as history so Jev can clear it (dismiss a popover); this many times per run.
+const MAX_COVERED_RETRIES = 2;
+// Boxes on small targets land a row off (13 px checkboxes); pad before asking whether one covers the chosen control.
+const BOX_PADDING = 16;
 
 /**
  * A goal-driven run on one tab. `run()` loops observe → one Jev decision → guarded action until the
@@ -102,6 +123,7 @@ export class BrowserTask {
     let executed = 0;
     let decisions = 0;
     let rejectedDone = 0;
+    let coveredRetries = 0;
     const firstStep = this.#history.length;
     const firstRequest = this.#latencies.length;
     const tokensBefore = this.#inputTokens;
@@ -142,6 +164,7 @@ export class BrowserTask {
           elapsed_ms: elapsed(),
         });
 
+      decision = this.#boxRescue(decision, page);
       if (decision.operation === 'DONE' && doneWhen && (decision.doneProbability ?? 0) < 0.5) {
         record(false);
         if (++rejectedDone >= MAX_REJECTED_DONE) {
@@ -152,6 +175,17 @@ export class BrowserTask {
         continue;
       }
 
+      if (this.#looksCovered(decision) && coveredRetries++ < MAX_COVERED_RETRIES) {
+        record(false);
+        this.#history.push({
+          operation: decision.operation,
+          element: decision.action!.label,
+          not_executed: 'covered on screen by another layer; clear it first',
+          confidence: round(decision.confidence),
+        });
+        page = await this.#tab.observe();
+        continue;
+      }
       const handBack = this.#handBack(decision);
       if (handBack) {
         // A stop decided on a page that has since changed is stale: re-observe instead of reporting it.
@@ -166,8 +200,15 @@ export class BrowserTask {
 
       const action = decision.action!;
       const text = decision.valueKey ? values[decision.valueKey] : undefined;
+      let element: string;
       try {
-        await this.#tab.act(action, page, text);
+        if (decision.operation === 'CLICK_AT') {
+          const point = centerOf(decision.nextClick!.rect);
+          element = `${await this.#tab.clickAt(point, page)} @ ${Math.round(point.x)},${Math.round(point.y)}`;
+        } else {
+          await this.#tab.act(action, page, text);
+          element = action.label;
+        }
       } catch (error) {
         if (!(error instanceof StalePage)) throw error;
         record(false);
@@ -183,7 +224,7 @@ export class BrowserTask {
       page = await this.#tab.observe();
       this.#history.push({
         operation: decision.operation,
-        element: action.label,
+        element,
         ...(decision.valueKey && { value_key: decision.valueKey }),
         page_changed: page.fingerprint !== before,
         confidence: round(Math.min(decision.confidence, decision.targetConfidence ?? 1)),
@@ -197,7 +238,7 @@ export class BrowserTask {
 
   // One decision per step; `fallback` takes a second, screenshot-backed look at a shaky or stalled one.
   async #decide(page: PageState): Promise<Decision> {
-    const { goal, values, doneWhen, screenshots, compactRules, elementRisk, imageTransport } = this.#options;
+    const { goal, values, doneWhen, screenshots, compactRules, elementRisk, imageTransport, box } = this.#options;
     const decideOn = async (withScreenshot: boolean) => {
       const screenshot = withScreenshot
         ? await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page)
@@ -212,6 +253,7 @@ export class BrowserTask {
         screenshot,
         compactRules,
         imageTransport,
+        box,
         ...(elementRisk && { elementRisk: 'chosen' as const }),
       });
       this.#latencies.push(decision.latencyMs);
@@ -235,9 +277,69 @@ export class BrowserTask {
     );
   }
 
+  // Stuck (BLOCKED, or DONE that the completion check rejects) or unsure, but the screenshot confidently shows a
+  // control worth clicking: click the observed element the box points at, or (opt-in, stuck only) the box itself
+  // when the DOM reader never reported that control.
+  #boxRescue(decision: Decision, page: PageState): Decision {
+    const next = decision.nextClick;
+    if (!next || next.present < BOX_SURE || next.confidence < BOX_SURE) return decision;
+    const rejectedDone =
+      decision.operation === 'DONE' && !!this.#options.doneWhen && (decision.doneProbability ?? 0) < 0.5;
+    const blocked = rejectedDone || (decision.operation === 'BLOCKED' && !decision.fieldsWithoutValue.length);
+    const unsure = !blocked && this.#lowConfidence(decision);
+    if (!blocked && !unsure) return decision;
+    if (unsure && !next.match) return decision;
+    const rescued = {
+      ...decision,
+      via: 'box' as const,
+      confidence: Math.min(next.present, next.confidence),
+      targetConfidence: undefined,
+      commitRisk: next.commitRisk,
+    };
+    if (next.match) {
+      const action = buildActionSpace(page.actions).targets.CLICK![next.match];
+      return { ...rescued, operation: 'CLICK', action, target: next.match };
+    }
+    return this.#options.allowCoordinateClicks ? { ...rescued, operation: 'CLICK_AT' } : decision;
+  }
+
+  // The screenshot disagrees with the chosen click, or shows it covered: the agent should look.
+  #boxStop(decision: Decision): [TaskStatus, string] | undefined {
+    if (decision.operation !== 'CLICK' || decision.via) return undefined;
+    const label = decision.action!.label;
+    const next = decision.nextClick;
+    // A box that also covers the chosen element's centre is loose, not a disagreement.
+    const padded = next && {
+      x: next.rect.x - BOX_PADDING,
+      y: next.rect.y - BOX_PADDING,
+      w: next.rect.w + 2 * BOX_PADDING,
+      h: next.rect.h + 2 * BOX_PADDING,
+    };
+    const coversChosen = padded && decision.action!.rect && contains(padded, centerOf(decision.action!.rect));
+    const sure = next && next.present >= BOX_SURE && next.confidence >= BOX_SURE;
+    if (next?.match && next.match !== decision.target && sure && !coversChosen) {
+      return ['uncertain', `Jev chose "${label}", but the screenshot points at "${next.matchLabel}"`];
+    }
+    if (this.#looksCovered(decision)) {
+      return ['uncertain', `"${label}" looks covered on screen (visible ${round(decision.targetCheck!.visible)})`];
+    }
+    return undefined;
+  }
+
+  #lowConfidence(decision: Decision) {
+    if (['DONE', 'BLOCKED'].includes(decision.operation)) return false;
+    return Math.min(decision.confidence, decision.targetConfidence ?? 1) < this.#options.minConfidence;
+  }
+
+  // Both signals must agree: judged hidden, and boxed somewhere other than where the DOM puts it.
+  #looksCovered(decision: Decision) {
+    const check = decision.targetCheck;
+    return decision.operation === 'CLICK' && !!check && check.visible < COVERED_BELOW && check.overlap < COVERED_OVERLAP_BELOW;
+  }
+
   // Returns [status, reason] when this decision is the calling agent's to make.
   #handBack(decision: Decision): [TaskStatus, string] | undefined {
-    const { minConfidence, doneWhen } = this.#options;
+    const { doneWhen } = this.#options;
     if (decision.operation === 'DONE') {
       return [
         'done',
@@ -253,8 +355,10 @@ export class BrowserTask {
       }
       return ['blocked', 'No supported operation can make progress on this page'];
     }
-    const confidence = Math.min(decision.confidence, decision.targetConfidence ?? 1);
-    if (confidence < minConfidence) {
+    const boxStop = this.#boxStop(decision);
+    if (boxStop) return boxStop;
+    if (this.#lowConfidence(decision)) {
+      const confidence = Math.min(decision.confidence, decision.targetConfidence ?? 1);
       return [
         'uncertain',
         `Next step "${decision.operation} ${decision.action?.label ?? ''}" had confidence ${round(confidence)}`,
@@ -266,7 +370,7 @@ export class BrowserTask {
     if (isRiskyClick(decision) && !this.#confirmedCommit) {
       return [
         'needs_confirmation',
-        `Clicking "${decision.action!.label}" looks irreversible (risk ${round(decision.commitRisk!)})`,
+        `Clicking "${decision.action?.label ?? 'the control boxed on the screenshot'}" looks irreversible (risk ${round(decision.commitRisk!)})`,
       ];
     }
     return undefined;
@@ -277,7 +381,8 @@ export class BrowserTask {
 const definedOnly = <T extends object>(options: T) =>
   Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)) as T;
 
-const isRiskyClick = (decision: Decision) => decision.operation === 'CLICK' && (decision.commitRisk ?? 0) >= 0.5;
+const isRiskyClick = (decision: Decision) =>
+  ['CLICK', 'CLICK_AT'].includes(decision.operation) && (decision.commitRisk ?? 0) >= 0.5;
 
 const stuckOn = (decision: Decision, page: PageState) => ({
   operation: decision.operation,

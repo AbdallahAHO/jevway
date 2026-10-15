@@ -43,9 +43,15 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
       session: z.string().optional().describe('Continue a previous session (same tab, history kept).'),
       confirm_irreversible: z.boolean().optional().describe('Allow exactly one click flagged as irreversible.'),
       max_steps: z.number().int().positive().max(100).optional(),
+      allow_coordinate_clicks: z
+        .boolean()
+        .optional()
+        .describe(
+          'Opt-in (new session only): when no listed element can progress but the screenshot shows a control (canvas, iframe), click the centre of its box after a hit-test. Needs Jev 1.14 on the TypeSafe API; irreversible clicks still need confirmation.',
+        ),
     },
   },
-  async ({ goal, url, tab, values, done_when, session, confirm_irreversible, max_steps }) => {
+  async ({ goal, url, tab, values, done_when, session, confirm_irreversible, max_steps, allow_coordinate_clicks }) => {
     try {
       const id = session ?? randomUUID().slice(0, 8);
       let entry = sessions.get(id);
@@ -59,7 +65,15 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
           confirmIrreversible: confirm_irreversible,
         });
       } else {
-        const task = await runner.start({ goal, url, tab, values, doneWhen: done_when, maxSteps: max_steps });
+        const task = await runner.start({
+          goal,
+          url,
+          tab,
+          values,
+          doneWhen: done_when,
+          maxSteps: max_steps,
+          allowCoordinateClicks: allow_coordinate_clicks,
+        });
         entry = { task, ownsTab: Boolean(url) };
         sessions.set(id, entry);
       }

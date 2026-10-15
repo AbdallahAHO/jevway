@@ -11,6 +11,7 @@ const USAGE = `jev-browse --goal "<outcome>" (--url <url> | --tab <url part>) [o
   --screenshots off|fallback|always   marked screenshots, vision models only (default: per model, or $JEV_SCREENSHOTS)
   --max-steps 40
   --keep-open                     leave the tab open (auto/remote browsers)
+  --allow-coordinate-clicks       click a boxed control the DOM never reported (canvas, iframe); Jev 1.14 direct only
 
 Prints one JSON summary. Exit code 0 only when status is "done".
 Needs TYPESAFE_API_KEY (Jev only) or OPENROUTER_API_KEY (every model).`;
@@ -27,6 +28,7 @@ const { values: args } = parseArgs({
     screenshots: { type: 'string' },
     'max-steps': { type: 'string' },
     'keep-open': { type: 'boolean' },
+    'allow-coordinate-clicks': { type: 'boolean' },
     help: { type: 'boolean', short: 'h' },
   },
 });
@@ -56,6 +58,7 @@ try {
     values: args.values ? JSON.parse(args.values) : undefined,
     doneWhen: args['done-when'],
     maxSteps: args['max-steps'] ? Number(args['max-steps']) : undefined,
+    allowCoordinateClicks: args['allow-coordinate-clicks'],
   });
   const summary = await task.run();
   if (args.url && !args['keep-open']) await task.tab.close();

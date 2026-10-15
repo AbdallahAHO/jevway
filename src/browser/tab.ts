@@ -222,6 +222,31 @@ export class Tab {
     this.#afterInput = action;
   }
 
+  /**
+   * Opt-in click at a viewport point, for controls the DOM reader can't report (canvas, iframes). The page
+   * must be unchanged since observation and the point must land on a visible, enabled element in the viewport.
+   * Returns what was hit, for the step record.
+   *
+   * @example
+   * const hit = await tab.clickAt({ x: 320, y: 410 }, page); // 'canvas'
+   */
+  async clickAt(point: { x: number; y: number }, page: PageState): Promise<string> {
+    if (!(await this.fresh(page))) throw new StalePage('Page changed since this decision');
+    const hit = await this.#evaluate(`(${HIT_TEST})(${Number(point.x)}, ${Number(point.y)})`);
+    if (!hit) throw new StalePage('Nothing visible and enabled at that point');
+    const { x, y } = point;
+    if (this.#touch) {
+      await this.#call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      await this.#call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    } else {
+      for (const type of ['mousePressed', 'mouseReleased']) {
+        await this.#call('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+      }
+    }
+    this.#afterInput = undefined;
+    return String(hit);
+  }
+
   async close() {
     await this.cdp.send('Target.closeTarget', { targetId: this.targetId }).catch(() => undefined);
   }
@@ -315,6 +340,16 @@ const DRAW_MARKS = `marks => {
   }
   document.documentElement.append(host);
   return true;
+}`;
+
+// What a coordinate click would land on; null outside the viewport or on hidden/disabled content.
+const HIT_TEST = `(x, y) => {
+  if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return null;
+  const e = document.elementFromPoint(x, y);
+  if (!e || e.closest(':disabled,[aria-disabled="true"],[inert]')) return null;
+  if (!e.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return null;
+  const name = (e.getAttribute('aria-label') || e.getAttribute('title') || e.innerText || '').trim().replace(/\\s+/g, ' ');
+  return (name || e.tagName.toLowerCase()).slice(0, 80);
 }`;
 
 // Resolves the observed node, rejects hidden/disabled/covered targets, and applies native selects in-page.

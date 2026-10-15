@@ -2,13 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StalePage, type PageAction, type PageState, type Tab } from '../src/browser/tab.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
 import { buildRequest, decide, NO_SUPPLIED_VALUE, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
+import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
 import { resolveModel } from '../src/jev/model.ts';
 import { BrowserTask } from '../src/task/run-task.ts';
 
+const NAME_RECT = { x: 20, y: 100, w: 350, h: 40 };
+const PAY_RECT = { x: 20, y: 700, w: 350, h: 48 };
 // A booking form as the snapshot reports it: two text fields, a native select, a pay button.
 const bookingActions: PageAction[] = [
-  { id: 'e1', kind: 'fill', node: 1, role: 'textbox', label: 'Full name', value: '' },
-  { id: 'e2', kind: 'click', node: 1, role: 'textbox', label: 'Open Full name', value: '' },
+  { id: 'e1', kind: 'fill', node: 1, role: 'textbox', label: 'Full name', value: '', rect: NAME_RECT },
+  { id: 'e2', kind: 'click', node: 1, role: 'textbox', label: 'Open Full name', value: '', rect: NAME_RECT },
   { id: 'e3', kind: 'fill', node: 2, role: 'textbox', label: 'Email address', value: '' },
   {
     id: 'e4',
@@ -19,7 +22,15 @@ const bookingActions: PageAction[] = [
     value: '2',
     current_value: '1 guest',
   },
-  { id: 'e5', kind: 'click', node: 4, role: 'button', label: 'Confirm booking and pay €412', value: '' },
+  {
+    id: 'e5',
+    kind: 'click',
+    node: 4,
+    role: 'button',
+    label: 'Confirm booking and pay €412',
+    value: '',
+    rect: PAY_RECT,
+  },
   { id: 'wait', kind: 'wait', label: 'Wait for the page to update' },
 ];
 
@@ -47,6 +58,14 @@ const answer = (choice: string, ids: string[], confidence = 0.95) => ({
 
 /** Answers every question in a request with the scripted choice for that step, or its first option.
  * `confidence` sets the operation answer's confidence (default 0.95). */
+const NOWHERE = { top: 0, bottom: 0.01, left: 0, right: 0.01 };
+/** A Box answer covering a viewport rect of the 393×852 fixture page. */
+const boxAt = (rect: { x: number; y: number; w: number; h: number }, confidence = 0.9) => ({
+  type: 'box',
+  box: { left: rect.x / 393, right: (rect.x + rect.w) / 393, top: rect.y / 852, bottom: (rect.y + rect.h) / 852 },
+  confidence,
+});
+
 const scriptedJev = (steps: Record<string, any>[]) => {
   const requests: any[] = [];
   const ask: Ask = async (request) => {
@@ -55,6 +74,7 @@ const scriptedJev = (steps: Record<string, any>[]) => {
     const answers = Object.fromEntries(
       Object.entries(request.questions).map(([id, question]: [string, any]) => {
         if (question.type === 'noul') return [id, { type: 'noul', noul: script[id] ?? 0 }];
+        if (question.type === 'box') return [id, script[id] ?? { type: 'box', box: NOWHERE, confidence: 0 }];
         const ids = Object.keys(question.criteria);
         const confidence = id === 'operation' ? Number(script.confidence ?? 0.95) : 0.95;
         return [id, answer(String(script[id] ?? ids[0]), ids, confidence)];
@@ -71,6 +91,11 @@ const fakeTab = (pages: PageState[] = [page()]) => {
   const tab = {
     staleOnce: false,
     screenshots: 0,
+    clicksAt: [] as { x: number; y: number }[],
+    clickAt: async (point: { x: number; y: number }) => {
+      tab.clicksAt.push(point);
+      return 'canvas';
+    },
     markedScreenshot: async () => {
       tab.screenshots++;
       return 'SCREENSHOT';
@@ -284,13 +309,13 @@ describe('model choice', () => {
     vi.stubEnv('TYPESAFE_API_KEY', 'ts-key');
     const direct = resolveModel({ model: 'jev' });
     expect(direct).toMatchObject({
-      profile: { model: 'jev-1.14.0', apiKeyEnv: 'TYPESAFE_API_KEY', imageTransport: 'assets' },
+      profile: { model: 'jev-1.14.0', apiKeyEnv: 'TYPESAFE_API_KEY', imageTransport: 'assets', box: true },
       screenshots: 'fallback',
     });
     expect(direct.profile.baseURL).toBeUndefined();
-    // OpenRouter drops TypeSafe's `assets` map, so screenshots go as `image_url` parts there.
+    // OpenRouter drops TypeSafe's `assets` map, so Box only runs on the direct route.
     vi.stubEnv('TYPESAFE_API_KEY', '');
-    expect(resolveModel({ model: 'jev' }).profile).toMatchObject({ imageTransport: 'image_url' });
+    expect(resolveModel({ model: 'jev' }).profile).toMatchObject({ imageTransport: 'image_url', box: false });
   });
 
   it('defaults Clef to text-only and Clef-omni to a screenshot every step', () => {
@@ -330,14 +355,147 @@ describe('per-element commit risk', () => {
   });
 });
 
-describe('screenshots as TypeSafe assets', () => {
+describe('box geometry', () => {
+  it('maps a box to the observed target it overlaps, and nothing when the overlap is weak', () => {
+    const rect = toViewportRect({ top: 0.8, bottom: 0.9, left: 0.05, right: 0.95 }, { w: 400, h: 800 });
+    expect(Object.values(rect).map(Math.round)).toEqual([20, 640, 360, 80]);
+    const targets = { '1': { ...bookingActions[1] }, '4': { ...bookingActions[4], rect: { x: 20, y: 650, w: 360, h: 60 } } };
+    expect(matchTarget(rect, targets)).toMatchObject({ index: '4' });
+    expect(matchTarget({ x: 0, y: 0, w: 5, h: 5 }, targets).index).toBeUndefined();
+    // A wide row box around a narrower button still points at it: each centre lies inside the other.
+    expect(matchTarget({ x: 0, y: 640, w: 400, h: 80 }, { '4': { ...bookingActions[4], rect: { x: 150, y: 660, w: 100, h: 40 } } })).toMatchObject({ index: '4' });
+    expect(overlap({ x: 0, y: 0, w: 10, h: 10 }, { x: 5, y: 0, w: 10, h: 10 })).toBeCloseTo(1 / 3);
+  });
+
+  it('reads malformed or inverted boxes as no box', () => {
+    expect(readBox({ box: { top: 0.5, bottom: 0.4, left: 0, right: 1 }, confidence: 1 })).toBeUndefined();
+    expect(readBox({ box: { top: 0, bottom: 1.2, left: 0, right: 1 } })).toBeUndefined();
+    expect(readBox({ box: { top: 0, bottom: 1, left: 0, right: 1 } })).toMatchObject({ confidence: 0 });
+  });
+});
+
+describe('screenshots as TypeSafe assets, with Box', () => {
   const input = { page: page(), goal: 'Pay', values: {}, history: [], checkCommitRisk: true };
 
-  it('places the screenshot as an asset under `screenshot` instead of an image_url part', () => {
+  it('places the screenshot as an asset under `screenshot` and asks where the next click belongs', () => {
     const space = buildActionSpace(bookingActions);
-    const { state } = buildRequest({ ...input, screenshot: 'AAAA', imageTransport: 'assets' }, space) as any;
+    const { state, questions } = buildRequest(
+      { ...input, screenshot: 'AAAA', imageTransport: 'assets', box: true },
+      space,
+    ) as any;
     expect(Array.isArray(state)).toBe(false);
     expect(state.screenshot.constructor.name).toBe('Image');
-    expect(state.elements).toEqual(space.elements);
+    expect(questions.next_click_box).toMatchObject({ type: 'box' });
+    expect(questions).toHaveProperty('next_click_present');
+    expect(questions).toHaveProperty('next_click_commit_risk');
+  });
+
+  it('turns the next-click box into the observed target it covers, and checks the chosen click', async () => {
+    const { ask, requests } = scriptedJev([
+      {
+        operation: 'CLICK',
+        click_target: '4',
+        next_click_box: boxAt(PAY_RECT),
+        next_click_present: 0.95,
+        next_click_commit_risk: 0.97,
+        target_visible: 0.99,
+        target_box: boxAt(PAY_RECT),
+      },
+    ]);
+    const decision = await decide(ask, { ...input, screenshot: 'AAAA', imageTransport: 'assets', box: true });
+    expect(decision.nextClick).toMatchObject({ match: '4', present: 0.95, commitRisk: 0.97 });
+    expect(Object.keys(requests[1].questions)).toEqual(['target_visible', 'target_box']);
+    expect(decision.targetCheck!.visible).toBe(0.99);
+    expect(decision.targetCheck!.overlap).toBeCloseTo(1);
+  });
+});
+
+describe('Box in the task loop', () => {
+  const boxed = { goal: 'Pay', screenshots: 'always' as const, imageTransport: 'assets' as const, box: true };
+  // BLOCKED with empty text fields is needs_input; these pages have none.
+  const noFields = (overrides: Partial<PageState> = {}) =>
+    page({ actions: bookingActions.filter((action) => action.kind !== 'fill'), ...overrides });
+
+  it('hands back when the screenshot points at a different control than Jev chose', async () => {
+    const { ask } = scriptedJev([
+      { operation: 'CLICK', click_target: '1', next_click_box: boxAt(PAY_RECT), next_click_present: 0.9, target_visible: 0.9 },
+    ]);
+    const { asTab, acted } = fakeTab();
+    const summary = await new BrowserTask(asTab, ask, boxed).run();
+    expect(summary).toMatchObject({ status: 'uncertain' });
+    expect(summary.reason).toContain('screenshot points at "Confirm booking and pay €412"');
+    expect(acted).toEqual([]);
+  });
+
+  it('does not call a loose box that also covers the chosen control a disagreement', async () => {
+    const both = { x: 0, y: 90, w: 393, h: 670 };
+    const { ask } = scriptedJev([
+      { operation: 'CLICK', click_target: '1', next_click_box: boxAt(both), next_click_present: 0.9 },
+      // The covered-check follow-up is the second request.
+      { operation: 'DONE', target_visible: 0.9 },
+    ]);
+    const { asTab, acted } = fakeTab([page({ fingerprint: 'a' }), page({ fingerprint: 'b' })]);
+    await new BrowserTask(asTab, ask, boxed).run();
+    expect(acted).toEqual([{ label: 'Open Full name' }]);
+  });
+
+  it('hands back when the chosen control looks covered on screen', async () => {
+    const { ask } = scriptedJev([
+      { operation: 'CLICK', click_target: '1', next_click_box: boxAt(NAME_RECT), next_click_present: 0.9, target_visible: 0.05 },
+    ]);
+    const { asTab } = fakeTab();
+    const summary = await new BrowserTask(asTab, ask, boxed).run();
+    expect(summary.reason).toContain('looks covered on screen');
+  });
+
+  it('rescues a BLOCKED step by clicking the observed element the box covers, still gated by commit risk', async () => {
+    const blockedOnPay = {
+      operation: 'BLOCKED',
+      next_click_box: boxAt(PAY_RECT),
+      next_click_present: 0.9,
+      next_click_commit_risk: 0.95,
+    };
+    const { ask } = scriptedJev([blockedOnPay]);
+    const { asTab, acted } = fakeTab([noFields()]);
+    const summary = await new BrowserTask(asTab, ask, boxed).run();
+    expect(summary).toMatchObject({ status: 'needs_confirmation' });
+    expect(acted).toEqual([]);
+
+    const safe = scriptedJev([{ ...blockedOnPay, next_click_commit_risk: 0.02 }, { operation: 'DONE' }]);
+    const run = fakeTab([noFields({ fingerprint: 'a' }), noFields({ fingerprint: 'b' })]);
+    await new BrowserTask(run.asTab, safe.ask, boxed).run();
+    expect(run.acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
+  });
+
+  it('follows a confident screenshot box when the next-step head is unsure', async () => {
+    const { ask } = scriptedJev([
+      {
+        operation: 'WAIT',
+        confidence: 0.1,
+        next_click_box: boxAt(PAY_RECT),
+        next_click_present: 0.9,
+        next_click_commit_risk: 0.02,
+      },
+      { operation: 'DONE' },
+    ]);
+    const { asTab, acted } = fakeTab([noFields({ fingerprint: 'a' }), noFields({ fingerprint: 'b' })]);
+    await new BrowserTask(asTab, ask, boxed).run();
+    expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
+  });
+
+  it('clicks a box the DOM never reported only with allowCoordinateClicks', async () => {
+    const canvasOnly = { operation: 'BLOCKED', next_click_box: boxAt({ x: 100, y: 400, w: 100, h: 50 }), next_click_present: 0.9 };
+    const off = scriptedJev([canvasOnly]);
+    const offTab = fakeTab([noFields()]);
+    expect((await new BrowserTask(offTab.asTab, off.ask, boxed).run()).status).toBe('blocked');
+    expect(offTab.tab.clicksAt).toEqual([]);
+
+    const on = scriptedJev([canvasOnly, { operation: 'DONE' }]);
+    const onTab = fakeTab([noFields({ fingerprint: 'a' }), noFields({ fingerprint: 'b' })]);
+    const summary = await new BrowserTask(onTab.asTab, on.ask, { ...boxed, allowCoordinateClicks: true }).run();
+    expect(onTab.tab.clicksAt).toHaveLength(1);
+    expect(onTab.tab.clicksAt[0].x).toBeCloseTo(150);
+    expect(onTab.tab.clicksAt[0].y).toBeCloseTo(425);
+    expect(summary.steps[0]).toMatchObject({ operation: 'CLICK_AT', element: 'canvas @ 150,425' });
   });
 });

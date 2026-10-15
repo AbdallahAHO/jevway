@@ -27,12 +27,14 @@ export interface ModelProfile {
   /** Judge commit risk per click candidate by name instead of one page-level guess (one extra request). */
   elementRisk: boolean;
   imageTransport: ImageTransport;
+  /** Box questions over the screenshot: target cross-check, covered check, rescue (Jev 1.14 on the TypeSafe API). */
+  box: boolean;
 }
 
-type Route = Omit<ModelProfile, 'name' | 'imageTransport'> & Partial<Pick<ModelProfile, 'imageTransport'>>;
+type Route = Omit<ModelProfile, 'name' | 'imageTransport' | 'box'> & Partial<Pick<ModelProfile, 'imageTransport' | 'box'>>;
 type Profile = Route & {
   /** A direct route used instead when its key is set (Jev on the TypeSafe API); it overrides these fields. */
-  direct?: Partial<Route> & Pick<ModelProfile, 'model' | 'apiKeyEnv' | 'imageTransport'>;
+  direct?: Partial<Route> & Pick<ModelProfile, 'model' | 'apiKeyEnv' | 'imageTransport' | 'box'>;
 };
 
 const IMAGES_HEADER = { 'TypeSafe-Danger-Zone-Images': 'true' };
@@ -47,8 +49,8 @@ export const MODELS = {
     model: 'typesafe/jev-1.14',
     baseURL: OPENROUTER,
     apiKeyEnv: 'OPENROUTER_API_KEY',
-    // Pinned to the first Jev that reads images. OpenRouter drops the `assets` map, so images go as `image_url` there.
-    direct: { model: 'jev-1.14.0', apiKeyEnv: 'TYPESAFE_API_KEY', imageTransport: 'assets' },
+    // Pinned: Box questions need 1.14. OpenRouter drops the `assets` map, so Box only runs here.
+    direct: { model: 'jev-1.14.0', apiKeyEnv: 'TYPESAFE_API_KEY', imageTransport: 'assets', box: true },
     // OpenRouter turns `image_url` state parts into Jev 1.14 images.
     vision: true,
     // With a screenshot every step its done check dipped under 0.5 on a correct page (2 of 3 runs); text-first wins.
@@ -112,7 +114,7 @@ export type ModelName = keyof typeof MODELS;
 
 /**
  * Resolves the model and screenshot mode from explicit choices, then `JEV_MODEL` / `JEV_SCREENSHOTS`.
- * Jev uses the TypeSafe API (images as `assets`) when `TYPESAFE_API_KEY` is set, otherwise OpenRouter.
+ * Jev uses the TypeSafe API (images as `assets`, plus Box) when `TYPESAFE_API_KEY` is set, otherwise OpenRouter.
  * Screenshots on a model that cannot read images are a configuration error, not a silent no-op.
  *
  * @example
@@ -125,7 +127,7 @@ export const resolveModel = ({
   if (!(model in MODELS)) throw new Error(`Unknown model "${model}"; use ${Object.keys(MODELS).join(' | ')}.`);
   const { direct, ...route }: Profile = MODELS[model as ModelName];
   const name = model as ModelName;
-  const openRouter = { imageTransport: 'image_url' as const };
+  const openRouter = { imageTransport: 'image_url' as const, box: false };
   const profile: ModelProfile =
     direct && process.env[direct.apiKeyEnv]?.trim()
       ? { ...route, ...direct, baseURL: undefined, name }
@@ -139,11 +141,12 @@ export const resolveModel = ({
 };
 
 /** The decision settings a profile hands to tasks and journeys. */
-export const profileOptions = ({ minConfidence, compactRules, elementRisk, imageTransport }: ModelProfile) => ({
+export const profileOptions = ({ minConfidence, compactRules, elementRisk, imageTransport, box }: ModelProfile) => ({
   minConfidence,
   compactRules,
   elementRisk,
   imageTransport,
+  box,
 });
 
 /** An `Ask` bound to the profile's API root, key and model. */
