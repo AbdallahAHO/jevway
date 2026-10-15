@@ -1,0 +1,154 @@
+/**
+ * The shared jobs runner: runs each job in a fresh tab of a real app, recorded (video + described steps), and judges
+ * it from the final URL and page text, never from the task's own status. Writes `results.json` and `report.html`
+ * under `verify/out/<name>-<timestamp>/` and opens the report on macOS.
+ *
+ * Env knobs, with NAME the uppercased `name`: `JEV_<NAME>_RUNS` (default 3), `JEV_<NAME>_ONLY` (comma-separated job
+ * ids), `JEV_<NAME>_DEVICE` (a key of DEVICES, default desktop) and `JEV_<NAME>_PHRASING` (`as-written` or `terse`).
+ *
+ * @example
+ * await runJobs({
+ *   name: 'grafana',
+ *   title: (count) => `Grafana play: ${count} jobs with jev-browse`,
+ *   startUrl: 'https://play.grafana.org/',
+ *   origin: 'https://play.grafana.org',
+ *   browser: process.env.JEV_GRAFANA_BROWSER ?? 'launch-headless',
+ *   jobs: JOBS,
+ * });
+ */
+import { execFile } from 'node:child_process';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { connectChrome, type BrowserSource } from '../../src/browser/chrome.ts';
+import { DEVICES, type DeviceName } from '../../src/browser/devices.ts';
+import { Tab } from '../../src/browser/tab.ts';
+import { createAsk, profileOptions, resolveModel } from '../../src/jev/model.ts';
+import { BrowserTask } from '../../src/task/run-task.ts';
+import { goalFor, isFlaky, renderReport, wilson, type Job, type JobResult, type Phrasing } from './report.ts';
+
+// The first table on the page as rows keyed by header text: what a calling agent reads with chrome-devtools.
+const readTable = async (tab: Tab): Promise<Record<string, string>[]> =>
+  tab.evaluate(`(() => {
+    const table = document.querySelector('table');
+    if (!table) return [];
+    const headers = [...table.querySelectorAll('thead th')].map((th) => th.innerText.split('\\n')[0].trim());
+    return [...table.querySelectorAll('tbody tr')].map((tr) =>
+      Object.fromEntries([...tr.children].map((td, i) => [headers[i] ?? String(i), td.innerText.trim()])));
+  })()`);
+
+export interface RunJobsOptions {
+  /** Names the env knobs and the output folder: `grafana` reads `JEV_GRAFANA_RUNS` and writes `verify/out/grafana-…/`. */
+  name: string;
+  /** The report heading, given how many jobs were selected. */
+  title: (jobCount: number) => string;
+  startUrl: string;
+  /** The app's origin: its local and session storage are cleared before every run. */
+  origin: string;
+  browser: BrowserSource;
+  jobs: Job[];
+  /** Runs on each fresh tab before the task starts. A throw aborts the whole suite, not only that run. */
+  before?: (tab: Tab) => Promise<void>;
+}
+
+export const runJobs = async ({ name, title, startUrl, origin, browser, jobs, before }: RunJobsOptions) => {
+  const knob = (suffix: string) => `JEV_${name.toUpperCase()}_${suffix}`;
+  const { profile, screenshots } = resolveModel();
+  const ask = createAsk(profile);
+  const runs = Number(process.env[knob('RUNS')] ?? 3);
+  const only = process.env[knob('ONLY')]?.split(',');
+  const deviceName = process.env[knob('DEVICE')] ?? 'desktop';
+  if (!Object.hasOwn(DEVICES, deviceName)) {
+    throw new Error(`Unknown ${knob('DEVICE')} "${deviceName}": use one of ${Object.keys(DEVICES).join(', ')}.`);
+  }
+  const device = DEVICES[deviceName as DeviceName];
+  const phrasing = (process.env[knob('PHRASING')] ?? 'as-written') as Phrasing;
+  if (phrasing !== 'as-written' && phrasing !== 'terse') {
+    throw new Error(`Unknown ${knob('PHRASING')} "${phrasing}": use as-written or terse.`);
+  }
+  // Terse phrasing only covers the jobs that have a terseGoal.
+  const selectedJobs = jobs.filter((j) => (!only || only.includes(j.id)) && (phrasing === 'as-written' || j.terseGoal));
+  const outDir = new URL(`../out/${name}-${new Date().toISOString().replace(/[:.]/g, '-')}/`, import.meta.url);
+  mkdirSync(outDir, { recursive: true });
+  process.stdout.write(`model: ${profile.name} (${profile.model}) · screenshots: ${screenshots} · ${runs} runs each · device ${device.name} · phrasing ${phrasing} · ${browser}\n`);
+
+  const chrome = await connectChrome(browser);
+  const results: JobResult[] = [];
+  try {
+    for (const job of selectedJobs) {
+      const result: JobResult = { job, runs: [] };
+      results.push(result);
+      for (let run = 1; run <= runs; run++) {
+        const dir = `${job.id}/run-${run}/`;
+        // Each run starts clean: apps remember date ranges and views in browser storage, which leaked one run's
+        // choices into the next (a 30-day range set on Home made the next run "done" with no action). Login cookies stay.
+        await chrome.cdp
+          .send('Storage.clearDataForOrigin', { origin, storageTypes: 'local_storage,session_storage' })
+          .catch(() => undefined);
+        const tab = await Tab.open(chrome.cdp, startUrl, { device });
+        let ready = false;
+        try {
+          await before?.(tab);
+          ready = true;
+          const task = new BrowserTask(tab, ask, {
+            ...profileOptions(profile),
+            goal: goalFor(job, phrasing),
+            values: job.values,
+            doneWhen: job.firstDoneWhen ?? job.doneWhen,
+            maxSteps: 20,
+            screenshots,
+            recordDir: new URL(dir, outDir).pathname,
+          });
+          const summaries = [await task.run()];
+          // Two-call jobs: like a calling agent, read the page's table and continue the same session with a value.
+          const next = job.followUp?.(await readTable(tab));
+          if (next) {
+            task.update({ ...next, doneWhen: job.doneWhen });
+            summaries.push(await task.run());
+          }
+          const summary = summaries.at(-1)!;
+          // Ground truth comes from a separate read of the page, not from the task's summary.
+          const url = new URL(String(await tab.evaluate('location.href')));
+          const text = String(await tab.evaluate('document.body?.innerText ?? ""'));
+          const reached = job.passes(url, text);
+          // A pass needs both: the page is right and Jev said so. Right page with another status is only "reached".
+          const passed = reached && summary.status === 'done';
+          writeFileSync(new URL(`${dir}trace.json`, outDir), JSON.stringify(task.trace, null, 1));
+          result.runs.push({ run, dir, passed, reached, url: url.href, summaries, ...(next && { followUp: next.values }) });
+          process.stdout.write(
+            `${passed ? '✔' : reached ? '◐' : '✘'} ${job.id} #${run} — ${summaries.map((s) => s.status).join(' → ')} in ${summaries.reduce((t, s) => t + s.elapsed_ms, 0)}ms · ${summaries.reduce((t, s) => t + s.steps.length, 0)} actions · ${summaries.reduce((t, s) => t + s.jev.requests, 0)} requests${passed ? '' : ` · ${summary.reason} · ${url.href}`}\n`,
+          );
+        } catch (error) {
+          result.runs.push({ run, dir, passed: false, reached: false, url: '', summaries: [], error: (error as Error).message });
+          process.stdout.write(`✘ ${job.id} #${run} — ${(error as Error).message}\n`);
+          // The app isn't usable (e.g. not signed in): every later run would fail the same way.
+          if (!ready) throw error;
+        } finally {
+          await tab.close().catch(() => undefined);
+        }
+      }
+    }
+  } finally {
+    await chrome.close();
+  }
+
+  const report = new URL('report.html', outDir);
+  const readSteps = (dir: string) => {
+    try {
+      return JSON.parse(readFileSync(new URL(`${dir}summary.json`, outDir), 'utf8'));
+    } catch {
+      return undefined;
+    }
+  };
+  writeFileSync(
+    report,
+    renderReport({ title: title(results.length), results, model: `${profile.name} (${profile.model})`, screenshots, device: device.name, phrasing, readRecording: readSteps }),
+  );
+  writeFileSync(new URL('results.json', outDir), JSON.stringify({ device: device.name, phrasing, runsPerJob: runs, results }, null, 1));
+  const passed = results.flatMap((r) => r.runs).filter((r) => r.passed).length;
+  const total = results.flatMap((r) => r.runs).length;
+  const { low, high } = wilson(passed, total);
+  const flakyJobs = results.filter((r) => isFlaky(r.runs)).map((r) => r.job.id);
+  process.stdout.write(`95% CI ${(low * 100).toFixed(1)}–${(high * 100).toFixed(1)}% · flaky: ${flakyJobs.join(', ') || 'none'}\n`);
+  process.stdout.write(`${passed}/${total} runs passed · ${report.pathname}\n`);
+  if (process.platform === 'darwin' && !process.env.CI) execFile('open', [report.pathname]);
+  process.exitCode = passed === total ? 0 : 1;
+};

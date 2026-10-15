@@ -10,25 +10,10 @@
  * Needs a Chrome signed in to cloud.langfuse.com on a debugging port (default http://127.0.0.1:9333, override
  * with JEV_LANGFUSE_BROWSER); see the jev-browse skill's "Run without permission prompts". Opens report.html.
  */
-import { execFile } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { connectChrome } from '../src/browser/chrome.ts';
-import { DEVICES, type DeviceName } from '../src/browser/devices.ts';
-import { Tab } from '../src/browser/tab.ts';
-import { createAsk, profileOptions, resolveModel } from '../src/jev/model.ts';
-import { BrowserTask } from '../src/task/run-task.ts';
-import { goalFor, isFlaky, renderReport, wilson, type JobResult, type Job, type Phrasing } from './langfuse-report.ts';
+import type { Job } from './jobs/report.ts';
+import { runJobs } from './jobs/runner.ts';
 
 const PROJECT = 'https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi';
-// The first table on the page as rows keyed by header text: what a calling agent reads with chrome-devtools.
-const readTable = async (tab: Tab): Promise<Record<string, string>[]> =>
-  tab.evaluate(`(() => {
-    const table = document.querySelector('table');
-    if (!table) return [];
-    const headers = [...table.querySelectorAll('thead th')].map((th) => th.innerText.split('\\n')[0].trim());
-    return [...table.querySelectorAll('tbody tr')].map((tr) =>
-      Object.fromEntries([...tr.children].map((td, i) => [headers[i] ?? String(i), td.innerText.trim()])));
-  })()`);
 const READ_ONLY = "Read-only: don't create, edit, delete, annotate, run or select anything you don't need to.";
 const openTrace = (url: URL) => /traceId=|\/traces\/|peek=/.test(url.href);
 
@@ -225,100 +210,16 @@ const JOBS: Job[] = [
   },
 ];
 
-const { profile, screenshots } = resolveModel();
-const ask = createAsk(profile);
-const runs = Number(process.env.JEV_LANGFUSE_RUNS ?? 3);
-const only = process.env.JEV_LANGFUSE_ONLY?.split(',');
-const source = process.env.JEV_LANGFUSE_BROWSER ?? 'http://127.0.0.1:9333';
-const deviceName = process.env.JEV_LANGFUSE_DEVICE ?? 'desktop';
-if (!Object.hasOwn(DEVICES, deviceName)) {
-  throw new Error(`Unknown JEV_LANGFUSE_DEVICE "${deviceName}": use one of ${Object.keys(DEVICES).join(', ')}.`);
-}
-const device = DEVICES[deviceName as DeviceName];
-const phrasing = (process.env.JEV_LANGFUSE_PHRASING ?? 'as-written') as Phrasing;
-if (phrasing !== 'as-written' && phrasing !== 'terse') {
-  throw new Error(`Unknown JEV_LANGFUSE_PHRASING "${phrasing}": use as-written or terse.`);
-}
-// Terse phrasing only covers the jobs that have a terseGoal.
-const selectedJobs = JOBS.filter((j) => (!only || only.includes(j.id)) && (phrasing === 'as-written' || j.terseGoal));
-const outDir = new URL(`./out/langfuse-${new Date().toISOString().replace(/[:.]/g, '-')}/`, import.meta.url);
-mkdirSync(outDir, { recursive: true });
-process.stdout.write(`model: ${profile.name} (${profile.model}) · screenshots: ${screenshots} · ${runs} runs each · device ${device.name} · phrasing ${phrasing} · ${source}\n`);
-
-const chrome = await connectChrome(source);
-const results: JobResult[] = [];
-try {
-  for (const job of selectedJobs) {
-    const result: JobResult = { job, runs: [] };
-    results.push(result);
-    for (let run = 1; run <= runs; run++) {
-      const dir = `${job.id}/run-${run}/`;
-      // Each run starts clean: Langfuse remembers date ranges and views in browser storage, which leaked one run's
-      // choices into the next (a 30-day range set on Home made the next run "done" with no action). Login cookies stay.
-      await chrome.cdp
-        .send('Storage.clearDataForOrigin', { origin: new URL(PROJECT).origin, storageTypes: 'local_storage,session_storage' })
-        .catch(() => undefined);
-      const tab = await Tab.open(chrome.cdp, PROJECT, { device });
-      try {
-        if (/\/auth\//.test(String(await tab.evaluate('location.pathname')))) {
-          throw new Error('Not signed in to Langfuse in this Chrome: sign in once, then rerun.');
-        }
-        const task = new BrowserTask(tab, ask, {
-          ...profileOptions(profile),
-          goal: goalFor(job, phrasing),
-          values: job.values,
-          doneWhen: job.firstDoneWhen ?? job.doneWhen,
-          maxSteps: 20,
-          screenshots,
-          recordDir: new URL(dir, outDir).pathname,
-        });
-        const summaries = [await task.run()];
-        // Two-call jobs: like a calling agent, read the page's table and continue the same session with a value.
-        const next = job.followUp?.(await readTable(tab));
-        if (next) {
-          task.update({ ...next, doneWhen: job.doneWhen });
-          summaries.push(await task.run());
-        }
-        const summary = summaries.at(-1)!;
-        // Ground truth comes from a separate read of the page, not from the task's summary.
-        const url = new URL(String(await tab.evaluate('location.href')));
-        const text = String(await tab.evaluate('document.body?.innerText ?? ""'));
-        const reached = job.passes(url, text);
-        // A pass needs both: the page is right and Jev said so. Right page with another status is only "reached".
-        const passed = reached && summary.status === 'done';
-        writeFileSync(new URL(`${dir}trace.json`, outDir), JSON.stringify(task.trace, null, 1));
-        result.runs.push({ run, dir, passed, reached, url: url.href, summaries, ...(next && { followUp: next.values }) });
-        process.stdout.write(
-          `${passed ? '✔' : reached ? '◐' : '✘'} ${job.id} #${run} — ${summaries.map((s) => s.status).join(' → ')} in ${summaries.reduce((t, s) => t + s.elapsed_ms, 0)}ms · ${summaries.reduce((t, s) => t + s.steps.length, 0)} actions · ${summaries.reduce((t, s) => t + s.jev.requests, 0)} requests${passed ? '' : ` · ${summary.reason} · ${url.href}`}\n`,
-        );
-      } catch (error) {
-        result.runs.push({ run, dir, passed: false, reached: false, url: '', summaries: [], error: (error as Error).message });
-        process.stdout.write(`✘ ${job.id} #${run} — ${(error as Error).message}\n`);
-        if (/Not signed in/.test((error as Error).message)) throw error;
-      } finally {
-        await tab.close().catch(() => undefined);
-      }
+await runJobs({
+  name: 'langfuse',
+  title: (jobCount) => `Langfuse demo: ${jobCount} jobs with jev-browse`,
+  startUrl: PROJECT,
+  origin: new URL(PROJECT).origin,
+  browser: process.env.JEV_LANGFUSE_BROWSER ?? 'http://127.0.0.1:9333',
+  jobs: JOBS,
+  before: async (tab) => {
+    if (/\/auth\//.test(String(await tab.evaluate('location.pathname')))) {
+      throw new Error('Not signed in to Langfuse in this Chrome: sign in once, then rerun.');
     }
-  }
-} finally {
-  await chrome.close();
-}
-
-const report = new URL('report.html', outDir);
-const readSteps = (dir: string) => {
-  try {
-    return JSON.parse(readFileSync(new URL(`${dir}summary.json`, outDir), 'utf8'));
-  } catch {
-    return undefined;
-  }
-};
-writeFileSync(report, renderReport({ results, model: `${profile.name} (${profile.model})`, screenshots, device: device.name, phrasing, readRecording: readSteps }));
-writeFileSync(new URL('results.json', outDir), JSON.stringify({ device: device.name, phrasing, runsPerJob: runs, results }, null, 1));
-const passed = results.flatMap((r) => r.runs).filter((r) => r.passed).length;
-const total = results.flatMap((r) => r.runs).length;
-const { low, high } = wilson(passed, total);
-const flakyJobs = results.filter((r) => isFlaky(r.runs)).map((r) => r.job.id);
-process.stdout.write(`95% CI ${(low * 100).toFixed(1)}–${(high * 100).toFixed(1)}% · flaky: ${flakyJobs.join(', ') || 'none'}\n`);
-process.stdout.write(`${passed}/${total} runs passed · ${report.pathname}\n`);
-if (process.platform === 'darwin' && !process.env.CI) execFile('open', [report.pathname]);
-process.exitCode = passed === total ? 0 : 1;
+  },
+});

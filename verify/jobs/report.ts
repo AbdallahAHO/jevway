@@ -1,6 +1,6 @@
-// The Langfuse jobs report: one self-contained page next to the run folders it links to.
-import { escapeHtml as escape, type RecordedStep } from '../src/task/recording.ts';
-import type { TaskSummary } from '../src/task/run-task.ts';
+// The jobs report: one self-contained page next to the run folders it links to.
+import { escapeHtml as escape, type RecordedStep } from '../../src/task/recording.ts';
+import type { TaskSummary } from '../../src/task/run-task.ts';
 
 export interface Job {
   id: string;
@@ -156,6 +156,7 @@ ${recording.video ? `<video id="${videoId}" src="${featured.dir}${recording.vide
  * run as a video with a described, clickable step list.
  */
 export const renderReport = ({
+  title,
   results,
   model,
   screenshots,
@@ -163,6 +164,8 @@ export const renderReport = ({
   phrasing,
   readRecording,
 }: {
+  /** The page title and heading, e.g. "Langfuse demo: 16 jobs with jev-browse". */
+  title: string;
   results: JobResult[];
   model: string;
   screenshots: string;
@@ -184,7 +187,7 @@ export const renderReport = ({
     .join('');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Langfuse Jobs Report</title>
+<title>${escape(title)}</title>
 <style>
 :root{--bg:#fafaf9;--card:#fff;--fg:#1c1917;--muted:#78716c;--line:#e7e5e4;--pass:#15803d;--some:#b45309;--fail:#b91c1c;--accent:#4f46e5}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0c0a09;--card:#1c1917;--fg:#f5f5f4;--muted:#a8a29e;--line:#292524;--pass:#4ade80;--some:#fbbf24;--fail:#f87171;--accent:#a5b4fc}}
@@ -221,8 +224,8 @@ video{width:100%;border-radius:8px;background:#000;display:block;margin:0 0 16px
 .meta{color:var(--muted);font-size:12px;margin-top:4px;overflow-wrap:anywhere}.url{font-family:ui-monospace,monospace}
 @media (max-width:640px){dl{grid-template-columns:1fr}.steps li{grid-template-columns:1fr}section{padding:16px}}
 </style></head><body><main>
-<h1>Langfuse demo: ${results.length} jobs with jev-browse</h1>
-<p class="sub">Each job starts on the demo project's home page and is read-only. ✔ means the final page passed its check <em>and</em> Jev reported done; ◐ means the page was right but Jev reported something else. ${escape(model)} · screenshots ${escape(screenshots)} · device ${escape(device)} · phrasing ${escape(phrasing)} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</p>
+<h1>${escape(title)}</h1>
+<p class="sub">Each job starts on the app's start page and is read-only. ✔ means the final page passed its check <em>and</em> Jev reported done; ◐ means the page was right but Jev reported something else. ${escape(model)} · screenshots ${escape(screenshots)} · device ${escape(device)} · phrasing ${escape(phrasing)} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</p>
 <div class="totals">
   <div class="total"><b class="${passed === runs.length ? 'pass' : 'some'}">${passed}/${runs.length}</b><span>runs passed · ${interval(passed, runs.length)}</span></div>
   <div class="total"><b class="${flaky ? 'some' : 'pass'}">${flaky}</b><span>flaky jobs (of ${results.length})</span></div>
