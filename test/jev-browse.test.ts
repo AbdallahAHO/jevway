@@ -729,3 +729,87 @@ describe('real-site robustness', () => {
     expect(summary.steps[0]).toMatchObject({ operation: 'TYPE_TEXT', value_kept: false });
   });
 });
+
+describe('errors become hand-backs', () => {
+  const SETTLE_TIMEOUT = 'Page did not settle within 1s';
+  const click = { operation: 'CLICK', click_target: '1' };
+
+  /** A model that fails with `message` for its first `failures` calls, then answers DONE. */
+  const failingJev = (failures: number, message: string) => {
+    const scripted = scriptedJev([{ operation: 'DONE' }]);
+    const state = { calls: 0 };
+    const ask: Ask = async (request) => {
+      if (++state.calls <= failures) throw new Error(message);
+      return scripted.ask(request);
+    };
+    return { ask, state };
+  };
+
+  afterEach(() => vi.useRealTimers());
+
+  it('ends as blocked when the first observe never settles', async () => {
+    const { ask, requests } = scriptedJev([click]);
+    const { tab, asTab } = fakeTab();
+    tab.observe = async () => {
+      throw new StalePage(SETTLE_TIMEOUT);
+    };
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open' }).run();
+    expect(summary).toMatchObject({ status: 'blocked', url: '', steps: [] });
+    expect(summary.reason).toBe(`Browser error: ${SETTLE_TIMEOUT}`);
+    expect(requests).toHaveLength(0);
+  });
+
+  it('ends as blocked when the page never settles after an action', async () => {
+    const { ask } = scriptedJev([click]);
+    const { tab, asTab, acted } = fakeTab();
+    let observed = 0;
+    tab.observe = async () => {
+      if (observed++) throw new StalePage(SETTLE_TIMEOUT);
+      return page();
+    };
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open' }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain('did not settle');
+    expect(summary.steps.length).toBeLessThanOrEqual(1);
+    expect(acted).toHaveLength(1);
+  });
+
+  it('ends as blocked on a model 400 without retrying it', async () => {
+    const { ask, state } = failingJev(Infinity, '400 {"detail":{"error_type":"max_tokens_exceeded"}}');
+    const summary = await new BrowserTask(fakeTab().asTab, ask, { goal: 'Open' }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toMatch(/^Model error: 400/);
+    expect(state.calls).toBe(1);
+  });
+
+  it('retries a transient model error once and carries on', async () => {
+    vi.useFakeTimers();
+    const { ask, state } = failingJev(1, '503 Service Unavailable');
+    const running = new BrowserTask(fakeTab().asTab, ask, { goal: 'Open' }).run();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect((await running).status).toBe('done');
+    expect(state.calls).toBe(2);
+  });
+
+  it('ends as blocked when the model fails transiently twice in a row', async () => {
+    vi.useFakeTimers();
+    const { ask, state } = failingJev(Infinity, '503 Service Unavailable');
+    const running = new BrowserTask(fakeTab().asTab, ask, { goal: 'Open' }).run();
+    await vi.advanceTimersByTimeAsync(1000);
+    const summary = await running;
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toMatch(/^Model error: 503/);
+    expect(state.calls).toBe(2);
+  });
+
+  it('ends as blocked when the browser refuses an action for a reason other than a stale page', async () => {
+    const { ask } = scriptedJev([click]);
+    const { tab, asTab } = fakeTab();
+    tab.act = async () => {
+      throw new Error('Dropdown execution was not confirmed; inspect before retrying.');
+    };
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open' }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain('Dropdown execution');
+  });
+});

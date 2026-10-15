@@ -98,6 +98,24 @@ const REPEAT_WINDOW = 7;
 const TOGGLE_LOOP = 4;
 // Boxes on small targets land a row off (13 px checkboxes); pad before asking whether one covers the chosen control.
 const BOX_PADDING = 16;
+// A model call that fails like this (5xx, rate limit, network, timeout) is retried once; any other error is final.
+const TRANSIENT_MODEL_ERROR = /^(5\d\d|429)\b|timeout|timed out|ECONNRESET|ETIMEDOUT|fetch failed|socket hang up/i;
+// Pause before that one retry, so a rate limit or a restarting upstream has a moment to clear.
+const MODEL_RETRY_MS = 800;
+// Stands in for the page in a summary when the very first observe fails.
+const BLANK_PAGE: PageState = {
+  url: '',
+  title: '',
+  text: '',
+  w: 0,
+  h: 0,
+  actions: [],
+  marker: null,
+  page_key: null,
+  guards: {},
+  omitted_actions: 0,
+  fingerprint: '',
+};
 
 /**
  * A goal-driven run on one tab. `run()` loops observe → one Jev decision → guarded action until the
@@ -156,7 +174,8 @@ export class BrowserTask {
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
     const { maxSteps, values, doneWhen } = this.#options;
-    let page = await this.#tab.observe();
+    // `stop` reads the page, so it needs a stand-in until the first observe succeeds.
+    let page: PageState = BLANK_PAGE;
     let executed = 0;
     let decisions = 0;
     let rejectedDone = 0;
@@ -185,169 +204,186 @@ export class BrowserTask {
       ...(status !== 'done' && decision && { stuck: stuckOn(decision, page) }),
     });
 
-    while (executed < maxSteps) {
-      if (++decisions > maxSteps * 2) return stop('step_budget', `Made ${maxSteps * 2} decisions without finishing`);
-      let decision: Decision;
-      try {
-        decision = await this.#decide(page);
-      } catch (error) {
-        if (!(error instanceof StalePage)) throw error;
-        page = await this.#tab.observe();
-        continue;
-      }
-      const doneProbability = decision.doneProbability ?? 0;
-      doneStreak = doneProbability >= DONE_STEADY ? doneStreak + 1 : 0;
-      if (doneWhen && (doneProbability >= DONE_EVIDENT || doneStreak >= DONE_SUSTAINED)) {
-        this.trace.push({ decision: { ...decision, action: decision.action?.label }, executed: false, elapsed_ms: elapsed() });
-        return stop('done', `Completion condition verified: ${doneWhen}`, decision);
-      }
-      const record = (didExecute: boolean) =>
-        this.trace.push({
-          decision: { ...decision, action: decision.action?.label },
-          executed: didExecute,
-          elapsed_ms: elapsed(),
-        });
-
-      decision = this.#boxRescue(decision, page);
-      if (decision.operation === 'DONE' && doneWhen && (decision.doneProbability ?? 0) < 0.5) {
-        record(false);
-        if (++rejectedDone >= MAX_REJECTED_DONE) {
-          return stop('uncertain', `Jev chose DONE ${rejectedDone}× but "${doneWhen}" is not visible`, decision);
-        }
-        // Jev learns its DONE was premature, instead of proposing the same DONE on the same evidence.
-        this.#history.push({
-          operation: 'DONE',
-          element: '',
-          not_executed: `rejected: "${doneWhen}" is not visible yet; keep working toward it`,
-          confidence: round(decision.confidence),
-        });
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        page = await this.#tab.observe();
-        continue;
-      }
-
-      if (this.#looksCovered(decision) && coveredRetries++ < MAX_COVERED_RETRIES) {
-        record(false);
-        this.#history.push({
-          operation: decision.operation,
-          element: decision.action!.label,
-          not_executed: 'covered on screen by another layer; clear it first',
-          confidence: round(decision.confidence),
-        });
-        page = await this.#tab.observe();
-        continue;
-      }
-      const handBack = this.#handBack(decision);
-      if (handBack) {
-        // A stop decided on a page that has since changed is stale: re-observe instead of reporting it.
-        if (!(await this.#tab.fresh(page))) {
-          record(false);
+    // Browser and model errors end the run as `blocked`: the calling agent keeps the session and decides what next.
+    try {
+      page = await this.#tab.observe();
+      while (executed < maxSteps) {
+        if (++decisions > maxSteps * 2) return stop('step_budget', `Made ${maxSteps * 2} decisions without finishing`);
+        let decision: Decision;
+        try {
+          decision = await this.#decideWithRetry(page);
+        } catch (error) {
+          if (!(error instanceof StalePage)) throw error;
           page = await this.#tab.observe();
           continue;
         }
-        record(false);
-        return stop(handBack[0], handBack[1], decision);
-      }
-
-      const action = decision.action!;
-      const text = decision.valueKey ? values[decision.valueKey] : undefined;
-      let element: string;
-      try {
-        await this.#recording?.step(
-          this.#tab,
-          page,
-          {
-            operation: decision.operation,
-            element: action.label,
-            valueKey: decision.valueKey ?? undefined,
-            option: action.kind === 'select' ? String(action.value) : undefined,
-            confidence: round(Math.min(decision.confidence, decision.targetConfidence ?? 1)),
-          },
-          decision.operation === 'CLICK_AT' ? decision.nextClick!.rect : action.rect,
-        );
-        if (decision.operation === 'CLICK_AT') {
-          const point = centerOf(decision.nextClick!.rect);
-          element = `${await this.#tab.clickAt(point, page)} @ ${Math.round(point.x)},${Math.round(point.y)}`;
-        } else {
-          await this.#tab.act(action, page, text);
-          element = action.label;
+        const doneProbability = decision.doneProbability ?? 0;
+        doneStreak = doneProbability >= DONE_STEADY ? doneStreak + 1 : 0;
+        if (doneWhen && (doneProbability >= DONE_EVIDENT || doneStreak >= DONE_SUSTAINED)) {
+          this.trace.push({ decision: { ...decision, action: decision.action?.label }, executed: false, elapsed_ms: elapsed() });
+          return stop('done', `Completion condition verified: ${doneWhen}`, decision);
         }
-      } catch (error) {
-        if (!(error instanceof StalePage)) throw error;
-        record(false);
-        if (!(error instanceof TargetUnreachable)) {
-          this.#recording?.discardLast();
-          page = await this.#tab.observe();
-          continue;
-        }
-        // Unreachable on an unchanged page: retrying blind repeats the same miss, so Jev has to hear about it.
-        this.#recording?.markUnreachable();
-        // An open popup over the target (search suggestions, a menu) is closed with the fixed Escape key, once per
-        // target, as a person would; no model output is involved. Then Jev re-decides on the cleared page.
-        const popupOpen = error.byPopup || page.actions.some((a) => a.expanded === 'true');
-        if (this.#unreachable.node !== action.node && popupOpen) {
-          this.#unreachable = { node: action.node, count: 1 };
-          await this.#recording?.step(this.#tab, page, { operation: 'PRESS_ESCAPE' });
-          await this.#tab.dismissPopup();
-          this.#history.push({
-            operation: 'PRESS_ESCAPE',
-            element: `closed the open popup covering "${action.label.slice(0, 80)}"`,
-            page_changed: true,
-            confidence: 1,
+        const record = (didExecute: boolean) =>
+          this.trace.push({
+            decision: { ...decision, action: decision.action?.label },
+            executed: didExecute,
+            elapsed_ms: elapsed(),
           });
-          page = await this.#tab.observe();
-          continue;
-        }
-        const misses = this.#unreachable.node === action.node ? this.#unreachable.count + 1 : 1;
-        this.#unreachable = { node: action.node, count: misses };
-        if (misses >= MAX_UNREACHABLE) {
-          return stop('blocked', `"${action.label}" could not be reached ${misses} times: something on the page covers it`, decision);
-        }
-        if (misses === 2) {
+
+        decision = this.#boxRescue(decision, page);
+        if (decision.operation === 'DONE' && doneWhen && (decision.doneProbability ?? 0) < 0.5) {
+          record(false);
+          if (++rejectedDone >= MAX_REJECTED_DONE) {
+            return stop('uncertain', `Jev chose DONE ${rejectedDone}× but "${doneWhen}" is not visible`, decision);
+          }
+          // Jev learns its DONE was premature, instead of proposing the same DONE on the same evidence.
           this.#history.push({
-            operation: decision.operation,
-            element: action.label,
-            not_executed: 'could not be reached: another layer covers it; close that layer first',
+            operation: 'DONE',
+            element: '',
+            not_executed: `rejected: "${doneWhen}" is not visible yet; keep working toward it`,
             confidence: round(decision.confidence),
           });
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          page = await this.#tab.observe();
+          continue;
         }
-        page = await this.#tab.observe();
-        continue;
-      }
-      record(true);
-      executed++;
-      this.#unreachable = { node: undefined, count: 0 };
-      this.#lastTyped = decision.operation === 'TYPE_TEXT' && isSearchLike(action) ? action : undefined;
-      // A confirmation covers exactly one risky click.
-      if (isRiskyClick(decision)) this.#confirmedCommit = false;
 
-      const before = page.fingerprint;
-      page = await this.#tab.observe();
-      const field = decision.operation === 'TYPE_TEXT' && page.actions.find((a) => a.kind === 'fill' && a.node === action.node);
-      this.#history.push({
-        operation: decision.operation,
-        element,
-        ...(decision.valueKey && { value_key: decision.valueKey }),
-        // A field that is gone (navigated, submitted) can't say; one still on the page must show what was typed.
-        ...(field && { value_kept: field.value === text }),
-        page_changed: page.fingerprint !== before,
-        confidence: round(Math.min(decision.confidence, decision.targetConfidence ?? 1)),
-      });
-      if (repeatingWithoutEffect(this.#history)) {
-        return stop('blocked', 'The last 3 actions did not change the page', decision);
+        if (this.#looksCovered(decision) && coveredRetries++ < MAX_COVERED_RETRIES) {
+          record(false);
+          this.#history.push({
+            operation: decision.operation,
+            element: decision.action!.label,
+            not_executed: 'covered on screen by another layer; clear it first',
+            confidence: round(decision.confidence),
+          });
+          page = await this.#tab.observe();
+          continue;
+        }
+        const handBack = this.#handBack(decision);
+        if (handBack) {
+          // A stop decided on a page that has since changed is stale: re-observe instead of reporting it.
+          if (!(await this.#tab.fresh(page))) {
+            record(false);
+            page = await this.#tab.observe();
+            continue;
+          }
+          record(false);
+          return stop(handBack[0], handBack[1], decision);
+        }
+
+        const action = decision.action!;
+        const text = decision.valueKey ? values[decision.valueKey] : undefined;
+        let element: string;
+        try {
+          await this.#recording?.step(
+            this.#tab,
+            page,
+            {
+              operation: decision.operation,
+              element: action.label,
+              valueKey: decision.valueKey ?? undefined,
+              option: action.kind === 'select' ? String(action.value) : undefined,
+              confidence: round(Math.min(decision.confidence, decision.targetConfidence ?? 1)),
+            },
+            decision.operation === 'CLICK_AT' ? decision.nextClick!.rect : action.rect,
+          );
+          if (decision.operation === 'CLICK_AT') {
+            const point = centerOf(decision.nextClick!.rect);
+            element = `${await this.#tab.clickAt(point, page)} @ ${Math.round(point.x)},${Math.round(point.y)}`;
+          } else {
+            await this.#tab.act(action, page, text);
+            element = action.label;
+          }
+        } catch (error) {
+          if (!(error instanceof StalePage)) throw error;
+          record(false);
+          if (!(error instanceof TargetUnreachable)) {
+            this.#recording?.discardLast();
+            page = await this.#tab.observe();
+            continue;
+          }
+          // Unreachable on an unchanged page: retrying blind repeats the same miss, so Jev has to hear about it.
+          this.#recording?.markUnreachable();
+          // An open popup over the target (search suggestions, a menu) is closed with the fixed Escape key, once per
+          // target, as a person would; no model output is involved. Then Jev re-decides on the cleared page.
+          const popupOpen = error.byPopup || page.actions.some((a) => a.expanded === 'true');
+          if (this.#unreachable.node !== action.node && popupOpen) {
+            this.#unreachable = { node: action.node, count: 1 };
+            await this.#recording?.step(this.#tab, page, { operation: 'PRESS_ESCAPE' });
+            await this.#tab.dismissPopup();
+            this.#history.push({
+              operation: 'PRESS_ESCAPE',
+              element: `closed the open popup covering "${action.label.slice(0, 80)}"`,
+              page_changed: true,
+              confidence: 1,
+            });
+            page = await this.#tab.observe();
+            continue;
+          }
+          const misses = this.#unreachable.node === action.node ? this.#unreachable.count + 1 : 1;
+          this.#unreachable = { node: action.node, count: misses };
+          if (misses >= MAX_UNREACHABLE) {
+            return stop('blocked', `"${action.label}" could not be reached ${misses} times: something on the page covers it`, decision);
+          }
+          if (misses === 2) {
+            this.#history.push({
+              operation: decision.operation,
+              element: action.label,
+              not_executed: 'could not be reached: another layer covers it; close that layer first',
+              confidence: round(decision.confidence),
+            });
+          }
+          page = await this.#tab.observe();
+          continue;
+        }
+        record(true);
+        executed++;
+        this.#unreachable = { node: undefined, count: 0 };
+        this.#lastTyped = decision.operation === 'TYPE_TEXT' && isSearchLike(action) ? action : undefined;
+        // A confirmation covers exactly one risky click.
+        if (isRiskyClick(decision)) this.#confirmedCommit = false;
+
+        const before = page.fingerprint;
+        page = await this.#tab.observe();
+        const field = decision.operation === 'TYPE_TEXT' && page.actions.find((a) => a.kind === 'fill' && a.node === action.node);
+        this.#history.push({
+          operation: decision.operation,
+          element,
+          ...(decision.valueKey && { value_key: decision.valueKey }),
+          // A field that is gone (navigated, submitted) can't say; one still on the page must show what was typed.
+          ...(field && { value_kept: field.value === text }),
+          page_changed: page.fingerprint !== before,
+          confidence: round(Math.min(decision.confidence, decision.targetConfidence ?? 1)),
+        });
+        if (repeatingWithoutEffect(this.#history)) {
+          return stop('blocked', 'The last 3 actions did not change the page', decision);
+        }
+        if (wandering(this.#history.slice(firstStep))) {
+          return stop('uncertain', `Jev was unsure for ${WANDER_STEPS} actions in a row (confidence under ${WANDER_CONFIDENCE})`, decision);
+        }
+        this.#outcomes.push({ action: `${decision.operation} ${element}`, print: page.fingerprint });
+        if (togglingInPlace(this.#outcomes)) {
+          return stop('blocked', `"${element}" only toggles the page back and forth (${TOGGLE_LOOP}× in a row)`, decision);
+        }
+        if (repeating(this.#outcomes)) {
+          return stop('blocked', `"${element}" was used ${REPEAT_LIMIT} times in ${REPEAT_WINDOW} actions without finishing`, decision);
+        }
       }
-      if (wandering(this.#history.slice(firstStep))) {
-        return stop('uncertain', `Jev was unsure for ${WANDER_STEPS} actions in a row (confidence under ${WANDER_CONFIDENCE})`, decision);
-      }
-      this.#outcomes.push({ action: `${decision.operation} ${element}`, print: page.fingerprint });
-      if (togglingInPlace(this.#outcomes)) {
-        return stop('blocked', `"${element}" only toggles the page back and forth (${TOGGLE_LOOP}× in a row)`, decision);
-      }
-      if (repeating(this.#outcomes)) {
-        return stop('blocked', `"${element}" was used ${REPEAT_LIMIT} times in ${REPEAT_WINDOW} actions without finishing`, decision);
-      }
+      return stop('step_budget', `Reached ${maxSteps} actions without finishing`);
+    } catch (error) {
+      return stop('blocked', describeError(error));
     }
-    return stop('step_budget', `Reached ${maxSteps} actions without finishing`);
+  }
+
+  // A transient model error (5xx, 429, network, timeout) gets one more try; any other error ends the run.
+  async #decideWithRetry(page: PageState): Promise<Decision> {
+    try {
+      return await this.#decide(page);
+    } catch (error) {
+      if (!(error instanceof ModelCallError) || !TRANSIENT_MODEL_ERROR.test(error.message)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, MODEL_RETRY_MS));
+      return this.#decide(page);
+    }
   }
 
   // One decision per step; `fallback` takes a second, screenshot-backed look at a shaky or stalled one.
@@ -369,6 +405,9 @@ export class BrowserTask {
         imageTransport,
         box,
         ...(elementRisk && { elementRisk: 'chosen' as const }),
+      }).catch((error) => {
+        // Only the model call is tagged: a failed screenshot above is a browser error and keeps its own type.
+        throw new ModelCallError(messageOf(error));
       });
       this.#latencies.push(decision.latencyMs);
       this.#inputTokens += decision.inputTokens;
@@ -552,3 +591,12 @@ const median = (numbers: number[]) => {
 };
 
 const round = (value: number) => Math.round(value * 1000) / 1000;
+
+/** An error raised by the model call, as opposed to the browser. */
+class ModelCallError extends Error {}
+
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+// Anything that is not a model error came from the tab (CDP, page never settling, an unconfirmed action).
+const describeError = (error: unknown) =>
+  `${error instanceof ModelCallError ? 'Model' : 'Browser'} error: ${messageOf(error).slice(0, 200)}`;
