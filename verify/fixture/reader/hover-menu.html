@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hover menu</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; display: flex; gap: 16px; }
+  .panel { position: relative; width: 220px; height: 140px; border: 1px solid #bbb; padding: 12px; }
+  /* Grafana-style panel menu: laid out and in the DOM, but invisible until the pointer is over the panel. */
+  .menu { position: absolute; top: 6px; right: 6px; visibility: hidden; }
+  .panel:hover .menu { visibility: visible; }
+  .options { position: absolute; top: 34px; right: 6px; background: #fff; border: 1px solid #bbb; }
+  .options[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="panel" data-name="CPU">
+  <h3>CPU</h3>
+  <button type="button" class="menu" aria-label="Menu for panel CPU">⋮</button>
+  <div class="options" hidden><button type="button" role="menuitem">View</button></div>
+</div>
+<div class="panel" data-name="Memory">
+  <h3>Memory</h3>
+  <button type="button" class="menu" aria-label="Menu for panel Memory">⋮</button>
+  <div class="options" hidden><button type="button" role="menuitem">View</button></div>
+</div>
+<div class="panel" data-name="Disk">
+  <h3>Disk</h3>
+  <button type="button" class="menu" aria-label="Menu for panel Disk">⋮</button>
+  <div class="options" hidden><button type="button" role="menuitem">View</button></div>
+</div>
+<script>
+  window.__fixture = { viewed: null };
+  for (const panel of document.querySelectorAll('.panel')) {
+    const options = panel.querySelector('.options');
+    panel.querySelector('.menu').addEventListener('click', () => (options.hidden = !options.hidden));
+    options.querySelector('button').addEventListener('click', () => (window.__fixture.viewed = panel.dataset.name));
+  }
+</script>
+</body>
+</html>

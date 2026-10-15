@@ -21,6 +21,8 @@ export interface PageAction {
   checked?: string;
   selected?: string;
   expanded?: string;
+  /** Shown only while the pointer is over its container; the pointer is moved onto it before the click. */
+  hover?: boolean;
   delta?: number;
   /** Viewport CSS pixels at observation time. */
   rect?: { x: number; y: number; w: number; h: number };

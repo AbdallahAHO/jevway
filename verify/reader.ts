@@ -293,6 +293,46 @@ const checks: Check[] = [
       assert.match(actions[0].label, /newsletter/);
     },
   },
+  {
+    name: 'a panel menu that appears only on hover is listed as such, and clicking it hovers first',
+    file: 'hover-menu.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const menu = find(page.actions, 'button', /Menu for panel CPU/);
+      assert.ok(menu, `menu not listed: ${labelsOf(page.actions)}`);
+      assert.equal(menu.hover, true);
+      assert.match(menu.label, /\(appears on hover\)$/);
+      await tab.act(menu, page);
+      const opened = await tab.observe();
+      const view = find(opened.actions, 'menuitem', /^View$/);
+      assert.ok(view, `View not listed after opening the menu: ${labelsOf(opened.actions)}`);
+      await tab.act(view, opened);
+      assert.equal((await fixtureState(tab)).viewed, 'CPU');
+    },
+  },
+  {
+    name: 'a row action with opacity 0 until its row is hovered is listed as appearing on hover',
+    file: 'hover-row-actions.html',
+    run: async (tab) => {
+      const actions = await listed(tab);
+      const deletes = actions.filter((action) => /Delete invoice/.test(action.label));
+      assert.equal(deletes.length, 3, `expected 3 row actions, listed ${labelsOf(actions)}`);
+      assert.ok(deletes.every((action) => action.hover === true), labelsOf(deletes));
+      assert.equal((await fixtureState(tab)).deleted, null);
+    },
+  },
+  {
+    name: 'a button with display none inside a hoverable card is not a hover reveal and is not listed',
+    file: 'display-none.html',
+    run: async (tab) => {
+      const actions = await listed(tab);
+      assert.deepEqual(
+        controls(actions).map((action) => action.label),
+        ['Open card'],
+      );
+      assert.ok(actions.every((action) => !action.hover), labelsOf(actions));
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port.

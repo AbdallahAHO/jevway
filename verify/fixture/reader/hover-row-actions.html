@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hover row actions</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  table { border-collapse: collapse; width: 480px; }
+  td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+  /* Row action shown only while the pointer is over its row. */
+  .delete { opacity: 0; }
+  tr:hover .delete { opacity: 1; }
+</style>
+</head>
+<body>
+<table>
+  <tbody>
+    <tr><td>Invoice 001</td><td><button type="button" class="delete" aria-label="Delete invoice 001">Delete</button></td></tr>
+    <tr><td>Invoice 002</td><td><button type="button" class="delete" aria-label="Delete invoice 002">Delete</button></td></tr>
+    <tr><td>Invoice 003</td><td><button type="button" class="delete" aria-label="Delete invoice 003">Delete</button></td></tr>
+  </tbody>
+</table>
+<script>
+  window.__fixture = { deleted: null };
+  for (const button of document.querySelectorAll('.delete')) {
+    button.addEventListener('click', () => (window.__fixture.deleted = button.getAttribute('aria-label')));
+  }
+</script>
+</body>
+</html>

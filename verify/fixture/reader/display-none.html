@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Display none</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  .card { width: 240px; height: 120px; border: 1px solid #bbb; padding: 12px; }
+  /* Not laid out at all, even on hover: there is nothing for a pointer to reveal. */
+  .archive { display: none; }
+  .card:hover .archive { display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h3>Quarterly report</h3>
+  <button type="button">Open card</button>
+  <button type="button" class="archive">Archive card</button>
+</div>
+</body>
+</html>
