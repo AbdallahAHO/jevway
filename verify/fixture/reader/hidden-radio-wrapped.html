@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hidden radio wrapped</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  /* A custom radio group: the native radio is display:none, the wrapping label is the whole control. */
+  label { display: block; padding: 8px 12px; border: 1px solid #bbb; width: 160px; margin-bottom: 8px; cursor: pointer; }
+  input { display: none; }
+</style>
+</head>
+<body>
+<fieldset>
+  <legend>Plan</legend>
+  <label><input type="radio" name="plan" value="free"> Free plan</label>
+  <label><input type="radio" name="plan" value="pro"> Pro plan</label>
+</fieldset>
+</body>
+</html>

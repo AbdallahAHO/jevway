@@ -259,6 +259,40 @@ const checks: Check[] = [
       assert.equal((await fixtureState(tab)).added, 0);
     },
   },
+  {
+    name: 'a visually hidden checkbox is listed by its visible label and toggled by clicking it',
+    file: 'hidden-checkbox-label.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const range = page.actions.find((action) => action.role === 'checkbox' && action.label === 'Last 24 hours');
+      assert.ok(range, `label not listed: ${labelsOf(page.actions)}`);
+      assert.equal(range.checked, 'false');
+      await tab.act(range, page);
+      assert.equal((await fixtureState(tab)).range, 'Last 24 hours');
+      assert.equal(await tab.evaluate(`document.getElementById('r1').checked`), true);
+    },
+  },
+  {
+    name: 'a hidden radio inside its label is listed by that label and checked by clicking it',
+    file: 'hidden-radio-wrapped.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const plan = find(page.actions, 'radio', /^Pro plan$/);
+      assert.ok(plan, `label not listed: ${labelsOf(page.actions)}`);
+      await tab.act(plan, page);
+      assert.equal(await tab.evaluate(`document.querySelector('input:checked')?.value`), 'pro');
+    },
+  },
+  {
+    name: 'a visible checkbox with a label is listed once, as the input',
+    file: 'visible-checkbox.html',
+    run: async (tab) => {
+      const actions = controls(await listed(tab));
+      assert.equal(actions.length, 1, labelsOf(actions));
+      assert.equal(actions[0].role, 'checkbox');
+      assert.match(actions[0].label, /newsletter/);
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port.
