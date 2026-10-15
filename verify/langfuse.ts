@@ -4,6 +4,8 @@
  *
  *   pnpm verify:langfuse                                  # every job, 3 runs each
  *   JEV_LANGFUSE_RUNS=1 JEV_LANGFUSE_ONLY=costliest-user,prompt-version pnpm verify:langfuse
+ *   JEV_LANGFUSE_RUNS=3 JEV_LANGFUSE_DEVICE=iphone-15 pnpm verify:langfuse   # a key of DEVICES, default desktop
+ *   JEV_LANGFUSE_PHRASING=terse pnpm verify:langfuse                         # only the jobs that have a terseGoal
  *
  * Needs a Chrome signed in to cloud.langfuse.com on a debugging port (default http://127.0.0.1:9333, override
  * with JEV_LANGFUSE_BROWSER); see the jev-browse skill's "Run without permission prompts". Opens report.html.
@@ -11,10 +13,11 @@
 import { execFile } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { connectChrome } from '../src/browser/chrome.ts';
+import { DEVICES, type DeviceName } from '../src/browser/devices.ts';
 import { Tab } from '../src/browser/tab.ts';
 import { createAsk, profileOptions, resolveModel } from '../src/jev/model.ts';
 import { BrowserTask } from '../src/task/run-task.ts';
-import { renderReport, type JobResult, type Job } from './langfuse-report.ts';
+import { goalFor, isFlaky, renderReport, wilson, type JobResult, type Job, type Phrasing } from './langfuse-report.ts';
 
 const PROJECT = 'https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi';
 // The first table on the page as rows keyed by header text: what a calling agent reads with chrome-devtools.
@@ -52,6 +55,7 @@ const JOBS: Job[] = [
     title: 'Replay the longest conversation',
     job: 'When a chat went wrong, I want to replay the whole session turn by turn, so I can see where it derailed.',
     goal: `Go to Sessions, sort the sessions by Duration with the longest first, and open the longest session. ${READ_ONLY}`,
+    terseGoal: `Open the longest session. ${READ_ONLY}`,
     doneWhen: "A single session's page is open, listing its traces in order.",
     check: 'The URL is a session page: /sessions/<id>',
     passes: (url) => /\/sessions\/[^/]+$/.test(url.pathname),
@@ -92,6 +96,7 @@ const JOBS: Job[] = [
     title: 'Look at an earlier prompt version',
     job: 'When the assistant changed tone, I want to read the previous version of its prompt, so I can see what changed.',
     goal: `Go to Prompts, open the langfuse-docs-assistant-chat prompt, and show its version 28. ${READ_ONLY}`,
+    terseGoal: `Show version 28 of the langfuse-docs-assistant-chat prompt. ${READ_ONLY}`,
     doneWhen: 'Version 28 of the langfuse-docs-assistant-chat prompt is shown.',
     check: 'The URL is /prompts/langfuse-docs-assistant-chat?version=28',
     passes: (url) => url.pathname.endsWith('/prompts/langfuse-docs-assistant-chat') && url.searchParams.get('version') === '28',
@@ -101,6 +106,7 @@ const JOBS: Job[] = [
     title: 'Review the annotation backlog',
     job: 'When planning labelling work, I want to see what is pending in the QA error-analysis queue, so I can size the effort.',
     goal: `Go to Human Annotation and open the "2026-07-15 Error Analysis - QA chat" queue to see its items. Do not press "Process queue". ${READ_ONLY}`,
+    terseGoal: `Open the "2026-07-15 Error Analysis - QA chat" annotation queue. ${READ_ONLY}`,
     doneWhen: 'The "2026-07-15 Error Analysis - QA chat" annotation queue page is open, listing its items.',
     check: 'An /annotation-queues/<id> page (not the processing view) whose text names the Error Analysis queue',
     passes: (url, text) => /\/annotation-queues\/[a-z0-9]+/.test(url.pathname) && !/process/i.test(url.pathname) && /Error Analysis/.test(text),
@@ -128,6 +134,7 @@ const JOBS: Job[] = [
     title: 'Trace a labelled example to its source',
     job: 'When the classifier seems off, I want to check one human-labelled example against the chat it came from, so I can trust the ground truth.',
     goal: `Go to Datasets, open the conversation-signal-groundtruth-v0 dataset, open one of its items, and then open the trace that item came from. ${READ_ONLY}`,
+    terseGoal: `Open the source trace of a conversation-signal-groundtruth-v0 dataset item. ${READ_ONLY}`,
     doneWhen: 'The source trace of a conversation-signal-groundtruth-v0 dataset item is open.',
     check: 'A trace is open (traceId/peek in the URL or a /traces/ page)',
     passes: (url) => openTrace(url),
@@ -165,6 +172,7 @@ const JOBS: Job[] = [
     title: 'Open the slowest trace',
     job: 'When users complain the bot is slow, I want to open the slowest recent trace, so I can see which step takes the time.',
     goal: `Go to Tracing, sort the traces by Latency with the slowest first, and open the slowest trace. ${READ_ONLY}`,
+    terseGoal: `Open the slowest trace. ${READ_ONLY}`,
     doneWhen: 'A trace detail is open after sorting the traces by latency, slowest first.',
     check: 'A trace is open and the URL sorts by latency',
     passes: (url) => openTrace(url) && /latency/i.test(url.search),
@@ -222,14 +230,25 @@ const ask = createAsk(profile);
 const runs = Number(process.env.JEV_LANGFUSE_RUNS ?? 3);
 const only = process.env.JEV_LANGFUSE_ONLY?.split(',');
 const source = process.env.JEV_LANGFUSE_BROWSER ?? 'http://127.0.0.1:9333';
+const deviceName = process.env.JEV_LANGFUSE_DEVICE ?? 'desktop';
+if (!Object.hasOwn(DEVICES, deviceName)) {
+  throw new Error(`Unknown JEV_LANGFUSE_DEVICE "${deviceName}": use one of ${Object.keys(DEVICES).join(', ')}.`);
+}
+const device = DEVICES[deviceName as DeviceName];
+const phrasing = (process.env.JEV_LANGFUSE_PHRASING ?? 'as-written') as Phrasing;
+if (phrasing !== 'as-written' && phrasing !== 'terse') {
+  throw new Error(`Unknown JEV_LANGFUSE_PHRASING "${phrasing}": use as-written or terse.`);
+}
+// Terse phrasing only covers the jobs that have a terseGoal.
+const selectedJobs = JOBS.filter((j) => (!only || only.includes(j.id)) && (phrasing === 'as-written' || j.terseGoal));
 const outDir = new URL(`./out/langfuse-${new Date().toISOString().replace(/[:.]/g, '-')}/`, import.meta.url);
 mkdirSync(outDir, { recursive: true });
-process.stdout.write(`model: ${profile.name} (${profile.model}) · screenshots: ${screenshots} · ${runs} runs each · ${source}\n`);
+process.stdout.write(`model: ${profile.name} (${profile.model}) · screenshots: ${screenshots} · ${runs} runs each · device ${device.name} · phrasing ${phrasing} · ${source}\n`);
 
 const chrome = await connectChrome(source);
 const results: JobResult[] = [];
 try {
-  for (const job of JOBS.filter((j) => !only || only.includes(j.id))) {
+  for (const job of selectedJobs) {
     const result: JobResult = { job, runs: [] };
     results.push(result);
     for (let run = 1; run <= runs; run++) {
@@ -239,14 +258,14 @@ try {
       await chrome.cdp
         .send('Storage.clearDataForOrigin', { origin: new URL(PROJECT).origin, storageTypes: 'local_storage,session_storage' })
         .catch(() => undefined);
-      const tab = await Tab.open(chrome.cdp, PROJECT);
+      const tab = await Tab.open(chrome.cdp, PROJECT, { device });
       try {
         if (/\/auth\//.test(String(await tab.evaluate('location.pathname')))) {
           throw new Error('Not signed in to Langfuse in this Chrome: sign in once, then rerun.');
         }
         const task = new BrowserTask(tab, ask, {
           ...profileOptions(profile),
-          goal: job.goal,
+          goal: goalFor(job, phrasing),
           values: job.values,
           doneWhen: job.firstDoneWhen ?? job.doneWhen,
           maxSteps: 20,
@@ -293,10 +312,13 @@ const readSteps = (dir: string) => {
     return undefined;
   }
 };
-writeFileSync(report, renderReport({ results, model: `${profile.name} (${profile.model})`, screenshots, readRecording: readSteps }));
-writeFileSync(new URL('results.json', outDir), JSON.stringify(results, null, 1));
+writeFileSync(report, renderReport({ results, model: `${profile.name} (${profile.model})`, screenshots, device: device.name, phrasing, readRecording: readSteps }));
+writeFileSync(new URL('results.json', outDir), JSON.stringify({ device: device.name, phrasing, runsPerJob: runs, results }, null, 1));
 const passed = results.flatMap((r) => r.runs).filter((r) => r.passed).length;
 const total = results.flatMap((r) => r.runs).length;
+const { low, high } = wilson(passed, total);
+const flakyJobs = results.filter((r) => isFlaky(r.runs)).map((r) => r.job.id);
+process.stdout.write(`95% CI ${(low * 100).toFixed(1)}–${(high * 100).toFixed(1)}% · flaky: ${flakyJobs.join(', ') || 'none'}\n`);
 process.stdout.write(`${passed}/${total} runs passed · ${report.pathname}\n`);
 if (process.platform === 'darwin' && !process.env.CI) execFile('open', [report.pathname]);
 process.exitCode = passed === total ? 0 : 1;
