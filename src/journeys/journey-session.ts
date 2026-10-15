@@ -6,6 +6,7 @@ import { StalePage, Tab, type PageAction, type PageState } from '../browser/tab.
 import { buildActionSpace, type ActionSpace } from '../jev/action-space.ts';
 import { decide, type Ask, type Decision, type StepRecord } from '../jev/decide.ts';
 import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
+import { readScreenBoxes, screenBoxQuestions } from './screen-boxes.ts';
 import { watchDiagnostics, type DiagnosticsWatcher } from './diagnostics.ts';
 import { buildFlows, hotspotOf, type JourneyDoc, type JourneyStep } from './journey-doc.ts';
 import { pickNextMove } from './pick-next-move.ts';
@@ -42,6 +43,8 @@ export interface JourneyOptions {
   /** Flat operation rules from the model profile (see ModelProfile.compactRules). */
   compactRules?: string;
   imageTransport?: ImageTransport;
+  /** With screenshots: Box the screen's primary action (viewer hotspot) and controls missing from the DOM (QA). */
+  box?: boolean;
 }
 
 export interface StepInput {
@@ -144,6 +147,7 @@ export class JourneySession {
         type: screen.type,
         type_confidence: round(screen.typeConfidence),
         patterns: screen.patterns,
+        ...(screen.primaryAction && { primary_action: screen.primaryAction }),
       },
       screenshot: join(this.outDir, screen.screenshot),
       qa: screen.qa,
@@ -351,13 +355,17 @@ export class JourneySession {
     await this.#diagnostics.waitForIdle();
     const page = await this.#settledPage();
     const seesScreen = (this.#options.screenshots ?? 'off') !== 'off';
+    const boxed = seesScreen && Boolean(this.#options.box);
     const decision = await decide(this.#ask, {
       page,
       goal: this.#options.intent ?? EXPLORE_GOAL,
       values: this.#options.values ?? {},
       history: this.#recent.slice(-10),
       checkCommitRisk: true,
-      extraQuestions: screenQuestions(this.doc.screens.map((screen) => visitedSummary(screen, this.#excerpts))),
+      extraQuestions: {
+        ...screenQuestions(this.doc.screens.map((screen) => visitedSummary(screen, this.#excerpts))),
+        ...(boxed && screenBoxQuestions()),
+      },
       compactRules: this.#options.compactRules,
       imageTransport: this.#options.imageTransport,
       ...(this.#options.elementRisk && { elementRisk: 'ranked' as const }),
@@ -369,6 +377,8 @@ export class JourneySession {
       await this.#tab.evaluate(`document.documentElement.scrollWidth - ${this.#device.width}`).catch(() => 0),
     );
     const findings = qaFindings(page, this.#diagnostics.drain(), judgments, overflow, this.#device.mobile);
+    const boxes = boxed ? readScreenBoxes(decision.answers, page) : { primaryAction: undefined, finding: undefined };
+    if (boxes.finding) findings.push(boxes.finding);
 
     const contentKey = `${normalizeUrl(page.url)}\n${page.title}\n${page.text.slice(0, 600)}`;
     const existing = this.#contentKeys.get(contentKey) ?? judgments.sameAs;
@@ -388,6 +398,7 @@ export class JourneySession {
         typeConfidence: judgments.typeConfidence,
         patterns: judgments.patterns,
         qa: findings,
+        ...(boxes.primaryAction && { primaryAction: boxes.primaryAction }),
       });
     }
     this.#contentKeys.set(contentKey, id);

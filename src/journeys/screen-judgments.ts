@@ -128,7 +128,8 @@ export interface QaFinding {
     | 'unlabeled_control'
     | 'error_state'
     | 'empty_state'
-    | 'dead_end';
+    | 'dead_end'
+    | 'control_not_in_dom';
   severity: 'high' | 'medium' | 'low';
   detail: string;
 }

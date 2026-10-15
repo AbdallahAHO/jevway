@@ -4,6 +4,7 @@ import { buildActionSpace } from '../src/jev/action-space.ts';
 import type { Decision } from '../src/jev/decide.ts';
 import { buildFlows, hotspotOf, type JourneyStep } from '../src/journeys/journey-doc.ts';
 import { pickNextMove } from '../src/journeys/pick-next-move.ts';
+import { readScreenBoxes } from '../src/journeys/screen-boxes.ts';
 import { qaFindings, readScreenJudgments, type ScreenJudgments } from '../src/journeys/screen-judgments.ts';
 
 const actions: PageAction[] = [
@@ -207,5 +208,32 @@ describe('screen QA', () => {
       same_screen: { choice: 's02', probabilities: { s02: 0.92, NEW_SCREEN: 0.08 } },
     });
     expect(strong.sameAs).toBe('s02');
+  });
+});
+
+describe('screen boxes', () => {
+  const page = {
+    w: 400,
+    h: 800,
+    actions: [{ id: 'e1', kind: 'click', node: 1, label: 'Reserve', rect: { x: 40, y: 700, w: 320, h: 60 } }],
+  } as any;
+  const box = (left: number, top: number, right: number, bottom: number, confidence = 0.9) => ({
+    type: 'box',
+    box: { left, top, right, bottom },
+    confidence,
+  });
+
+  it('turns the primary-action box into a hotspot named after the control it covers', () => {
+    const { primaryAction } = readScreenBoxes({ primary_action_box: box(0.1, 0.875, 0.9, 0.95) }, page);
+    expect(primaryAction).toMatchObject({ x: 0.1, y: 0.875, element: 'Reserve', confidence: 0.9 });
+  });
+
+  it('flags a tappable control only when it overlaps nothing the DOM reported', () => {
+    const missing = readScreenBoxes({ unlisted_control: { noul: 0.9 }, unlisted_control_box: box(0.05, 0.1, 0.2, 0.15) }, page);
+    expect(missing.finding).toMatchObject({ kind: 'control_not_in_dom', severity: 'medium' });
+    const known = readScreenBoxes({ unlisted_control: { noul: 0.9 }, unlisted_control_box: box(0.1, 0.875, 0.9, 0.95) }, page);
+    expect(known.finding).toBeUndefined();
+    const unsure = readScreenBoxes({ unlisted_control: { noul: 0.3 }, unlisted_control_box: box(0.05, 0.1, 0.2, 0.15) }, page);
+    expect(unsure.finding).toBeUndefined();
   });
 });

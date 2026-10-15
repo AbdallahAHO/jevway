@@ -19,6 +19,8 @@ export interface JourneyScreen {
   typeConfidence: number;
   patterns: (keyof typeof PATTERNS)[];
   qa: QaFinding[];
+  /** Where the screenshot shows the screen's primary action (Box, Jev 1.14 on the TypeSafe API). */
+  primaryAction?: Hotspot & { confidence: number; element?: string };
   description?: string;
   insight?: string;
 }

@@ -39,6 +39,7 @@ body.landscape .card { flex-basis:460px; } body.landscape .grid { grid-template-
 .shot { position:relative; border-radius:18px; overflow:hidden; border:1px solid var(--line); background:var(--panel); cursor:zoom-in; }
 .shot img { display:block; width:100%; }
 .hotspot { position:absolute; border:2px solid var(--accent); border-radius:6px; background:rgb(229 72 77 / .12); pointer-events:none; }
+.primary { position:absolute; border:2px dashed var(--accent); border-radius:6px; opacity:.7; pointer-events:none; }
 .num { position:absolute; top:8px; left:8px; background:var(--ink); color:var(--bg); font-size:11px; border-radius:99px; padding:1px 7px; }
 .card .action { margin-top:8px; font-weight:600; font-size:12.5px; }
 .card .action::before { content:"→ "; color:var(--accent); }
@@ -94,8 +95,10 @@ const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&l
 const $ = id => document.getElementById(id);
 const qaBadges = s => s.qa.length ? '<div class="qa">' + [...new Map(s.qa.map(f => [f.kind, f])).values()].map(f => '<span class="sev-' + f.severity + '">● ' + esc(f.kind.replace(/_/g, ' ')) + '</span>').join('') + '</div>' : '';
 const typeChips = s => '<div class="chips"><span class="chip type">' + esc(s.type) + '</span>' + s.patterns.slice(0, 4).map(p => '<span class="chip">' + esc(p.replace(/_/g, ' ')) + '</span>').join('') + '</div>';
+const boxStyle = b => 'left:' + b.x * 100 + '%;top:' + b.y * 100 + '%;width:' + b.width * 100 + '%;height:' + b.height * 100 + '%';
 const shot = (s, hotspot, num) => '<div class="shot" data-screen="' + s.id + '"><img loading="lazy" src="' + esc(s.screenshot) + '" alt="' + esc(s.title) + '">' +
-  (hotspot ? '<div class="hotspot" style="left:' + hotspot.x * 100 + '%;top:' + hotspot.y * 100 + '%;width:' + hotspot.width * 100 + '%;height:' + hotspot.height * 100 + '%"></div>' : '') +
+  (hotspot ? '<div class="hotspot" style="' + boxStyle(hotspot) + '"></div>' : '') +
+  (s.primaryAction ? '<div class="primary" title="Primary action (Box)" style="' + boxStyle(s.primaryAction) + '"></div>' : '') +
   '<span class="num">' + esc(num) + '</span></div>';
 
 // Desktop journeys get wide cards; phone journeys keep narrow portrait strips.
