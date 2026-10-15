@@ -169,6 +169,16 @@
       if (pointer(e) && outermost && !e.closest(selector) && !e.querySelector(selector) && e.innerText.trim()) popupItems.add(e);
     }
   }
+  // jev-browse: an unnamed checkbox is named by its row ("Select: Casa Flora"), not its value "on".
+  const unnamedToggle = (e, rname) => {
+    if (!['checkbox', 'radio', 'switch'].includes(rname)) return false;
+    const own = name(e);
+    return !own || own === e.value;
+  };
+  const rowContext = (e) => {
+    const text = (e.closest('tr,[role="row"],li,label')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    return text && 'Select: ' + text;
+  };
   for (const e of [...roots.flatMap(deepQuery), ...popupItems]) {
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const r = cache.clickRect(e),
@@ -191,7 +201,13 @@
       role: rname,
       // jev-browse: a row is what it shows; its name would also pull in nested controls ("Select row"). Labels are
       // capped: table rows holding whole JSON payloads otherwise blow the request past the model's token limit.
-      label: cap((rname === 'row' ? e.innerText.replace(/\s+/g, ' ').trim() : name(e).replace(/\s+/g, ' ').trim()) || rname),
+      label: cap(
+        (rname === 'row'
+          ? e.innerText.replace(/\s+/g, ' ').trim()
+          : unnamedToggle(e, rname)
+            ? rowContext(e)
+            : name(e).replace(/\s+/g, ' ').trim()) || rname,
+      ),
       rect: { x: r.x, y: r.y, w: r.width, h: r.height },
     };
     for (const key of ['checked', 'selected', 'expanded']) {
