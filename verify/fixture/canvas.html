@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Arcade</title>
+  <style>
+    body { font: 16px system-ui, sans-serif; margin: 40px; }
+    canvas { display: block; margin-top: 24px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <h1>Arcade</h1>
+  <p id="status">Press Start to begin the game.</p>
+  <!-- The only control is drawn on the canvas: no DOM element, role, or label for the DOM reader to report. -->
+  <canvas id="game" width="480" height="240"></canvas>
+  <script>
+    window.__fixture = { started: false, misses: 0 };
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const button = { x: 170, y: 90, w: 140, h: 56 };
+    ctx.fillStyle = '#f4f4f5'; ctx.fillRect(0, 0, 480, 240);
+    ctx.fillStyle = '#16a34a'; ctx.fillRect(button.x, button.y, button.w, button.h);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 26px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Start', button.x + button.w / 2, button.y + button.h / 2);
+    canvas.addEventListener('click', (event) => {
+      const r = canvas.getBoundingClientRect();
+      const x = event.clientX - r.left, y = event.clientY - r.top;
+      const inside = x >= button.x && x <= button.x + button.w && y >= button.y && y <= button.y + button.h;
+      if (!inside) return void window.__fixture.misses++;
+      window.__fixture.started = true;
+      document.getElementById('status').textContent = 'Game started. Good luck!';
+    });
+  </script>
+</body>
+</html>

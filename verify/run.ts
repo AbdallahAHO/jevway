@@ -27,10 +27,11 @@ const source = (process.env.JEV_VERIFY_BROWSER ?? 'launch-headless') as BrowserS
 const outDir = new URL(`./out/${new Date().toISOString().replace(/[:.]/g, '-')}/`, import.meta.url);
 mkdirSync(outDir, { recursive: true });
 
-// Serve the fixture on a random local port.
+// Serve the fixtures on a random local port: /canvas.html, anything else is the stays fixture.
 const fixture = readFileSync(new URL('./fixture/stays.html', import.meta.url));
-const server = createServer((_request, response) =>
-  response.writeHead(200, { 'content-type': 'text/html' }).end(fixture),
+const canvasFixture = readFileSync(new URL('./fixture/canvas.html', import.meta.url));
+const server = createServer((request, response) =>
+  response.writeHead(200, { 'content-type': 'text/html' }).end(request.url === '/canvas.html' ? canvasFixture : fixture),
 );
 await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 const fixtureUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/stays.html`;
@@ -133,6 +134,37 @@ await scenario('fixture: confirmed continuation completes the booking', async ()
 });
 saveTrace('fixture-session', stays, staySummaries);
 await stayTab.close();
+
+// Only with Box (Jev 1.14 on the TypeSafe API) and screenshots: a Start button drawn on a canvas, which the DOM
+// reader can't report. Without the opt-in nothing may be clicked; with it, the box centre must start the game.
+if (profile.box && screenshots !== 'off') {
+  await scenario('fixture: canvas-only control → opt-in coordinate click', async () => {
+    const canvasUrl = fixtureUrl.replace('/stays.html', '/canvas.html');
+    const options = {
+      ...profileOptions(profile),
+      minConfidence,
+      screenshots,
+      goal: 'Start the game by pressing the Start button.',
+      doneWhen: 'The status says the game started.',
+      maxSteps: 4,
+    };
+    const lockedTab = await Tab.open(chrome.cdp, canvasUrl);
+    const locked = await new BrowserTask(lockedTab, ask, options).run();
+    const lockedState = await groundTruth(lockedTab.targetId, 'window.__fixture');
+    await lockedTab.close();
+    assert.equal(lockedState.started, false, 'clicked the canvas without allowCoordinateClicks');
+    assert.equal(lockedState.misses, 0, 'clicked the canvas without allowCoordinateClicks');
+
+    const tab = await Tab.open(chrome.cdp, canvasUrl);
+    const task = new BrowserTask(tab, ask, { ...options, allowCoordinateClicks: true });
+    const summary = await task.run();
+    saveTrace('canvas', task, [locked, summary]);
+    const state = await groundTruth(tab.targetId, 'window.__fixture');
+    await tab.close();
+    assert.equal(state.started, true, `game not started (${state.misses} misses): ${summary.reason}`);
+    return summary;
+  });
+}
 
 await scenario('live web: Wikipedia search → Gödel’s incompleteness theorems article', async () => {
   const tab = await Tab.open(chrome.cdp, 'https://en.wikipedia.org/wiki/Main_Page');
