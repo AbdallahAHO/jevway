@@ -89,7 +89,7 @@ Every model except Jev judges commit risk **per click candidate by name**, in on
 
 ## Tools
 
-**`browser_task`** takes `goal`, `url` | `tab`, `values`, `done_when`, `session`, `confirm_irreversible`, `max_steps`, and `allow_coordinate_clicks` (new sessions only). It returns:
+**`browser_task`** takes `goal`, `url` | `tab`, `values`, `done_when`, `session`, `confirm_irreversible`, `max_steps`, and, for new sessions only, `allow_coordinate_clicks` and `record_dir`. It returns:
 
 ```json
 { "session": "be63210d", "status": "needs_input", "reason": "Blocked: no supplied value for \"Email address\"",
@@ -101,19 +101,21 @@ Every model except Jev judges commit risk **per click candidate by name**, in on
 
 | Status | Meaning |
 | --- | --- |
-| `done` | Jev chose DONE **and** a separate `done_when` check passed, or that check alone scored ≥ 0.9. A rejected DONE waits and re-decides, up to 3 times. |
+| `done` | Jev chose DONE **and** a separate `done_when` check passed, or that check alone scored ≥ 0.9 once or ≥ 0.75 on 3 decisions in a row. A rejected DONE waits and re-decides, up to 3 times. |
 | `needs_input` | A field needs a value that isn't in `values`. Nothing is invented. |
 | `needs_confirmation` | The next click looks irreversible (pay, send, delete, submit). `confirm_irreversible: true` allows exactly one such click. |
-| `uncertain` | Operation or target confidence was below the model threshold (Jev 0.3; per model in `src/jev/model.ts`), or DONE could not be verified. |
-| `blocked` | No supported operation can progress, or 3 actions in a row changed nothing. |
+| `uncertain` | Operation or target confidence was below the model threshold (Jev 0.3; per model in `src/jev/model.ts`), 6 actions in a row ran under 0.5 confidence (exploring, not progressing), or DONE could not be verified. |
+| `blocked` | No supported operation can progress, 3 actions in a row changed nothing, the same target was covered 3 times, one action only toggled the page back and forth 4 times, or the same element was used 6 times in 7 actions. |
 | `step_budget` | `max_steps` was reached (default 40). |
 
 **`browser_task_end`** takes `session` and `keep_tab`.
 
+**Recording:** `record_dir` (CLI `--record <dir>`) saves a screencast video (`run.mp4`, needs `ffmpeg` on the PATH, otherwise skipped), a 2× JPEG before every action with its target outlined, the final page, `summary.json`, and an `index.html` viewer. These shots are for people; the model still gets its own 1024 px screenshots.
+
 ## Safety
 
 - Model output only ever selects an observed element index. It never becomes a selector, script, or text, and it becomes a coordinate only through the opt-in coordinate click (stuck, a confident box matching no observed element, a hit-test, and the commit-risk gate).
-- Typing uses real key events per character, so autocompletes register it. Enter is a separate fixed key, offered only right after typing into a search-like field, and pressed only while that field still has focus.
+- Typing uses real key events per character, so autocompletes register it. Enter is a separate fixed key, offered only right after typing into a search-like field, and pressed only while that field still has focus. Escape is offered only while a menu, popover or suggestion list is expanded, and pressed once automatically when a popup covers the chosen target (then a blur and a synthetic outside press, for lists that ignore Escape).
 - Every input re-checks the page for freshness and for covered targets first (from jev-ultrafast).
 - Page text is treated as untrusted data in every instruction.
 
@@ -123,6 +125,7 @@ Every model except Jev judges commit risk **per click candidate by name**, in on
 pnpm test      # offline: action space, request shape, answer validation, task-loop rules
 pnpm verify    # live: headless Chrome + real Jev, checked against independent ground truth
 pnpm verify:real   # live public sites, a fresh browser per run, 5 runs each (JEV_REAL_RUNS, JEV_REAL_ONLY)
+pnpm verify:langfuse   # 10 jobs in Langfuse's demo project, signed-in Chrome on :9333, recorded into report.html
 ```
 
 `pnpm verify` runs:
@@ -130,6 +133,7 @@ pnpm verify:real   # live public sites, a fresh browser per run, 5 runs each (JE
 - **Local booking fixture:** async autocomplete, native select, checkbox, async results, then open a result. Next, `needs_input` for a missing email, then `needs_confirmation` on "Confirm booking and pay", then the confirmed booking. All four scenarios share one session.
 - **Real Wikipedia search.**
 - **Canvas-only control** (Box profiles with screenshots): no click without the opt-in, and the game starts with it.
+- **Wide table rows** (like Langfuse's traces table): rows wider than their scroll box are listed and opened, not their checkboxes. The run is recorded.
 - **MCP stdio round trip.**
 
 `pnpm verify:real` runs Wikipedia, MDN, GitHub, Hacker News, npm, Booking.com and Google Flights. Every task stops before login or payment, passes are checked against the final URL, and bot walls (Cloudflare, captchas) are reported apart from failures.
@@ -138,7 +142,9 @@ Traces go to `verify/out/`. Results are in [docs/verification.md](docs/verificat
 
 ## Limits
 
+- An element whose centre is off-screen (a row wider than its scroll box) is clicked at the centre of its visible part. A target clipped by a scrolling sidebar or table is scrolled into view just before the click.
+- Also read: sortable column headers (including ones scrolled sideways), plain pointer-cursor items inside open popups (date-range menus), and contenteditable search bars. Rows are labelled by their visible text.
 - The DOM reader covers common HTML/ARIA controls, including inside open shadow roots. Closed shadow roots, iframes, canvas, uploads, popup tabs, and nested scrolling aren't read. Box can see canvas and iframe controls, and click them with the opt-in; otherwise use chrome-devtools.
-- Only on-screen elements are listed; Jev scrolls to reveal more.
+- Only on-screen elements are listed; Jev scrolls to reveal more. Exception: an off-screen link, button or row containing one of the supplied `values` is listed too, and scrolled into view when clicked.
 - Confidence thresholds (per model, in `src/jev/model.ts`) and the 0.5 risk threshold are starting points, tuned on a small set of runs.
 - Jev's commit-risk check is a speculative page-level judgment ("the click that best advances the goal"). Other models score each candidate, and Box rescues use the box's own score.

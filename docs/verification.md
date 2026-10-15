@@ -177,3 +177,12 @@ On real sites Box is a safety net, not a measured success gain. Its clear win is
 - **npm** blocks headless Chrome with Cloudflare. In visible (non-headless) Chrome the search reached `/package/zod`, but the challenge was served there too.
 - **Navigation errors end a run.** Google Flights' one failure was "Page did not settle within 1s" while opening the tab.
 - **Each cell is 5 runs on one machine and one network.** Sites change their layouts.
+
+## Langfuse in a signed-in browser, and wide table rows (2026-10-15)
+
+Task: open the most recent trace in Langfuse's public demo project (`cloud.langfuse.com`, signed in) and show its input, output and observation tree. It's read-only.
+
+- **In the user's own Chrome (`auto`):** handed back `uncertain` after clicking a row's "Select row" checkbox, which brought up a "Delete Traces" bar. The traces table is a 701 px scroll box whose rows are far wider, so each row's centre was off-screen and the snapshot dropped every row. Only the checkboxes were left to choose from.
+- **Fix:** an element whose centre is off-screen is listed and clicked at the centre of the part that the viewport and its scroll containers leave visible. Elements whose centre is on-screen are unchanged. The new `wide-table.html` fixture lists 0 rows without the fix and 3 with it.
+- **After the fix,** in a separate Chrome on a debugging port with a test account: `done` 3 times in a row, in 3.0–6.0 s, with 6–7 Jev requests (median 283–290 ms). The `done_when` check passed each time.
+- **`pnpm verify`:** 8/8, including the new wide-table scenario (`done` in 0.7 s, 2 requests, no checkbox ticked).

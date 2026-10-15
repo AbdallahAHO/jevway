@@ -20,7 +20,9 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 
 1. Write `goal` as the full outcome, including every filter and choice.
 2. Put every text value the goal needs into `values` with descriptive keys (`{"destination":"Lisbon","email":"ada@example.com"}`). Jev only types supplied values.
-3. Always pass `done_when`: visible evidence of success ("Search results for Lisbon are listed"). DONE is accepted only after this check passes.
+3. Always pass `done_when`: visible evidence of success ("Search results for Lisbon are listed"). DONE is accepted only after this check passes. Describe only what the final page itself shows: "the user from the costliest session is open" can't be judged on a user page, "a user's detail page is open" can.
+5. Jev picks elements; it doesn't compare numbers. For "the most expensive", "the one with errors" and the like, call once to reach the list, read it yourself (chrome-devtools or the summary's `page_text`), then continue the same `session` with the chosen value in `values`.
+6. Text Jev needs to type, even a filter word like `ERROR`, must be in `values`.
 4. Start with `url` (new background tab) or `tab` (part of an open tab's URL).
 
 ## Read the status
@@ -34,3 +36,24 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 | `step_budget` | Split the goal into smaller calls on the same `session`. |
 
 End with `browser_task_end` when finished (it closes the tab it opened unless `keep_tab: true`).
+
+## Show what happened
+
+Pass `record_dir` on a new session to keep a record for people: a screencast video (`run.mp4`, needs ffmpeg), a sharp 2× screenshot before every action with its target outlined, the final page, `summary.json` and an `index.html` viewer (`open <dir>/index.html`). These shots never reach the model.
+
+## Run without permission prompts
+
+`JEV_BROWSER=auto` attaches to the user's Chrome, which asks them to allow remote debugging. For unattended runs, start a separate Chrome with its own profile instead:
+
+```bash
+PROFILE="$SCRATCH/chrome-profile"   # a session scratch folder, never the user's profile
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9333 \
+  --user-data-dir="$PROFILE" --no-first-run --no-default-browser-check about:blank &
+until curl -s http://127.0.0.1:9333/json/version >/dev/null; do sleep 0.5; done
+```
+
+- jev-browse: `JEV_BROWSER=http://127.0.0.1:9333` (MCP env) or `--browser http://127.0.0.1:9333` (CLI).
+- agent-browser shares the same Chrome with `--cdp 9333`; use it for sign-up and login steps, then hand the goal to `browser_task`.
+- Logins stay in that profile across runs. Stop only that Chrome: `pkill -f "user-data-dir=$PROFILE"`.
+- Keep the window visible (no `--headless`) when a site shows a Cloudflare or captcha check: a real window often clears it on its own. Never try to solve or bypass a challenge; if it still asks, hand the click to the user.
+- A sign-up needing an email: use the `disposable-inbox` skill for a throwaway address and its verification code. Only for test or demo accounts the user asked for.
