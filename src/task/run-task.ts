@@ -68,6 +68,25 @@ const DEFAULTS = {
   box: false,
   allowCoordinateClicks: false,
 };
+/**
+ * Loop guards, measured on Jev 1.14 against the Langfuse demo suite (2026-10-15, 3 runs per job). Provisional:
+ * revisit with the 10-run variance data before changing; other models must not inherit retuned values blindly.
+ */
+const GUARDS = {
+  // ...or this sure on doneSustained consecutive decisions: steady evidence, where a single spike isn't (see DONE_EVIDENT).
+  doneSteady: 0.75,
+  doneSustained: 3,
+  // A target the page keeps covering (an open popover, a sticky bar): told to Jev on the 2nd miss, handed back on this one.
+  maxUnreachable: 3,
+  // This many executed actions in a row below wanderConfidence means Jev is exploring, not progressing: hand back.
+  wanderSteps: 6,
+  wanderConfidence: 0.5,
+  // The same element acted on this many times within the last repeatWindow actions is a loop, whatever the page does.
+  repeatLimit: 6,
+  repeatWindow: 7,
+  // The same action this many times, with the page flipping between two states each time, is a toggle loop.
+  toggleLoop: 4,
+} as const;
 // A DONE the completion check rejects usually means content is still loading: wait and re-decide this many times.
 const MAX_REJECTED_DONE = 3;
 // Box answers count only when the model is at least this sure a control is there and where it is.
@@ -78,24 +97,11 @@ const COVERED_BELOW = 0.1;
 const COVERED_OVERLAP_BELOW = 0.1;
 // A `done_when` judgment this sure ends the task, whatever the next-step head prefers (it may wander on).
 const DONE_EVIDENT = 0.9;
-// ...or this sure on DONE_SUSTAINED consecutive decisions: steady evidence, where a single spike isn't.
-const DONE_STEADY = 0.75;
-const DONE_SUSTAINED = 3;
 // Enter is offered only after typing into a field like these; elsewhere it could submit a form.
 const SEARCH_LIKE = /search|query|find/i;
 // A covered target is fed back as history so Jev can clear it (dismiss a popover); this many times per run.
 const MAX_COVERED_RETRIES = 2;
-// A target the page keeps covering (an open popover, a sticky bar): told to Jev on the 2nd miss, handed back on this one.
-const MAX_UNREACHABLE = 3;
 const ESCAPE: PageAction = { id: 'press_escape', kind: 'escape', label: 'Press Escape to close the open menu, popover or suggestion list' };
-// This many executed actions in a row below WANDER_CONFIDENCE means Jev is exploring, not progressing: hand back.
-const WANDER_STEPS = 6;
-const WANDER_CONFIDENCE = 0.5;
-// The same element acted on this many times within the last REPEAT_WINDOW actions is a loop, whatever the page does.
-const REPEAT_LIMIT = 6;
-const REPEAT_WINDOW = 7;
-// The same action this many times, with the page flipping between two states each time, is a toggle loop.
-const TOGGLE_LOOP = 4;
 // Boxes on small targets land a row off (13 px checkboxes); pad before asking whether one covers the chosen control.
 const BOX_PADDING = 16;
 // A model call that fails like this (5xx, rate limit, network, timeout) is retried once; any other error is final.
@@ -218,8 +224,8 @@ export class BrowserTask {
           continue;
         }
         const doneProbability = decision.doneProbability ?? 0;
-        doneStreak = doneProbability >= DONE_STEADY ? doneStreak + 1 : 0;
-        if (doneWhen && (doneProbability >= DONE_EVIDENT || doneStreak >= DONE_SUSTAINED)) {
+        doneStreak = doneProbability >= GUARDS.doneSteady ? doneStreak + 1 : 0;
+        if (doneWhen && (doneProbability >= DONE_EVIDENT || doneStreak >= GUARDS.doneSustained)) {
           this.trace.push({ decision: { ...decision, action: decision.action?.label }, executed: false, elapsed_ms: elapsed() });
           return stop('done', `Completion condition verified: ${doneWhen}`, decision);
         }
@@ -322,7 +328,7 @@ export class BrowserTask {
           }
           const misses = this.#unreachable.node === action.node ? this.#unreachable.count + 1 : 1;
           this.#unreachable = { node: action.node, count: misses };
-          if (misses >= MAX_UNREACHABLE) {
+          if (misses >= GUARDS.maxUnreachable) {
             return stop('blocked', `"${action.label}" could not be reached ${misses} times: something on the page covers it`, decision);
           }
           if (misses === 2) {
@@ -359,14 +365,14 @@ export class BrowserTask {
           return stop('blocked', 'The last 3 actions did not change the page', decision);
         }
         if (wandering(this.#history.slice(firstStep))) {
-          return stop('uncertain', `Jev was unsure for ${WANDER_STEPS} actions in a row (confidence under ${WANDER_CONFIDENCE})`, decision);
+          return stop('uncertain', `Jev was unsure for ${GUARDS.wanderSteps} actions in a row (confidence under ${GUARDS.wanderConfidence})`, decision);
         }
         this.#outcomes.push({ action: `${decision.operation} ${element}`, print: page.fingerprint });
         if (togglingInPlace(this.#outcomes)) {
-          return stop('blocked', `"${element}" only toggles the page back and forth (${TOGGLE_LOOP}× in a row)`, decision);
+          return stop('blocked', `"${element}" only toggles the page back and forth (${GUARDS.toggleLoop}× in a row)`, decision);
         }
         if (repeating(this.#outcomes)) {
-          return stop('blocked', `"${element}" was used ${REPEAT_LIMIT} times in ${REPEAT_WINDOW} actions without finishing`, decision);
+          return stop('blocked', `"${element}" was used ${GUARDS.repeatLimit} times in ${GUARDS.repeatWindow} actions without finishing`, decision);
         }
       }
       return stop('step_budget', `Reached ${maxSteps} actions without finishing`);
@@ -562,19 +568,19 @@ const stuckOn = (decision: Decision, page: PageState) => ({
 });
 
 const wandering = (history: { confidence: number; not_executed?: string }[]) => {
-  const executed = history.filter((step) => !step.not_executed).slice(-WANDER_STEPS);
-  return executed.length === WANDER_STEPS && executed.every((step) => step.confidence < WANDER_CONFIDENCE);
+  const executed = history.filter((step) => !step.not_executed).slice(-GUARDS.wanderSteps);
+  return executed.length === GUARDS.wanderSteps && executed.every((step) => step.confidence < GUARDS.wanderConfidence);
 };
 const repeating = (outcomes: { action: string }[]) => {
-  const last = outcomes.slice(-REPEAT_WINDOW);
+  const last = outcomes.slice(-GUARDS.repeatWindow);
   const latest = last.at(-1)?.action;
-  return last.filter((o) => o.action === latest).length >= REPEAT_LIMIT;
+  return last.filter((o) => o.action === latest).length >= GUARDS.repeatLimit;
 };
 // The same action over and over while the page flips A, B, A, B: a menu opened and closed, a toggle flipped.
 const togglingInPlace = (outcomes: { action: string; print: string }[]) => {
-  const last = outcomes.slice(-TOGGLE_LOOP);
+  const last = outcomes.slice(-GUARDS.toggleLoop);
   return (
-    last.length === TOGGLE_LOOP &&
+    last.length === GUARDS.toggleLoop &&
     last.every((o) => o.action === last[0].action) &&
     last.every((o, i) => i < 2 || o.print === last[i - 2].print)
   );

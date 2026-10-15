@@ -27,4 +27,4 @@ MCP server + CLI that hands browser goals to TypeSafe Jev (one `/v1/systemone` r
 - Verification asserts ground truth (`window.__fixture`, URL), never the agent's own status alone.
 - Screenshot marks come only from snapshot rects and are removed before any input. The image never yields coordinates.
 - Recorded (`sharp`) screenshots are for people only and never go into a request.
-- Thresholds and rules are tuned per model. Jev's `NEXT_ACTION`, 0.3 and page-level commit risk are its verified baseline, so don't retune them on other models' data.
+- Thresholds and rules are tuned per model. Jev's `NEXT_ACTION`, 0.3 and page-level commit risk are its verified baseline, so don't retune them on other models' data. The loop guards in `GUARDS` (run-task.ts) are Jev-only provisional baselines.
