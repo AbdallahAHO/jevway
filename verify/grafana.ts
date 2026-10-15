@@ -17,7 +17,6 @@ const READ_ONLY = 'Do not sign in, create, edit, save or delete anything.';
 const KUBELET = '/d/3138fa155d5915769fbded898ac09fd9/';
 const POD_RESOURCES = '/d/6581e46e4e5c7ba40a07646395ef7b23/';
 const LOGS_DEMO = '/d/fdkz6t5tcm7lse/';
-const PLAY_HOME = '/d/to6j8mh/';
 
 const JOBS: Job[] = [
   {
@@ -51,13 +50,14 @@ const JOBS: Job[] = [
     passes: (url) => url.pathname.startsWith(LOGS_DEMO) && url.searchParams.get('from') === 'now-24h',
   },
   {
-    id: 'home-7d',
-    title: 'Home dashboard over a week',
-    job: 'When I report on the week, I want the home dashboard over the last 7 days, so I can see the trend.',
-    goal: `On the Grafana Play Home dashboard, set the time range to the last 7 days. ${READ_ONLY}`,
-    doneWhen: 'The home dashboard shows the last 7 days.',
-    check: `The URL path starts ${PLAY_HOME} and from=now-7d`,
-    passes: (url) => url.pathname.startsWith(PLAY_HOME) && url.searchParams.get('from') === 'now-7d',
+    id: 'kubelet-7d',
+    title: 'Last week on the Kubelet dashboard',
+    job: 'When I report on the week, I want the kubelet dashboard over the last 7 days, so I can see the trend.',
+    goal: `Open the "Kubernetes / Kubelet" dashboard and set its time range to the last 7 days. ${READ_ONLY}`,
+    values: { query: 'kubelet' },
+    doneWhen: 'The Kubernetes / Kubelet dashboard shows the last 7 days.',
+    check: `The URL path starts ${KUBELET} and from=now-7d`,
+    passes: (url) => url.pathname.startsWith(KUBELET) && url.searchParams.get('from') === 'now-7d',
   },
   {
     id: 'explore-6h',
