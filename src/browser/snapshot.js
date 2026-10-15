@@ -179,7 +179,17 @@
     const text = (e.closest('tr,[role="row"],li,label')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     return text && 'Select: ' + text;
   };
-  const candidates = [...roots.flatMap(deepQuery), ...popupItems];
+  const queried = roots.flatMap(deepQuery);
+  // jev-browse: a checkbox or radio hidden with opacity or display (Grafana's quick time ranges) is chosen through its
+  // visible label, so the label stands in for the input. A visible input keeps its own entry; a disabled one stays out.
+  const labelOf = new Map();
+  for (const input of queried) {
+    if (input.tagName !== 'INPUT' || !['checkbox', 'radio'].includes(input.type) || visible(input)) continue;
+    const label = input.labels?.[0];
+    if (label && !labelOf.has(label) && !input.matches(':disabled') && !input.closest('[aria-disabled="true"],[inert]'))
+      labelOf.set(label, input);
+  }
+  const candidates = [...queried, ...popupItems, ...labelOf.keys()];
   const eligible = (e) => safe(e) && visible(e) && !e.matches(':disabled') && !e.closest('[aria-disabled="true"]');
   const outOfView = (r) => {
     const x = r.x + r.width / 2,
@@ -196,9 +206,10 @@
   let wantedListed = 0;
   for (const e of candidates) {
     if (!eligible(e)) continue;
-    const r = cache.clickRect(e),
+    const hiddenInput = labelOf.get(e),
+      r = cache.clickRect(e),
       y = r.y + r.height / 2,
-      rname = role(e);
+      rname = hiddenInput ? hiddenInput.type : role(e);
     // jev-browse: a sortable header scrolled sideways out of its table is still a choice; clicking scrolls it in.
     const sideways = rname === 'columnheader' && y >= 0 && y < innerHeight && e.getBoundingClientRect().width > 0;
     const offscreen = outOfView(r);
@@ -212,7 +223,7 @@
       // jev-browse: a row is what it shows; its name would also pull in nested controls ("Select row"). Labels are
       // capped: table rows holding whole JSON payloads otherwise blow the request past the model's token limit.
       label: cap(
-        (rname === 'row'
+        (rname === 'row' || hiddenInput
           ? e.innerText.replace(/\s+/g, ' ').trim()
           : unnamedToggle(e, rname)
             ? rowContext(e)
@@ -224,7 +235,8 @@
       const value = e.getAttribute('aria-' + key);
       if (value !== null) base[key] = value;
     }
-    if (['checkbox', 'radio'].includes(e.type)) base.checked = String(e.checked);
+    const toggle = hiddenInput ?? e;
+    if (['checkbox', 'radio'].includes(toggle.type)) base.checked = String(toggle.checked);
     if (e.tagName === 'SELECT') {
       for (const o of e.options)
         if (!o.selected && !o.disabled && !o.closest('optgroup[disabled]'))
