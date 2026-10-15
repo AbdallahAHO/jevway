@@ -28,6 +28,7 @@
     "verify:journeys": "node --env-file-if-exists=.env verify/journeys.ts",
     "verify:real": "node --env-file-if-exists=.env verify/real-world.ts",
     "verify:langfuse": "node --env-file-if-exists=.env verify/langfuse.ts",
+    "verify:grafana": "node --env-file-if-exists=.env verify/grafana.ts",
     "verify:redteam": "node --env-file-if-exists=.env verify/redteam.ts",
     "verify:gotchas": "node --env-file-if-exists=.env verify/gotchas.ts"
   },
