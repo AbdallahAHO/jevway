@@ -722,6 +722,45 @@ describe('loop gotchas', () => {
     expect(summary.status).toBe('step_budget');
   });
 
+  describe('the last look before a guard hands back', () => {
+    const click = { operation: 'CLICK', click_target: '1' };
+    const options = { goal: 'Open it', doneWhen: 'It is open', changeWaitMs: 0 };
+    const unchanged = { status: 'blocked', reason: 'The last 3 actions did not change the page' };
+
+    it('ends as done, looking at a screenshot, when the page already shows the goal', async () => {
+      // `fallback` re-decides each stalled step with a screenshot, so steps 2 and 3 take two requests each.
+      const { ask, requests } = scriptedJev([...Array(5).fill(click), { ...click, done_check: 0.8 }]);
+      const { tab, asTab } = fakeTab();
+      const summary = await new BrowserTask(asTab, ask, { ...options, screenshots: 'fallback' }).run();
+      expect(summary).toMatchObject({ status: 'done', done_probability: 0.8, reason: 'Completion condition verified: It is open' });
+      expect(summary.steps).toHaveLength(3);
+      expect(requests).toHaveLength(6);
+      expect(tab.screenshots).toBe(3);
+    });
+
+    it("keeps the guard's stop when the look finds no completion evidence, or fails", async () => {
+      const unconvinced = scriptedJev([click, click, click, { ...click, done_check: 0.2 }]);
+      expect(await new BrowserTask(fakeTab().asTab, unconvinced.ask, options).run()).toMatchObject(unchanged);
+      expect(unconvinced.requests).toHaveLength(4);
+
+      const scripted = scriptedJev([click]);
+      let calls = 0;
+      const failingLook: Ask = async (request) => {
+        if (++calls === 4) throw new Error('400 bad request');
+        return scripted.ask(request);
+      };
+      expect(await new BrowserTask(fakeTab().asTab, failingLook, options).run()).toMatchObject(unchanged);
+      expect(calls).toBe(4);
+    });
+
+    it('takes no look without completion evidence to check', async () => {
+      const { ask, requests } = scriptedJev([{ ...click, done_check: 0.9 }]);
+      const summary = await new BrowserTask(fakeTab().asTab, ask, { goal: 'Open it', changeWaitMs: 0 }).run();
+      expect(summary).toMatchObject(unchanged);
+      expect(requests).toHaveLength(3);
+    });
+  });
+
   describe('waiting for the page to react', () => {
     afterEach(() => vi.useRealTimers());
 
@@ -868,6 +907,15 @@ describe('errors become hand-backs', () => {
   it('retries a transient model error once and carries on', async () => {
     vi.useFakeTimers();
     const { ask, state } = failingJev(1, '503 Service Unavailable');
+    const running = new BrowserTask(fakeTab().asTab, ask, { goal: 'Open' }).run();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect((await running).status).toBe('done');
+    expect(state.calls).toBe(2);
+  });
+
+  it('retries a 499 "unexpected error" once like any transient model error', async () => {
+    vi.useFakeTimers();
+    const { ask, state } = failingJev(1, '499 An unexpected error occurred');
     const running = new BrowserTask(fakeTab().asTab, ask, { goal: 'Open' }).run();
     await vi.advanceTimersByTimeAsync(1000);
     expect((await running).status).toBe('done');

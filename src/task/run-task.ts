@@ -107,6 +107,8 @@ const COVERED_BELOW = 0.1;
 const COVERED_OVERLAP_BELOW = 0.1;
 // A `done_when` judgment this sure ends the task, whatever the next-step head prefers (it may wander on).
 const DONE_EVIDENT = 0.9;
+// The last look before a loop guard hands back accepts the goal as met at this done check: the same bar a DONE needs.
+const LAST_LOOK_DONE = 0.5;
 // Enter is offered only after typing into a field like these; elsewhere it could submit a form.
 const SEARCH_LIKE = /search|query|find/i;
 // A covered target is fed back as history so Jev can clear it (dismiss a popover); this many times per run.
@@ -114,8 +116,8 @@ const MAX_COVERED_RETRIES = 2;
 const ESCAPE: PageAction = { id: 'press_escape', kind: 'escape', label: 'Press Escape to close the open menu, popover or suggestion list' };
 // Boxes on small targets land a row off (13 px checkboxes); pad before asking whether one covers the chosen control.
 const BOX_PADDING = 16;
-// A model call that fails like this (5xx, rate limit, network, timeout) is retried once; any other error is final.
-const TRANSIENT_MODEL_ERROR = /^(5\d\d|429)\b|timeout|timed out|ECONNRESET|ETIMEDOUT|fetch failed|socket hang up/i;
+// A model call that fails like this (5xx, 499 "unexpected error", rate limit, network, timeout) is retried once; any other error is final.
+const TRANSIENT_MODEL_ERROR = /^(5\d\d|429|499)\b|timeout|timed out|ECONNRESET|ETIMEDOUT|fetch failed|socket hang up/i;
 // Pause before that one retry, so a rate limit or a restarting upstream has a moment to clear.
 const MODEL_RETRY_MS = 800;
 // Stands in for the page in a summary when the very first observe fails.
@@ -219,6 +221,16 @@ export class BrowserTask {
       ...(decision?.doneProbability !== undefined && { done_probability: round(decision.doneProbability) }),
       ...(status !== 'done' && decision && { stuck: stuckOn(decision, page) }),
     });
+
+    // A loop guard fires on a page the actions may already have brought to the goal: take one last look before handing back.
+    const stopAfterLastLook = async (status: TaskStatus, reason: string, decision: Decision): Promise<TaskSummary> => {
+      const look = await this.#lastLook(page);
+      if (look && (look.doneProbability ?? 0) >= LAST_LOOK_DONE) {
+        this.trace.push({ decision: { ...look, action: look.action?.label }, executed: false, elapsed_ms: elapsed() });
+        return stop('done', `Completion condition verified: ${doneWhen}`, look);
+      }
+      return stop(status, reason, decision);
+    };
 
     // Browser and model errors end the run as `blocked`: the calling agent keeps the session and decides what next.
     try {
@@ -374,18 +386,18 @@ export class BrowserTask {
           confidence: round(Math.min(decision.confidence, decision.targetConfidence ?? 1)),
         });
         if (repeatingWithoutEffect(this.#history)) {
-          return stop('blocked', 'The last 3 actions did not change the page', decision);
+          return stopAfterLastLook('blocked', 'The last 3 actions did not change the page', decision);
         }
         if (wandering(this.#history.slice(firstStep))) {
-          return stop('uncertain', `Jev was unsure for ${GUARDS.wanderSteps} actions in a row (confidence under ${GUARDS.wanderConfidence})`, decision);
+          return stopAfterLastLook('uncertain', `Jev was unsure for ${GUARDS.wanderSteps} actions in a row (confidence under ${GUARDS.wanderConfidence})`, decision);
         }
         // Waiting is bounded by maxSteps and the wander guard; a shimmering skeleton must not look like a toggle loop.
         if (decision.operation !== 'WAIT') this.#outcomes.push({ action: `${decision.operation} ${element}`, print: page.fingerprint });
         if (togglingInPlace(this.#outcomes)) {
-          return stop('blocked', `"${element}" only toggles the page back and forth (${GUARDS.toggleLoop}× in a row)`, decision);
+          return stopAfterLastLook('blocked', `"${element}" only toggles the page back and forth (${GUARDS.toggleLoop}× in a row)`, decision);
         }
         if (repeating(this.#outcomes)) {
-          return stop('blocked', `"${element}" was used ${GUARDS.repeatLimit} times in ${GUARDS.repeatWindow} actions without finishing`, decision);
+          return stopAfterLastLook('blocked', `"${element}" was used ${GUARDS.repeatLimit} times in ${GUARDS.repeatWindow} actions without finishing`, decision);
         }
       }
       return stop('step_budget', `Reached ${maxSteps} actions without finishing`);
@@ -415,8 +427,19 @@ export class BrowserTask {
     }
   }
 
+  // One more decision on the current page, with a screenshot unless the profile is text-only; a failure is ignored so
+  // the guard's own stop stands. Only worth a request when there is completion evidence to check.
+  async #lastLook(page: PageState): Promise<Decision | undefined> {
+    if (!this.#options.doneWhen) return undefined;
+    try {
+      return await this.#decide(page, { lastLook: true });
+    } catch {
+      return undefined;
+    }
+  }
+
   // One decision per step; `fallback` takes a second, screenshot-backed look at a shaky or stalled one.
-  async #decide(page: PageState): Promise<Decision> {
+  async #decide(page: PageState, { lastLook = false } = {}): Promise<Decision> {
     const { goal, values, doneWhen, screenshots, compactRules, elementRisk, pageRisk, imageTransport, box } = this.#options;
     const decideOn = async (withScreenshot: boolean) => {
       const screenshot = withScreenshot
@@ -443,8 +466,9 @@ export class BrowserTask {
       if (screenshot) this.#screenshots++;
       return decision;
     };
-    const first = await decideOn(screenshots === 'always');
-    return screenshots === 'fallback' && this.#needsSecondLook(first) ? decideOn(true) : first;
+    const withScreenshot = screenshots === 'always' || (lastLook && screenshots !== 'off');
+    const first = await decideOn(withScreenshot);
+    return screenshots === 'fallback' && !withScreenshot && this.#needsSecondLook(first) ? decideOn(true) : first;
   }
 
   #needsSecondLook(decision: Decision) {
