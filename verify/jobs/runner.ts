@@ -1,7 +1,8 @@
 /**
  * The shared jobs runner: runs each job in a fresh tab of a real app, recorded (video + described steps), and judges
  * it from the final URL and page text, never from the task's own status. Writes `results.json` and `report.html`
- * under `verify/out/<name>-<timestamp>/` and opens the report on macOS.
+ * under `verify/out/<name>-<timestamp>/` and opens the report on macOS. If the browser connection drops it reconnects
+ * for the next run; a suite that has to stop early still writes both, with the runs it never got to marked as not run.
  *
  * Env knobs, with NAME the uppercased `name`: `JEV_<NAME>_RUNS` (default 3), `JEV_<NAME>_ONLY` (comma-separated job
  * ids), `JEV_<NAME>_DEVICE` (a key of DEVICES, default desktop) and `JEV_<NAME>_PHRASING` (`as-written` or `terse`).
@@ -34,6 +35,10 @@ const readTable = async (tab: Tab): Promise<Record<string, string>[]> =>
     return [...table.querySelectorAll('tbody tr')].map((tr) =>
       Object.fromEntries([...tr.children].map((td, i) => [headers[i] ?? String(i), td.innerText.trim()])));
   })()`);
+
+// A dropped DevTools connection is replaced between runs; past this many replacements the suite stops.
+const MAX_RECONNECTS = 3;
+const CONNECTION_CLOSED = 'Browser connection closed';
 
 export interface RunJobsOptions {
   /** Names the env knobs and the output folder: `grafana` reads `JEV_GRAFANA_RUNS` and writes `verify/out/grafana-…/`. */
@@ -70,17 +75,40 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before }: 
   mkdirSync(outDir, { recursive: true });
   process.stdout.write(`model: ${profile.name} (${profile.model}) · screenshots: ${screenshots} · ${runs} runs each · device ${device.name} · phrasing ${phrasing} · ${browser}\n`);
 
-  const chrome = await connectChrome(browser);
+  let chrome = await connectChrome(browser);
+  let reconnects = 0;
+  let connectionLost = false;
+  let stoppedBecause: string | undefined;
   const results: JobResult[] = [];
   try {
-    for (const job of selectedJobs) {
+    suite: for (const job of selectedJobs) {
       const result: JobResult = { job, runs: [] };
       results.push(result);
       for (let run = 1; run <= runs; run++) {
+        if (connectionLost || chrome.cdp.closed) {
+          const closed = chrome.cdp.closed;
+          if (reconnects === MAX_RECONNECTS) {
+            stoppedBecause = `the browser connection closed again after ${MAX_RECONNECTS} reconnects`;
+            break suite;
+          }
+          reconnects++;
+          process.stdout.write(
+            `↻ browser connection closed${closed ? ` (code ${closed.code}${closed.reason ? `: ${closed.reason}` : ''})` : ''}, reconnecting (${reconnects}/${MAX_RECONNECTS})\n`,
+          );
+          try {
+            await chrome.close().catch(() => undefined);
+            chrome = await connectChrome(browser);
+            connectionLost = false;
+          } catch (error) {
+            stoppedBecause = `cannot reconnect to the browser: ${(error as Error).message}`;
+            break suite;
+          }
+        }
         const dir = `${job.id}/run-${run}/`;
-        const tab = await Tab.open(chrome.cdp, startUrl, { device });
+        let tab: Tab | undefined;
         let ready = false;
         try {
+          tab = await Tab.open(chrome.cdp, startUrl, { device });
           // Each run starts clean: apps remember date ranges and views in storage, which leaked one run's choices into
           // the next. Cleared from inside the page because the browser-level Storage.clearDataForOrigin fails with
           // "Internal error" on launched headless Chrome. Login cookies stay.
@@ -117,17 +145,34 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before }: 
             `${passed ? '✔' : reached ? '◐' : '✘'} ${job.id} #${run} — ${summaries.map((s) => s.status).join(' → ')} in ${summaries.reduce((t, s) => t + s.elapsed_ms, 0)}ms · ${summaries.reduce((t, s) => t + s.steps.length, 0)} actions · ${summaries.reduce((t, s) => t + s.jev.requests, 0)} requests${passed ? '' : ` · ${summary.reason} · ${url.href}`}\n`,
           );
         } catch (error) {
-          result.runs.push({ run, dir, passed: false, reached: false, url: '', summaries: [], error: (error as Error).message });
-          process.stdout.write(`✘ ${job.id} #${run} — ${(error as Error).message}\n`);
+          const { message } = error as Error;
+          result.runs.push({ run, dir, passed: false, reached: false, url: '', summaries: [], error: message });
+          process.stdout.write(`✘ ${job.id} #${run} — ${message}\n`);
+          if (message.includes(CONNECTION_CLOSED)) connectionLost = true;
           // The app isn't usable (e.g. not signed in): every later run would fail the same way.
-          if (!ready) throw error;
+          else if (!ready) {
+            stoppedBecause = `${job.id} #${run} could not get ready (${message})`;
+            break suite;
+          }
         } finally {
-          await tab.close().catch(() => undefined);
+          await tab?.close().catch(() => undefined);
         }
       }
     }
   } finally {
     await chrome.close();
+  }
+
+  if (stoppedBecause) {
+    // Runs the suite never got to still count against the pass rate, and show in the report as not run.
+    for (const job of selectedJobs) {
+      let result = results.find((r) => r.job === job);
+      if (!result) results.push((result = { job, runs: [] }));
+      for (let run = result.runs.length + 1; run <= runs; run++) {
+        result.runs.push({ run, dir: `${job.id}/run-${run}/`, passed: false, reached: false, url: '', summaries: [], error: 'not run (suite stopped)' });
+      }
+    }
+    process.stdout.write(`suite stopped early: ${stoppedBecause}\n`);
   }
 
   const report = new URL('report.html', outDir);
@@ -150,5 +195,5 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before }: 
   process.stdout.write(`95% CI ${(low * 100).toFixed(1)}–${(high * 100).toFixed(1)}% · flaky: ${flakyJobs.join(', ') || 'none'}\n`);
   process.stdout.write(`${passed}/${total} runs passed · ${report.pathname}\n`);
   if (process.platform === 'darwin' && !process.env.CI) execFile('open', [report.pathname]);
-  process.exitCode = passed === total ? 0 : 1;
+  process.exitCode = passed === total && !stoppedBecause ? 0 : 1;
 };
