@@ -1,4 +1,4 @@
-import { StalePage, type PageAction, type PageState, type Tab } from '../browser/tab.ts';
+import { StalePage, TargetUnreachable, type PageAction, type PageState, type Tab } from '../browser/tab.ts';
 import { buildActionSpace } from '../jev/action-space.ts';
 import { centerOf, contains } from '../jev/box.ts';
 import { decide, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
@@ -78,10 +78,24 @@ const COVERED_BELOW = 0.1;
 const COVERED_OVERLAP_BELOW = 0.1;
 // A `done_when` judgment this sure ends the task, whatever the next-step head prefers (it may wander on).
 const DONE_EVIDENT = 0.9;
+// ...or this sure on DONE_SUSTAINED consecutive decisions: steady evidence, where a single spike isn't.
+const DONE_STEADY = 0.75;
+const DONE_SUSTAINED = 3;
 // Enter is offered only after typing into a field like these; elsewhere it could submit a form.
 const SEARCH_LIKE = /search|query|find/i;
 // A covered target is fed back as history so Jev can clear it (dismiss a popover); this many times per run.
 const MAX_COVERED_RETRIES = 2;
+// A target the page keeps covering (an open popover, a sticky bar): told to Jev on the 2nd miss, handed back on this one.
+const MAX_UNREACHABLE = 3;
+const ESCAPE: PageAction = { id: 'press_escape', kind: 'escape', label: 'Press Escape to close the open menu, popover or suggestion list' };
+// This many executed actions in a row below WANDER_CONFIDENCE means Jev is exploring, not progressing: hand back.
+const WANDER_STEPS = 6;
+const WANDER_CONFIDENCE = 0.5;
+// The same element acted on this many times within the last REPEAT_WINDOW actions is a loop, whatever the page does.
+const REPEAT_LIMIT = 6;
+const REPEAT_WINDOW = 7;
+// The same action this many times, with the page flipping between two states each time, is a toggle loop.
+const TOGGLE_LOOP = 4;
 // Boxes on small targets land a row off (13 px checkboxes); pad before asking whether one covers the chosen control.
 const BOX_PADDING = 16;
 
@@ -104,6 +118,10 @@ export class BrowserTask {
   #confirmedCommit = false;
   /** The search-like field typed into by the last executed action, if any: PRESS_ENTER may submit it. */
   #lastTyped: PageAction | undefined;
+  /** Consecutive misses on the same target node because it couldn't be reached on an unchanged page. */
+  #unreachable = { node: undefined as number | undefined, count: 0 };
+  /** Each executed action and the page fingerprint right after it, to spot one that toggles in place. */
+  #outcomes: { action: string; print: string }[] = [];
   #tab: Tab;
   #ask: Ask;
   #recording: Recording | undefined;
@@ -143,6 +161,7 @@ export class BrowserTask {
     let decisions = 0;
     let rejectedDone = 0;
     let coveredRetries = 0;
+    let doneStreak = 0;
     const firstStep = this.#history.length;
     const firstRequest = this.#latencies.length;
     const tokensBefore = this.#inputTokens;
@@ -176,7 +195,9 @@ export class BrowserTask {
         page = await this.#tab.observe();
         continue;
       }
-      if (doneWhen && (decision.doneProbability ?? 0) >= DONE_EVIDENT) {
+      const doneProbability = decision.doneProbability ?? 0;
+      doneStreak = doneProbability >= DONE_STEADY ? doneStreak + 1 : 0;
+      if (doneWhen && (doneProbability >= DONE_EVIDENT || doneStreak >= DONE_SUSTAINED)) {
         this.trace.push({ decision: { ...decision, action: decision.action?.label }, executed: false, elapsed_ms: elapsed() });
         return stop('done', `Completion condition verified: ${doneWhen}`, decision);
       }
@@ -193,6 +214,13 @@ export class BrowserTask {
         if (++rejectedDone >= MAX_REJECTED_DONE) {
           return stop('uncertain', `Jev chose DONE ${rejectedDone}× but "${doneWhen}" is not visible`, decision);
         }
+        // Jev learns its DONE was premature, instead of proposing the same DONE on the same evidence.
+        this.#history.push({
+          operation: 'DONE',
+          element: '',
+          not_executed: `rejected: "${doneWhen}" is not visible yet; keep working toward it`,
+          confidence: round(decision.confidence),
+        });
         await new Promise((resolve) => setTimeout(resolve, 300));
         page = await this.#tab.observe();
         continue;
@@ -247,12 +275,48 @@ export class BrowserTask {
       } catch (error) {
         if (!(error instanceof StalePage)) throw error;
         record(false);
-        this.#recording?.discardLast();
+        if (!(error instanceof TargetUnreachable)) {
+          this.#recording?.discardLast();
+          page = await this.#tab.observe();
+          continue;
+        }
+        // Unreachable on an unchanged page: retrying blind repeats the same miss, so Jev has to hear about it.
+        this.#recording?.markUnreachable();
+        // An open popup over the target (search suggestions, a menu) is closed with the fixed Escape key, once per
+        // target, as a person would; no model output is involved. Then Jev re-decides on the cleared page.
+        const popupOpen = error.byPopup || page.actions.some((a) => a.expanded === 'true');
+        if (this.#unreachable.node !== action.node && popupOpen) {
+          this.#unreachable = { node: action.node, count: 1 };
+          await this.#recording?.step(this.#tab, page, { operation: 'PRESS_ESCAPE' });
+          await this.#tab.dismissPopup();
+          this.#history.push({
+            operation: 'PRESS_ESCAPE',
+            element: `closed the open popup covering "${action.label.slice(0, 80)}"`,
+            page_changed: true,
+            confidence: 1,
+          });
+          page = await this.#tab.observe();
+          continue;
+        }
+        const misses = this.#unreachable.node === action.node ? this.#unreachable.count + 1 : 1;
+        this.#unreachable = { node: action.node, count: misses };
+        if (misses >= MAX_UNREACHABLE) {
+          return stop('blocked', `"${action.label}" could not be reached ${misses} times: something on the page covers it`, decision);
+        }
+        if (misses === 2) {
+          this.#history.push({
+            operation: decision.operation,
+            element: action.label,
+            not_executed: 'could not be reached: another layer covers it; close that layer first',
+            confidence: round(decision.confidence),
+          });
+        }
         page = await this.#tab.observe();
         continue;
       }
       record(true);
       executed++;
+      this.#unreachable = { node: undefined, count: 0 };
       this.#lastTyped = decision.operation === 'TYPE_TEXT' && isSearchLike(action) ? action : undefined;
       // A confirmation covers exactly one risky click.
       if (isRiskyClick(decision)) this.#confirmedCommit = false;
@@ -272,6 +336,16 @@ export class BrowserTask {
       if (repeatingWithoutEffect(this.#history)) {
         return stop('blocked', 'The last 3 actions did not change the page', decision);
       }
+      if (wandering(this.#history.slice(firstStep))) {
+        return stop('uncertain', `Jev was unsure for ${WANDER_STEPS} actions in a row (confidence under ${WANDER_CONFIDENCE})`, decision);
+      }
+      this.#outcomes.push({ action: `${decision.operation} ${element}`, print: page.fingerprint });
+      if (togglingInPlace(this.#outcomes)) {
+        return stop('blocked', `"${element}" only toggles the page back and forth (${TOGGLE_LOOP}× in a row)`, decision);
+      }
+      if (repeating(this.#outcomes)) {
+        return stop('blocked', `"${element}" was used ${REPEAT_LIMIT} times in ${REPEAT_WINDOW} actions without finishing`, decision);
+      }
     }
     return stop('step_budget', `Reached ${maxSteps} actions without finishing`);
   }
@@ -284,7 +358,7 @@ export class BrowserTask {
         ? await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page)
         : undefined;
       const decision = await decide(this.#ask, {
-        page: this.#withEnter(page),
+        page: this.#withKeys(page),
         goal,
         values,
         history: this.#history.slice(-10),
@@ -317,17 +391,17 @@ export class BrowserTask {
     );
   }
 
-  // Right after typing into a search-like field that is still there, Enter can submit it (GitHub, npm, Booking).
-  #withEnter(page: PageState): PageState {
+  // Fixed keys: right after typing into a search-like field that is still there, Enter can submit it (GitHub, npm,
+  // Booking); while something is expanded, Escape can close it.
+  #withKeys(page: PageState): PageState {
     const field = this.#lastTyped;
-    if (!field || !page.actions.some((action) => action.kind === 'fill' && action.node === field.node)) return page;
-    const enter: PageAction = {
-      id: 'press_enter',
-      kind: 'enter',
-      node: field.node,
-      label: `Press Enter in "${field.label}" to submit what was typed`,
-    };
-    return { ...page, actions: [...page.actions, enter] };
+    const keys: PageAction[] = [];
+    if (field && page.actions.some((action) => action.kind === 'fill' && action.node === field.node)) {
+      keys.push({ id: 'press_enter', kind: 'enter', node: field.node, label: `Press Enter in "${field.label}" to submit what was typed` });
+    }
+    // Only while something is expanded (a menu, popover, suggestion list) can Escape close it.
+    if (page.actions.some((action) => action.expanded === 'true')) keys.push(ESCAPE);
+    return keys.length ? { ...page, actions: [...page.actions, ...keys] } : page;
   }
 
   // Stuck (BLOCKED, or DONE that the completion check rejects) or unsure, but the screenshot confidently shows a
@@ -410,7 +484,8 @@ export class BrowserTask {
     }
     const boxStop = this.#boxStop(decision);
     if (boxStop) return boxStop;
-    if (this.#lowConfidence(decision)) {
+    // Waiting can't hurt: an unsure WAIT just waits (the wander guard and step budget still bound it).
+    if (this.#lowConfidence(decision) && decision.operation !== 'WAIT') {
       const confidence = Math.min(decision.confidence, decision.targetConfidence ?? 1);
       return [
         'uncertain',
@@ -447,6 +522,24 @@ const stuckOn = (decision: Decision, page: PageState) => ({
   page_text: page.text.slice(0, 800),
 });
 
+const wandering = (history: { confidence: number; not_executed?: string }[]) => {
+  const executed = history.filter((step) => !step.not_executed).slice(-WANDER_STEPS);
+  return executed.length === WANDER_STEPS && executed.every((step) => step.confidence < WANDER_CONFIDENCE);
+};
+const repeating = (outcomes: { action: string }[]) => {
+  const last = outcomes.slice(-REPEAT_WINDOW);
+  const latest = last.at(-1)?.action;
+  return last.filter((o) => o.action === latest).length >= REPEAT_LIMIT;
+};
+// The same action over and over while the page flips A, B, A, B: a menu opened and closed, a toggle flipped.
+const togglingInPlace = (outcomes: { action: string; print: string }[]) => {
+  const last = outcomes.slice(-TOGGLE_LOOP);
+  return (
+    last.length === TOGGLE_LOOP &&
+    last.every((o) => o.action === last[0].action) &&
+    last.every((o, i) => i < 2 || o.print === last[i - 2].print)
+  );
+};
 const repeatingWithoutEffect = (history: StepRecord[]) => {
   const last = history.slice(-3);
   return last.length === 3 && last.every((step) => step.page_changed === false && step.operation !== 'WAIT');

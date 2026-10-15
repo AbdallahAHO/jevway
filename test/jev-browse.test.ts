@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { StalePage, type PageAction, type PageState, type Tab } from '../src/browser/tab.ts';
+import { StalePage, TargetUnreachable, type PageAction, type PageState, type Tab } from '../src/browser/tab.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
 import { buildRequest, decide, NO_SUPPLIED_VALUE, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
 import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
@@ -94,6 +94,8 @@ const fakeTab = (pages: PageState[] = [page()]) => {
   let observed = 0;
   const tab = {
     staleOnce: false,
+    /** Misses left before the target can be reached (covered by a popover). */
+    unreachable: 0,
     screenshots: 0,
     recorded: 0,
     clicksAt: [] as { x: number; y: number }[],
@@ -121,6 +123,10 @@ const fakeTab = (pages: PageState[] = [page()]) => {
       if (tab.staleOnce) {
         tab.staleOnce = false;
         throw new StalePage('moved');
+      }
+      if (tab.unreachable > 0) {
+        tab.unreachable--;
+        throw new TargetUnreachable('covered');
       }
       acted.push({ label: action.label, ...(text && { text }) });
     },
@@ -560,6 +566,110 @@ describe('Box in the task loop', () => {
     expect(onTab.tab.clicksAt[0].x).toBeCloseTo(150);
     expect(onTab.tab.clicksAt[0].y).toBeCloseTo(425);
     expect(summary.steps[0]).toMatchObject({ operation: 'CLICK_AT', element: 'canvas @ 150,425' });
+  });
+});
+
+describe('loop gotchas', () => {
+  const operationIds = (request: any) => Object.keys(request.questions.operation.criteria);
+  const withExpanded = page({
+    actions: [...bookingActions, { id: 'm', kind: 'click', node: 9, role: 'button', label: 'Past 1 day', expanded: 'true' }],
+  });
+
+  it('offers Escape only while something is expanded, as a fixed key', async () => {
+    const closed = scriptedJev([{ operation: 'DONE' }]);
+    await new BrowserTask(fakeTab().asTab, closed.ask, { goal: 'x' }).run();
+    expect(operationIds(closed.requests[0])).not.toContain('PRESS_ESCAPE');
+
+    const open = scriptedJev([{ operation: 'PRESS_ESCAPE' }, { operation: 'DONE' }]);
+    const { asTab, acted } = fakeTab([withExpanded, page({ fingerprint: 'closed' })]);
+    await new BrowserTask(asTab, open.ask, { goal: 'x' }).run();
+    expect(operationIds(open.requests[0])).toContain('PRESS_ESCAPE');
+    expect(acted[0].label).toMatch(/^Press Escape/);
+  });
+
+  it('tells Jev about a covered target on the 2nd miss and hands back on the 3rd instead of retrying blind', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
+    const { tab, asTab, acted } = fakeTab();
+    tab.unreachable = 10;
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open' }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain('could not be reached 3 times');
+    expect(requests).toHaveLength(3);
+    expect(JSON.stringify(requests[2])).toContain('another layer covers it');
+    expect(acted).toEqual([]);
+  });
+
+  it('closes an open popup covering the target with Escape by itself, then retries the choice', async () => {
+    const click = { operation: 'CLICK', click_target: '1' };
+    const { ask } = scriptedJev([click, click, { operation: 'DONE' }]);
+    const { tab, asTab, acted } = fakeTab([withExpanded, withExpanded, page({ fingerprint: 'closed' }), page({ fingerprint: 'after' })]);
+    tab.unreachable = 1;
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open' }).run();
+    expect(summary.status).toBe('done');
+    expect(acted.map((a) => a.label)).toEqual(['dismissPopup', 'Open Full name']);
+  });
+
+  it('waits on an unsure WAIT instead of handing back', async () => {
+    const { ask } = scriptedJev([{ operation: 'WAIT', confidence: 0.2 }, { operation: 'DONE' }]);
+    const summary = await new BrowserTask(fakeTab().asTab, ask, { goal: 'Load' }).run();
+    expect(summary.status).toBe('done');
+  });
+
+  it('stops an action that only toggles the page back and forth', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
+    const flips = ['x', 'a', 'b', 'a', 'b', 'a', 'b'].map((fingerprint) => page({ fingerprint }));
+    const { asTab, acted } = fakeTab(flips);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Pick a range' }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain('toggles the page back and forth');
+    expect(acted).toHaveLength(4);
+  });
+
+  it('accepts steady done evidence (3 decisions ≥ 0.75) but not a single spike', async () => {
+    const steady = scriptedJev([{ operation: 'CLICK', click_target: '1', done_check: 0.8 }]);
+    const pages = Array.from({ length: 10 }, (_, i) => page({ fingerprint: String(i) }));
+    const summary = await new BrowserTask(fakeTab(pages).asTab, steady.ask, { goal: 'x', doneWhen: 'y' }).run();
+    expect(summary).toMatchObject({ status: 'done', steps: [{}, {}] });
+
+    const spike = scriptedJev([
+      { operation: 'CLICK', click_target: '1', done_check: 0.86 },
+      { operation: 'CLICK', click_target: '1', done_check: 0.1 },
+      { operation: 'BLOCKED' },
+    ]);
+    const once = await new BrowserTask(fakeTab(pages).asTab, spike.ask, { goal: 'x', doneWhen: 'y' }).run();
+    expect(once.status).not.toBe('done');
+  });
+
+  it('hands back when Jev stays unsure for 6 actions in a row', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1', confidence: 0.35 }]);
+    const pages = Array.from({ length: 10 }, (_, i) => page({ fingerprint: String(i) }));
+    const summary = await new BrowserTask(fakeTab(pages).asTab, ask, { goal: 'Find it' }).run();
+    expect(summary.status).toBe('uncertain');
+    expect(summary.reason).toContain('unsure for 6 actions');
+    expect(summary.steps).toHaveLength(6);
+  });
+
+  it('stops the same click repeated 6 times in 7 actions even when the page changes each time', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
+    const pages = Array.from({ length: 12 }, (_, i) => page({ fingerprint: String(i) }));
+    const summary = await new BrowserTask(fakeTab(pages).asTab, ask, { goal: 'Open it' }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain('6 times in 7 actions');
+  });
+
+  it('tells Jev a rejected DONE was premature, and hands the supplied values to the page reader', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'DONE', done_check: 0.1 }, { operation: 'DONE', done_check: 0.9 }]);
+    const { tab, asTab } = fakeTab();
+    await new BrowserTask(asTab, ask, { goal: 'x', doneWhen: 'Results listed', values: { user: 'u-Gy8s1' } }).run();
+    expect(JSON.stringify(requests[1])).toContain('rejected: \\"Results listed\\" is not visible yet');
+    expect(tab.wanted).toEqual(['u-Gy8s1']);
+  });
+
+  it('keeps a click that progresses each time, like paging or a counter', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
+    const pages = ['x', 'a', 'b', 'c', 'd', 'e'].map((fingerprint) => page({ fingerprint }));
+    const summary = await new BrowserTask(fakeTab(pages).asTab, ask, { goal: 'Page through', maxSteps: 5 }).run();
+    expect(summary.status).toBe('step_budget');
   });
 });
 

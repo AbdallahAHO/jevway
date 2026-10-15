@@ -8,7 +8,7 @@ import { DEVICES, type Device } from './devices.ts';
 const READ_STATE = readFileSync(new URL('./snapshot.js', import.meta.url), 'utf8');
 const MARKER = `(() => { const state=${READ_STATE}; return state?.marker ?? null; })()`;
 
-export type ActionKind = 'click' | 'fill' | 'select' | 'scroll' | 'wait' | 'enter';
+export type ActionKind = 'click' | 'fill' | 'select' | 'scroll' | 'wait' | 'enter' | 'escape';
 
 export interface PageAction {
   id: string;
@@ -147,6 +147,20 @@ export class Tab {
     }
   }
 
+  /**
+   * Closes an open popup (suggestions, a menu) that covers the page: Escape, then leave the focused field and press
+   * outside. Fixed keys and events only, never a target from the model, so it needs no freshness check.
+   */
+  async dismissPopup() {
+    // Escape goes to whatever has focus; focus is never moved first, since focusing a search bar re-opens its list.
+    const key = { key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 };
+    await this.#call('Input.dispatchKeyEvent', { type: 'keyDown', ...key });
+    await this.#call('Input.dispatchKeyEvent', { type: 'keyUp', ...key });
+    // Lists that ignore Escape close on blur or an outside press: a synthetic press on the page body hits no control.
+    await this.#evaluate(PRESS_OUTSIDE).catch(() => undefined);
+    this.#afterInput = undefined;
+  }
+
   // A fixed Enter key into the field just typed into, only while that exact field still has focus.
   async #pressEnter(action: PageAction) {
     const focused = await this.#evaluate(`(() => {
@@ -248,6 +262,7 @@ export class Tab {
     if (!(await this.fresh(page, action))) throw new StalePage('Page changed since this decision');
     if (action.kind === 'wait') return sleep(100);
     if (action.kind === 'enter') return this.#pressEnter(action);
+    if (action.kind === 'escape') return this.dismissPopup();
     if (action.kind === 'scroll') {
       await this.#call('Input.dispatchMouseEvent', {
         type: 'mouseWheel',
@@ -409,6 +424,14 @@ const HIT_TEST = `(x, y) => {
   const name = (e.getAttribute('aria-label') || e.getAttribute('title') || e.innerText || '').trim().replace(/\\s+/g, ' ');
   return (name || e.tagName.toLowerCase()).slice(0, 80);
 }`;
+
+const PRESS_OUTSIDE = `(() => {
+  document.activeElement?.blur();
+  for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
+    const Event = type.startsWith('pointer') ? PointerEvent : MouseEvent;
+    document.body.dispatchEvent(new Event(type, { bubbles: true, cancelable: true, composed: true }));
+  }
+})()`;
 
 // Resolves the observed node, rejects hidden/disabled/covered targets, and applies native selects in-page.
 const RESOLVE_TARGET = `action => {
