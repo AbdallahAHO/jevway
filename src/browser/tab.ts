@@ -43,6 +43,15 @@ export interface PageState {
 
 /** The page moved on since it was observed; observe again and re-decide. Never a reason to guess. */
 export class StalePage extends Error {}
+/** The page is as observed, but the chosen target can't be reached: covered, clipped, or gone from its spot. */
+export class TargetUnreachable extends StalePage {
+  /** True when what sits on top is a popup layer (suggestions, a menu, a popover) that Escape can close. */
+  readonly byPopup: boolean;
+  constructor(message: string, byPopup = false) {
+    super(message);
+    this.byPopup = byPopup;
+  }
+}
 
 /**
  * One browser tab driven through observed actions only.
@@ -55,6 +64,7 @@ export class StalePage extends Error {}
  */
 export class Tab {
   #afterInput: PageAction | undefined;
+  #wanted: string[] = [];
   #touch = false;
   private cdp: CdpConnection;
   readonly targetId: string;
@@ -193,11 +203,22 @@ export class Tab {
     }
   }
 
+  /**
+   * Texts the caller supplied (task values). An off-screen link, button or row containing one is still listed, since
+   * it is likely the target; clicking scrolls it into view.
+   *
+   * @example
+   * tab.want(['u-Gy8s1dJcpm18C2qmaNcN8']); // the user link below the fold is listed on the next observe()
+   */
+  want(texts: string[]) {
+    this.#wanted = texts.map((t) => t.trim().toLowerCase()).filter((t) => t.length >= 3);
+  }
+
   async observe(): Promise<PageState> {
     await this.#settleAfterInput();
     for (let attempt = 0; attempt < 25; attempt++) {
       try {
-        const state = await this.#evaluate(READ_STATE);
+        const state = await this.#evaluate(`window.__jevWanted=${JSON.stringify(this.#wanted)};${READ_STATE}`);
         if (state) return { ...state, fingerprint: fingerprint(state) };
       } catch (error) {
         if (!(error instanceof StalePage)) throw error;
@@ -249,7 +270,7 @@ export class Tab {
   async clickAt(point: { x: number; y: number }, page: PageState): Promise<string> {
     if (!(await this.fresh(page))) throw new StalePage('Page changed since this decision');
     const hit = await this.#evaluate(`(${HIT_TEST})(${Number(point.x)}, ${Number(point.y)})`);
-    if (!hit) throw new StalePage('Nothing visible and enabled at that point');
+    if (!hit) throw new TargetUnreachable('Nothing visible and enabled at that point');
     const { x, y } = point;
     if (this.#touch) {
       await this.#call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
@@ -272,9 +293,9 @@ export class Tab {
       if (action.kind === 'select') throw new Error('Dropdown execution was interrupted; inspect before retrying.');
       throw error;
     });
-    if (!target) {
+    if (!target || target.covered) {
       if (action.kind === 'select') throw new Error('Dropdown execution was not confirmed; inspect before retrying.');
-      throw new StalePage('Target changed or is covered');
+      throw new TargetUnreachable('Target changed or is covered', Boolean(target?.byPopup));
     }
     if (action.kind === 'select') return;
     if (this.#touch) {
@@ -391,9 +412,17 @@ const RESOLVE_TARGET = `action => {
   if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
       !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
   if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
-  const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
-  if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight) return null;
-  if (!e.contains((${DEEP_HIT})(x,y))) return null;
+  const point=()=>{ const r=window.__jevFast.clickRect(e), x=r.x+r.width/2, y=r.y+r.height/2;
+    return r.width && r.height && x>=0 && y>=0 && x<innerWidth && y<innerHeight && e.contains((${DEEP_HIT})(x,y)) ? {x,y} : null; };
+  // A target clipped by a scrolling sidebar or list is scrolled just into view once, as a person would.
+  let at=point();
+  if (!at) { e.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'}); at=point(); }
+  if (!at) {
+    // Say what covers it: a popup layer can be closed with Escape, anything else can't be helped from here.
+    const r=window.__jevFast.clickRect(e), hit=(${DEEP_HIT})(r.x+r.width/2, r.y+r.height/2);
+    return {covered:true, byPopup:Boolean(hit?.closest('[role="listbox"],[role="menu"],[role="dialog"]:not([aria-modal="true"]),[role="tooltip"],[data-radix-popper-content-wrapper],[cmdk-list]'))};
+  }
+  const {x,y}=at;
   if (action.kind==='select') {
     if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
         !o.disabled && !o.closest('optgroup[disabled]'))) return null;

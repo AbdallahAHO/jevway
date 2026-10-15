@@ -8,9 +8,31 @@
     return id;
   };
   for (const [id, e] of cache.nodes) if (!e.isConnected) cache.nodes.delete(id);
+  const cap = (text, max = 200) => (text.length > max ? text.slice(0, max - 1) + '…' : text);
   const safe = (e) => !['password', 'file', 'hidden'].includes(e.type);
   const visible = (e) =>
     !e.closest('[aria-hidden="true"],[inert]') && e.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+  // jev-browse: an element whose centre is off-screen (a table row wider than its scroll box) is clicked at the
+  // centre of the part the viewport and its scroll containers leave visible. Everything else keeps its own rect.
+  cache.clickRect = (e) => {
+    const r = e.getBoundingClientRect();
+    const cx = r.x + r.width / 2,
+      cy = r.y + r.height / 2;
+    if (cx >= 0 && cy >= 0 && cx < innerWidth && cy < innerHeight) return r;
+    let left = Math.max(r.left, 0),
+      top = Math.max(r.top, 0),
+      right = Math.min(r.right, innerWidth),
+      bottom = Math.min(r.bottom, innerHeight);
+    for (let p = e.parentElement; p && p !== document.body; p = p.parentElement) {
+      if (getComputedStyle(p).overflow === 'visible') continue;
+      const c = p.getBoundingClientRect();
+      left = Math.max(left, c.left);
+      top = Math.max(top, c.top);
+      right = Math.min(right, c.right);
+      bottom = Math.min(bottom, c.bottom);
+    }
+    return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+  };
   const name = (e, seen = new Set()) => {
     if (!e || seen.has(e)) return '';
     seen.add(e);
@@ -63,14 +85,20 @@
   ];
   // jev-browse: clickable rows and tabbable custom controls (React tables, cards) count when they show a pointer.
   const selector =
-    'a[href],button,input,textarea,select,summary,[contenteditable="true"],tr,[tabindex="0"],' +
+    'a[href],button,input,textarea,select,summary,[contenteditable="true"],tr,th,[role="columnheader"],[tabindex="0"],' +
     roles.map((role) => '[role="' + role + '"]').join(',');
   const pointer = (e) => getComputedStyle(e).cursor === 'pointer';
   const role = (e) => {
+    if (popupItems.has(e)) return 'option';
     const explicit = e.getAttribute('role');
     if (roles.includes(explicit)) return explicit;
     if (e.tagName === 'BUTTON' || e.tagName === 'SUMMARY') return 'button';
     if (e.tagName === 'TR') return pointer(e) && !e.querySelector('th') ? 'row' : null;
+    // jev-browse: sortable column headers (a pointer or aria-sort); a select-all checkbox header is not one.
+    if (e.tagName === 'TH' || explicit === 'columnheader') {
+      const sortable = pointer(e) || e.hasAttribute('aria-sort');
+      return sortable && !e.querySelector('input,select') ? 'columnheader' : null;
+    }
     if (e.getAttribute('tabindex') === '0' && !explicit && !['INPUT', 'TEXTAREA', 'SELECT', 'A'].includes(e.tagName)) {
       return pointer(e) ? 'button' : null;
     }
@@ -129,18 +157,41 @@
     ...root.querySelectorAll(selector),
     ...[...root.querySelectorAll('*')].filter((host) => host.shadowRoot).flatMap((host) => deepQuery(host.shadowRoot)),
   ];
-  for (const e of roots.flatMap(deepQuery)) {
+  // jev-browse: open popups (date pickers, custom menus) often build their items from plain pointer-cursor divs:
+  // the outermost pointer element with text and no control inside counts as an option.
+  const wanted = Array.isArray(window.__jevWanted) ? window.__jevWanted : [];
+  const popupItems = new Set();
+  const popupSelector = '[role="dialog"],[role="menu"],[role="listbox"],[data-radix-popper-content-wrapper]';
+  for (const popup of roots.flatMap((root) => [...root.querySelectorAll(popupSelector)])) {
+    if (!visible(popup)) continue;
+    for (const e of popup.querySelectorAll('div,span,li,p')) {
+      const outermost = !e.parentElement || !pointer(e.parentElement);
+      if (pointer(e) && outermost && !e.closest(selector) && !e.querySelector(selector) && e.innerText.trim()) popupItems.add(e);
+    }
+  }
+  for (const e of [...roots.flatMap(deepQuery), ...popupItems]) {
     if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
-    const r = e.getBoundingClientRect(),
+    const r = cache.clickRect(e),
       x = r.x + r.width / 2,
       y = r.y + r.height / 2,
       rname = role(e);
-    if (!rname || r.width <= 0 || r.height <= 0 || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+    // jev-browse: a sortable header scrolled sideways out of its table is still a choice; clicking scrolls it in.
+    const sideways = rname === 'columnheader' && y >= 0 && y < innerHeight && e.getBoundingClientRect().width > 0;
+    const offscreen = r.width <= 0 || r.height <= 0 || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight;
+    // jev-browse: an off-screen link, button or row holding a value the caller supplied is likely the target.
+    const wantedOffscreen =
+      offscreen &&
+      wanted.length > 0 &&
+      ['link', 'button', 'row'].includes(rname) &&
+      wanted.some((w) => (e.innerText || '').toLowerCase().includes(w));
+    if (!rname || (offscreen && !sideways && !wantedOffscreen)) continue;
     if (rname === 'gridcell' && e.querySelector('button,[role="button"]')) continue;
     const base = {
       node: identity(e),
       role: rname,
-      label: name(e) || rname,
+      // jev-browse: a row is what it shows; its name would also pull in nested controls ("Select row"). Labels are
+      // capped: table rows holding whole JSON payloads otherwise blow the request past the model's token limit.
+      label: cap((rname === 'row' ? e.innerText.replace(/\s+/g, ' ').trim() : name(e).replace(/\s+/g, ' ').trim()) || rname),
       rect: { x: r.x, y: r.y, w: r.width, h: r.height },
     };
     for (const key of ['checked', 'selected', 'expanded']) {
@@ -163,7 +214,8 @@
         !e.readOnly &&
         e.getAttribute('aria-readonly') !== 'true' &&
         (['textbox', 'searchbox', 'spinbutton'].includes(rname) ||
-          (rname === 'combobox' && ['INPUT', 'TEXTAREA'].includes(e.tagName)));
+          // jev-browse: a contenteditable combobox is a search bar too (Langfuse's trace search).
+          (rname === 'combobox' && (['INPUT', 'TEXTAREA'].includes(e.tagName) || e.isContentEditable)));
       const value =
         'value' in e ? String(e.value) : e.isContentEditable || rname === 'combobox' ? e.innerText.trim() : '';
       actions.push({ ...base, kind: editable ? 'fill' : 'click', value });
