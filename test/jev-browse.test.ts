@@ -243,6 +243,23 @@ describe('BrowserTask', () => {
     expect(summary.status).toBe('needs_confirmation');
   });
 
+  it('gives a gray-zone click a screenshot look before it runs, and a clearly safe one none', async () => {
+    const run = async (commit_risk: number) => {
+      const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '4', commit_risk }]);
+      const { tab, asTab, acted } = fakeTab();
+      await new BrowserTask(asTab, ask, { goal: 'Pay', maxSteps: 1, screenshots: 'fallback' }).run();
+      return { requests, screenshots: tab.screenshots, acted };
+    };
+
+    const gray = await run(0.35);
+    expect(gray).toMatchObject({ screenshots: 1, acted: [{ label: 'Confirm booking and pay €412' }] });
+    expect(gray.requests).toHaveLength(2);
+
+    const safe = await run(0.1);
+    expect(safe.screenshots).toBe(0);
+    expect(safe.requests).toHaveLength(1);
+  });
+
   it('waits and re-decides when the completion check rejects DONE', async () => {
     const { ask, requests } = scriptedJev([
       { operation: 'DONE', done_check: 0.1 },

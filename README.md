@@ -85,7 +85,7 @@ On every request that carries a screenshot, Box questions run alongside the deci
 - **Coordinate clicks (opt-in):** `allow_coordinate_clicks` / `--allow-coordinate-clicks`. When Jev is stuck and the box matches nothing the DOM reader reported (canvas, iframe), jev-browse clicks the box centre after a hit-test. Irreversible-looking clicks still need `confirm_irreversible`.
 - **Journeys:** each screen's primary action is boxed (a dashed outline in the viewer, `primary_action` in reports). A tappable control with no DOM element becomes a `control_not_in_dom` QA finding.
 
-Every model except Jev judges commit risk **per click candidate by name**, in one follow-up request per step, instead of Jev's single page-level guess. Per-model thresholds, rules and results are in [docs/verification.md](docs/verification.md#decision-models-on-openrouter-2026-10-11).
+Every model judges commit risk **per click candidate by name**, in one follow-up request per step. Jev also keeps its page-level guess, and a click is held if either says so. Per-model thresholds, rules and results are in [docs/verification.md](docs/verification.md#decision-models-on-openrouter-2026-10-11).
 
 ## Tools
 
@@ -147,4 +147,5 @@ Traces go to `verify/out/`. Results are in [docs/verification.md](docs/verificat
 - The DOM reader covers common HTML/ARIA controls, including inside open shadow roots. Closed shadow roots, iframes, canvas, uploads, popup tabs, and nested scrolling aren't read. Box can see canvas and iframe controls, and click them with the opt-in; otherwise use chrome-devtools.
 - Only on-screen elements are listed; Jev scrolls to reveal more. Exception: an off-screen link, button or row containing one of the supplied `values` is listed too, and scrolled into view when clicked.
 - Confidence thresholds (per model, in `src/jev/model.ts`) and the 0.5 risk threshold are starting points, tuned on a small set of runs.
-- Jev's commit-risk check is a speculative page-level judgment ("the click that best advances the goal"). Other models score each candidate, and Box rescues use the box's own score.
+- Jev's commit-risk check is a speculative page-level judgment ("the click that best advances the goal") plus a per-element score for the chosen click; the higher one counts. Other models score each candidate only, and Box rescues use the box's own score.
+- A click scoring 0.25–0.5 on risk gets a screenshot look before it runs, but only with screenshots on (`fallback` or `always`). With screenshots `off`, text alone under-reads some checkout pages (a bare "Continue" can score under 0.5), so keep screenshots on when a task can reach a payment step.

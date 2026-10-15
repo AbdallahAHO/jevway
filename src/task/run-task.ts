@@ -97,6 +97,8 @@ const GUARDS = {
 } as const;
 // A DONE the completion check rejects usually means content is still loading: wait and re-decide this many times.
 const MAX_REJECTED_DONE = 3;
+// A click this risky but under the 0.5 gate gets a screenshot look before it runs; text alone under-reads checkout pages.
+const GRAY_ZONE_RISK = 0.25;
 // Box answers count only when the model is at least this sure a control is there and where it is.
 const BOX_SURE = 0.5;
 // The chosen target counts as covered on screen below this visibility (dense grids of outlines score 0.15–0.3).
@@ -453,6 +455,7 @@ export class BrowserTask {
       handBack === 'uncertain' ||
       handBack === 'blocked' ||
       (decision.operation === 'DONE' && !!doneWhen && (decision.doneProbability ?? 0) < 0.5) ||
+      isGrayZoneClick(decision) ||
       (last?.page_changed === false && last.operation !== 'WAIT')
     );
   }
@@ -580,6 +583,9 @@ const isSearchLike = (field: PageAction) =>
 
 const isRiskyClick = (decision: Decision) =>
   ['CLICK', 'CLICK_AT'].includes(decision.operation) && (decision.commitRisk ?? 0) >= 0.5;
+
+const isGrayZoneClick = (decision: Decision) =>
+  ['CLICK', 'CLICK_AT'].includes(decision.operation) && (decision.commitRisk ?? 0) >= GRAY_ZONE_RISK && !isRiskyClick(decision);
 
 const stuckOn = (decision: Decision, page: PageState) => ({
   operation: decision.operation,
