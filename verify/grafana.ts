@@ -64,7 +64,7 @@ const JOBS: Job[] = [
     title: 'Explore the last 6 hours',
     job: 'When I chase a spike, I want Explore on the last 6 hours, so I can query around it.',
     goal: `Go to Explore and set its time range to the last 6 hours. ${READ_ONLY}`,
-    doneWhen: 'Explore is open with the last 6 hours selected.',
+    doneWhen: 'The Explore page is open (its title and breadcrumb read Explore, with a query editor), and its time range reads "Last 6 hours".',
     check: 'The URL path is /explore and the decoded URL (its panes parameter) contains now-6h',
     passes: (url) => url.pathname === '/explore' && decodeURIComponent(url.href).includes('now-6h'),
   },
