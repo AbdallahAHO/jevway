@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tap duration</title>
+<style>
+  body { margin: 16px; font: 16px system-ui, sans-serif; }
+  button { padding: 14px 20px; font: inherit; }
+</style>
+</head>
+<body>
+<!-- Records how long a tap lasts and how wide the contact is: a Grafana-style combobox closes again if the tap is instant. -->
+<button type="button" id="sort">Sort</button>
+<script>
+  window.__fixture = { tapMs: null, radius: null };
+  let startedAt = 0;
+  const sort = document.getElementById('sort');
+  sort.addEventListener('touchstart', (event) => {
+    startedAt = performance.now();
+    window.__fixture.radius = event.touches[0].radiusX;
+  });
+  sort.addEventListener('touchend', () => {
+    window.__fixture.tapMs = performance.now() - startedAt;
+  });
+</script>
+</body>
+</html>

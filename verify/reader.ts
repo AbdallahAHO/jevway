@@ -11,11 +11,14 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { connectChrome } from '../src/browser/chrome.ts';
+import { DEVICES, type DeviceName } from '../src/browser/devices.ts';
 import { StalePage, Tab, TargetUnreachable, type PageAction } from '../src/browser/tab.ts';
 
 interface Check {
   name: string;
   file: string;
+  // Emulated device for the check's tab; the desktop viewport when omitted.
+  device?: DeviceName;
   run: (tab: Tab) => Promise<void>;
 }
 
@@ -392,6 +395,46 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'a tap on a touch device lasts like a finger and has a contact area',
+    file: 'tap-duration.html',
+    device: 'iphone-15',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const sort = find(page.actions, 'button', /^Sort$/);
+      assert.ok(sort, `button not listed: ${labelsOf(page.actions)}`);
+      await tab.act(sort, page);
+      const { tapMs, radius } = await fixtureState(tab);
+      assert.ok(tapMs >= 40, `the tap lasted ${tapMs} ms`);
+      assert.ok(radius > 0, `the touch had radius ${radius}`);
+    },
+  },
+  {
+    name: 'a field whose centre is covered by its own prefix still takes typing at another point',
+    file: 'partly-covered.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const search = page.actions.find((action) => action.kind === 'fill' && /Search/.test(action.label));
+      assert.ok(search, `no fill action: ${labelsOf(page.actions)}`);
+      await tab.act(search, page, 'cpu');
+      assert.equal((await fixtureState(tab)).value, 'cpu');
+    },
+  },
+  {
+    name: 'a button covered by an overlay at every point is still refused',
+    file: 'fully-covered.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const pay = find(page.actions, 'button', /Pay now/);
+      assert.ok(pay, `button not listed: ${labelsOf(page.actions)}`);
+      await assert.rejects(tab.act(pay, page), (error) => {
+        assert.ok(error instanceof TargetUnreachable, `threw ${error}`);
+        assert.equal(error.byPopup, false);
+        return true;
+      });
+      assert.equal((await fixtureState(tab)).paid, 0);
+    },
+  },
+  {
     name: 'icon-only radios are named from their icon, and clicking one selects it',
     file: 'unnamed-controls.html',
     run: async (tab) => {
@@ -496,7 +539,7 @@ try {
   try {
     for (const check of checks) {
       try {
-        const tab = await Tab.open(chrome.cdp, `${origin}/${check.file}`);
+        const tab = await Tab.open(chrome.cdp, `${origin}/${check.file}`, { device: DEVICES[check.device ?? 'desktop'] });
         try {
           await check.run(tab);
         } finally {

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fully covered</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  .holder { position: relative; display: inline-block; }
+  button { width: 120px; height: 40px; }
+  /* An invisible layer over the whole button: every point inside it hits the layer, not the button. */
+  .overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.01); }
+</style>
+</head>
+<body>
+<div class="holder">
+  <button type="button" id="target">Pay now</button>
+  <div class="overlay"></div>
+</div>
+<script>
+  window.__fixture = { paid: 0 };
+  document.getElementById('target').addEventListener('click', () => window.__fixture.paid++);
+</script>
+</body>
+</html>
