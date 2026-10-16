@@ -1429,6 +1429,105 @@ describe('loop gotchas', () => {
     expect(summary.status).toBe('step_budget');
   });
 
+  describe('a menu the run opened, before it says done', () => {
+    const options = { goal: 'Add the label', doneWhen: 'The issue shows the label', changeWaitMs: 0 };
+    // A label picker that applies the choice only when its menu closes: the text already shows it while the menu is open.
+    const trigger = (expanded: string): PageAction => ({ id: 'labels', kind: 'click', node: 50, role: 'combobox', label: 'Labels', expanded });
+    const helpWanted: PageAction = { id: 'help', kind: 'click', node: 51, role: 'option', label: 'help wanted' };
+    const comments: PageAction = { id: 'comments', kind: 'click', node: 52, role: 'link', label: 'Comments' };
+    const issue = (fingerprint: string, expanded: string, menuListed = expanded === 'true') =>
+      page({ actions: [trigger(expanded), ...(menuListed ? [helpWanted] : []), comments], fingerprint });
+    const closed = issue('a', 'false');
+    const open = issue('b', 'true');
+    const labels = clickTargetOf(closed, 'Labels');
+    const option = clickTargetOf(open, 'help wanted');
+    const openLabels = { operation: 'CLICK', click_target: labels };
+    const pickOption = { operation: 'CLICK', click_target: option };
+    const closedByRun = { operation: 'PRESS_ESCAPE', element: 'closed the menu this run opened before finishing', page_changed: true };
+
+    it('closes it once and judges done again on the closed page, on the evident path', async () => {
+      const evident = { operation: 'CLICK', click_target: '1', done_check: 0.93 };
+      const { ask, requests } = scriptedJev([openLabels, pickOption, evident, evident]);
+      const { asTab, acted } = fakeTab([closed, open, issue('c', 'true'), issue('d', 'false')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('done');
+      expect(acted).toEqual([{ label: 'Labels' }, { label: 'help wanted' }, { label: 'dismissPopup' }]);
+      expect(summary.steps.map((step) => step.operation)).toEqual(['CLICK', 'CLICK', 'PRESS_ESCAPE']);
+      expect(summary.steps[2]).toMatchObject(closedByRun);
+      expect(requests).toHaveLength(4);
+    });
+
+    it('does the same when the model says DONE', async () => {
+      const done = { operation: 'DONE', done_check: 0.6 };
+      const { ask, requests } = scriptedJev([openLabels, pickOption, done, done]);
+      const { asTab, acted } = fakeTab([closed, open, issue('c', 'true'), issue('d', 'false')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('done');
+      expect(acted.filter((a) => a.label === 'dismissPopup')).toHaveLength(1);
+      expect(summary.steps[2]).toMatchObject(closedByRun);
+      expect(requests).toHaveLength(4);
+    });
+
+    it('does the same when BLOCKED on a page that already meets the goal', async () => {
+      const blocked = { operation: 'BLOCKED', done_check: 0.6 };
+      const { ask } = scriptedJev([openLabels, pickOption, blocked, blocked]);
+      const { asTab, acted } = fakeTab([closed, open, issue('c', 'true'), issue('d', 'false')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('done');
+      expect(acted.filter((a) => a.label === 'dismissPopup')).toHaveLength(1);
+    });
+
+    it('does the same for an unsure step on a page the screenshot-backed check accepts', async () => {
+      const unsure = { operation: 'CLICK', click_target: '1', confidence: 0.2, done_check: 0.8 };
+      const { ask } = scriptedJev([openLabels, pickOption, unsure, unsure]);
+      const { asTab, acted } = fakeTab([closed, open, issue('c', 'true'), issue('d', 'false')]);
+      const summary = await new BrowserTask(asTab, ask, { ...options, screenshots: 'always' }).run();
+      expect(summary.status).toBe('done');
+      expect(acted.filter((a) => a.label === 'dismissPopup')).toHaveLength(1);
+    });
+
+    it('does the same when a loop guard hands back and the last look finds the goal met', async () => {
+      // Three picks that change nothing trip the guard; its last look reads the goal as met while the menu is still open.
+      const lookFindsGoal = { ...pickOption, done_check: 0.8 };
+      const evident = { operation: 'CLICK', click_target: '1', done_check: 0.93 };
+      const { ask, requests } = scriptedJev([openLabels, pickOption, pickOption, pickOption, lookFindsGoal, evident]);
+      const { asTab, acted } = fakeTab([closed, open, open, open, open, issue('d', 'false')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('done');
+      expect(acted.filter((a) => a.label === 'dismissPopup')).toHaveLength(1);
+      expect(summary.steps.at(-1)).toMatchObject(closedByRun);
+      expect(requests).toHaveLength(6);
+    });
+
+    it('leaves a menu the page had open alone', async () => {
+      const opened = issue('a', 'true');
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: clickTargetOf(opened, 'help wanted') }, { operation: 'DONE', done_check: 0.6 }]);
+      const { asTab, acted } = fakeTab([opened, issue('b', 'true')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('done');
+      expect(acted).toEqual([{ label: 'help wanted' }]);
+    });
+
+    it('closes it only once: a goal whose evidence is the open menu still finishes', async () => {
+      const done = { operation: 'DONE', done_check: 0.6 };
+      const reopen = { operation: 'CLICK', click_target: clickTargetOf(issue('d', 'false'), 'Labels') };
+      const { ask, requests } = scriptedJev([openLabels, pickOption, done, reopen, done]);
+      const { asTab, acted } = fakeTab([closed, open, issue('c', 'true'), issue('d', 'false'), issue('e', 'true')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('done');
+      expect(acted).toEqual([{ label: 'Labels' }, { label: 'help wanted' }, { label: 'dismissPopup' }, { label: 'Labels' }]);
+      expect(requests).toHaveLength(5);
+    });
+
+    it('leaves a menu alone that a later click of the run closed', async () => {
+      const { ask } = scriptedJev([openLabels, pickOption, { operation: 'DONE', done_check: 0.6 }]);
+      const { asTab, acted } = fakeTab([closed, open, issue('c', 'false')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('done');
+      expect(acted).toEqual([{ label: 'Labels' }, { label: 'help wanted' }]);
+    });
+  });
+
   describe('the last look before a guard hands back', () => {
     const click = { operation: 'CLICK', click_target: '1' };
     const options = { goal: 'Open it', doneWhen: 'It is open', changeWaitMs: 0 };
