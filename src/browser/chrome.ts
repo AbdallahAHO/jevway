@@ -79,13 +79,45 @@ const launchChrome = async (headless: boolean): Promise<ChromeHandle> => {
   const cdp = await CdpConnection.open(endpoint);
   return {
     cdp,
+    // Returns even if Chrome already exited; a profile that can't be removed never rejects.
     close: async () => {
       cdp.close();
-      chrome.kill();
-      await new Promise((resolve) => chrome.once('exit', resolve));
-      rmSync(profile, { recursive: true, force: true });
+      await stopChrome(chrome);
+      try {
+        rmSync(profile, { recursive: true, force: true });
+      } catch {}
     },
   };
+};
+
+/**
+ * Stops a launched Chrome and resolves once it is gone, never hanging: a process that already exited returns at
+ * once, one that ignores SIGTERM is killed after `graceMs`. Never rejects. Exported for tests.
+ *
+ * @example
+ * await stopChrome(child); // resolves even if Chrome crashed earlier
+ */
+export const stopChrome = async (child: ChildProcess, graceMs = 5_000): Promise<void> => {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  // Listen before signalling, so a fast exit is never missed.
+  const exited = new Promise<boolean>((resolve) => child.once('exit', () => resolve(true)));
+  child.kill();
+  if (await exitedWithin(exited, graceMs)) return;
+  child.kill('SIGKILL');
+  await exitedWithin(exited, 1_000);
+};
+
+// True if the process exited before `ms` passed; the timer never outlives the wait.
+const exitedWithin = async (exited: Promise<boolean>, ms: number) => {
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<boolean>((resolve) => {
+    timer = setTimeout(resolve, ms, false);
+  });
+  try {
+    return await Promise.race([exited, timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 const readDevToolsEndpoint = (chrome: ChildProcess) =>
