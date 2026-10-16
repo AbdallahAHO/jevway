@@ -12,6 +12,7 @@
   #list a { display: block; padding: 10px 0; border-bottom: 1px solid #eee; }
   #list small { display: block; color: #666; }
   #detail { margin-top: 12px; padding: 12px; border: 1px solid #aaa; }
+  #detail h2 { margin: 0 0 8px; }
 </style>
 </head>
 <body>
@@ -59,7 +60,19 @@
   };
   document.getElementById('q').addEventListener('keydown', (event) => event.key === 'Enter' && search());
 
+  // Opening a result replaces the list with the result's own panel, as real apps do; "Back to results" returns to the list.
+  const list = document.getElementById('list');
+  const detail = document.getElementById('detail');
   document.addEventListener('click', (event) => {
+    if (event.target.closest('#back')) {
+      event.preventDefault();
+      later(() => {
+        detail.hidden = true;
+        list.hidden = false;
+        window.__fixture.opened = null;
+      });
+      return;
+    }
     const answer = event.target.closest('[data-consent]');
     if (answer) {
       const { consent } = answer.dataset;
@@ -73,9 +86,11 @@
     if (link) {
       event.preventDefault();
       const { id } = link.dataset;
+      const [, title, text] = docs.find(([key]) => key === id);
       later(() => {
-        document.getElementById('detail').hidden = false;
-        document.getElementById('detail').textContent = `${docs.find(([key]) => key === id)[1]} (${id})`;
+        list.hidden = true;
+        detail.hidden = false;
+        detail.innerHTML = `<h2>${title}</h2><p>${text}</p><a href="#" id="back">Back to results</a>`;
         window.__fixture.opened = id;
       });
     }
