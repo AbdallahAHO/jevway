@@ -102,6 +102,16 @@
     if (e.getAttribute('tabindex') === '0' && !explicit && !['INPUT', 'TEXTAREA', 'SELECT', 'A'].includes(e.tagName)) {
       return pointer(e) ? 'button' : null;
     }
+    // jev-browse: a dropdown trigger that names itself with a role we don't list ("menu" on Fomantic UI's avatar menu) is
+    // still a disclosure button, as its aria-expanded says.
+    if (
+      explicit &&
+      e.getAttribute('tabindex') === '0' &&
+      e.hasAttribute('aria-expanded') &&
+      !['INPUT', 'TEXTAREA', 'SELECT', 'A'].includes(e.tagName)
+    ) {
+      return 'button';
+    }
     if (e.tagName === 'A') return 'link';
     if (e.tagName === 'SELECT') return 'combobox';
     if (e.tagName === 'TEXTAREA' || e.isContentEditable) return 'textbox';
