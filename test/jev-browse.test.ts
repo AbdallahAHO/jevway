@@ -429,6 +429,92 @@ describe('BrowserTask', () => {
     });
   });
 
+  describe('a confirmation counts only when it answers a needs_confirmation', () => {
+    const pay = { operation: 'CLICK', click_target: '4', commit_risk: 0.9 };
+    const unsure = { operation: 'CLICK', click_target: '1', confidence: 0.1 };
+    const noValueForEmail = { operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: NO_SUPPLIED_VALUE };
+    const pages = () => Array.from({ length: 12 }, (_, i) => page({ fingerprint: String(i) }));
+    const options = { goal: 'Pay', values: { name: 'Ada' }, maxSteps: 1, changeWaitMs: 0 };
+
+    it('clicks the risky target when the call right after a needs_confirmation carries the flag', async () => {
+      const { ask } = scriptedJev([pay]);
+      const { asTab, acted } = fakeTab(pages());
+      const task = new BrowserTask(asTab, ask, options);
+
+      expect((await task.run()).status).toBe('needs_confirmation');
+      task.update({ confirmIrreversible: true });
+      const summary = await task.run();
+
+      expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
+      expect(summary.confirm_ignored).toBeUndefined();
+    });
+
+    it('clicks the risky target when a new session\'s first call carries the flag', async () => {
+      const { ask } = scriptedJev([pay]);
+      const { asTab, acted } = fakeTab(pages());
+      const task = new BrowserTask(asTab, ask, options);
+
+      task.update({ confirmIrreversible: true });
+      const summary = await task.run();
+
+      expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
+      expect(summary.confirm_ignored).toBeUndefined();
+    });
+
+    it('ignores the flag on a call that follows an uncertain hand-back, and says so once', async () => {
+      const { ask } = scriptedJev([unsure, pay]);
+      const { asTab, acted } = fakeTab(pages());
+      const task = new BrowserTask(asTab, ask, options);
+
+      expect((await task.run()).status).toBe('uncertain');
+      task.update({ confirmIrreversible: true });
+      const ignored = await task.run();
+
+      expect(ignored.status).toBe('needs_confirmation');
+      expect(acted).toEqual([]);
+      expect(ignored.confirm_ignored).toBe('the previous call ended uncertain, not needs_confirmation');
+
+      const next = await task.run();
+      expect(next.confirm_ignored).toBeUndefined();
+    });
+
+    it('ignores the flag on a call that follows a done, after an earlier confirmation was used', async () => {
+      const { ask } = scriptedJev([pay, pay, { operation: 'DONE' }, pay]);
+      const { asTab, acted } = fakeTab(pages());
+      const task = new BrowserTask(asTab, ask, { ...options, maxSteps: 5 });
+
+      expect((await task.run()).status).toBe('needs_confirmation');
+      task.update({ confirmIrreversible: true });
+      const finished = await task.run();
+      expect(finished.status).toBe('done');
+      expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
+
+      task.update({ goal: 'Pay again', confirmIrreversible: true });
+      const again = await task.run();
+
+      expect(again.status).toBe('needs_confirmation');
+      expect(acted).toHaveLength(1);
+      expect(again.confirm_ignored).toBe('the previous call ended done, not needs_confirmation');
+    });
+
+    it('keeps a confirmation the first call gave through a needs_input, until a risky click uses it', async () => {
+      const { ask } = scriptedJev([noValueForEmail, noValueForEmail, pay]);
+      const { asTab, acted } = fakeTab(pages());
+      const task = new BrowserTask(asTab, ask, options);
+
+      task.update({ confirmIrreversible: true });
+      const asked = await task.run();
+      expect(asked).toMatchObject({ status: 'needs_input', reason: 'No supplied value fits the field "Email address"' });
+      expect(acted).toEqual([]);
+
+      task.update({ values: { email: 'ada@example.com' }, confirmIrreversible: true });
+      const summary = await task.run();
+
+      expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
+      expect(summary.confirm_ignored).toBeUndefined();
+    });
+  });
+
   it('gives a gray-zone click a screenshot look before it runs, and a clearly safe one none', async () => {
     const run = async (commit_risk: number) => {
       const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '4', commit_risk }]);
