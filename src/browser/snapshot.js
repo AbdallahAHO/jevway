@@ -10,8 +10,26 @@
   for (const [id, e] of cache.nodes) if (!e.isConnected) cache.nodes.delete(id);
   const cap = (text, max = 200) => (text.length > max ? text.slice(0, max - 1) + '…' : text);
   const safe = (e) => !['password', 'file', 'hidden'].includes(e.type);
-  const visible = (e) =>
-    !e.closest('[aria-hidden="true"],[inert]') && e.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+  // jev-browse: a modal library (the aria-hidden package behind Radix, shadcn and react-aria) hides everything outside its
+  // sheet, including the popover it portaled for that sheet. A person still sees and taps that popover, so an element
+  // hidden only by that library's marker (data-aria-hidden) counts when it is on top at its centre. A plain aria-hidden
+  // or an inert ancestor still hides.
+  const hiddenOnlyByModalLibrary = (e) => {
+    if (e.closest('[inert]')) return false;
+    for (let h = e.closest('[aria-hidden="true"]'); h; h = h.parentElement?.closest('[aria-hidden="true"]'))
+      if (h.getAttribute('data-aria-hidden') !== 'true') return false;
+    return true;
+  };
+  const onTop = (e) => {
+    const r = e.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return Boolean(hit) && e.contains(hit);
+  };
+  const visible = (e) => {
+    const hidden = e.closest('[aria-hidden="true"],[inert]');
+    if (hidden && !hiddenOnlyByModalLibrary(e)) return false;
+    return e.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && (!hidden || onTop(e));
+  };
   // jev-browse: an element whose centre is off-screen (a table row wider than its scroll box) is clicked at the
   // centre of the part the viewport and its scroll containers leave visible. Everything else keeps its own rect.
   cache.clickRect = (e) => {
