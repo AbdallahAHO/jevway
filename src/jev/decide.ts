@@ -113,8 +113,8 @@ export interface Decision {
   nextClick?: NextClick;
   /** With `box`, for a chosen CLICK: is the target visibly unobstructed, and does its boxed position match the DOM. */
   targetCheck?: { visible: number; overlap: number };
-  /** Set when a BLOCKED decision was turned into a click from the screenshot's `nextClick`. */
-  via?: 'box';
+  /** Set when a BLOCKED decision was turned into a click: from the screenshot's `nextClick` (`box`), or onto the collapsed control the click head favoured (`disclosure`). */
+  via?: 'box' | 'disclosure';
   requests: number;
   inputTokens: number;
   latencyMs: number;
@@ -371,14 +371,32 @@ const readValue = (answer: unknown, values: Record<string, string>) => {
 const targetIndexOf = (space: ActionSpace, operation: TargetOperation, action: PageAction) =>
   Object.entries(space.targets[operation]!).find(([, candidate]) => candidate === action)![0];
 
+/**
+ * While the model says BLOCKED: the click head's top candidate when it is collapsed (`aria-expanded="false"`), the
+ * control a person would open before giving up. The head was not the chosen one, so its answer is checked here.
+ */
+export const foldedFavourite = (answers: Record<string, any>, clicks: Record<string, PageAction>) => {
+  const ids = Object.keys(clicks);
+  if (ids.length < 2) return undefined;
+  try {
+    const { probabilities } = validChoice(answers.click_target, ids);
+    const [id, probability] = Object.entries(probabilities).sort(([, a], [, b]) => b - a)[0];
+    return clicks[id].expanded === 'false' ? { id, probability, action: clicks[id] } : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 // The chosen click and the element under the screenshot box first (a box rescue clicks it, so it is judged by name too),
-// then (for the autopilot) the remaining taps by the target head's ranking.
+// then a collapsed control a BLOCKED step favours (opening it is a click too), then (for the autopilot) the remaining
+// taps by the target head's ranking.
 const elementRiskTargets = (input: DecisionInput, space: ActionSpace, decision: Pick<Decision, 'operation' | 'action' | 'answers' | 'nextClick'>) => {
   const clicks = space.targets.CLICK;
   if (!input.elementRisk || !input.checkCommitRisk || !clicks) return [];
   const chosen = decision.operation === 'CLICK' ? [targetIndexOf(space, 'CLICK', decision.action!)] : [];
   const boxed = decision.nextClick?.match ? [decision.nextClick.match] : [];
-  const judged = [...new Set([...chosen, ...boxed])];
+  const folded = decision.operation === 'BLOCKED' ? foldedFavourite(decision.answers, clicks) : undefined;
+  const judged = [...new Set([...chosen, ...boxed, ...(folded ? [folded.id] : [])])];
   if (input.elementRisk === 'chosen') return judged;
   const probabilities: Record<string, number> = decision.answers.click_target?.probabilities ?? {};
   const ranked = Object.keys(clicks).sort((a, b) => (probabilities[b] ?? 0) - (probabilities[a] ?? 0));

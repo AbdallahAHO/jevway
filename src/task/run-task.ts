@@ -1,7 +1,7 @@
 import { StalePage, TargetUnreachable, type PageAction, type PageState, type Tab } from '../browser/tab.ts';
 import { buildActionSpace } from '../jev/action-space.ts';
 import { centerOf, contains } from '../jev/box.ts';
-import { decide, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
+import { decide, foldedFavourite, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
 import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
 import { Recording } from './recording.ts';
 
@@ -162,6 +162,8 @@ export class BrowserTask {
   #unreachable = { node: undefined as number | undefined, count: 0 };
   /** Each executed action and the page fingerprint right after it, to spot one that toggles in place. */
   #outcomes: { action: string; print: string }[] = [];
+  /** Nodes of collapsed controls already opened instead of handing back blocked: each is tried once. */
+  #opened = new Set<number>();
   #tab: Tab;
   #ask: Ask;
   #recording: Recording | undefined;
@@ -281,7 +283,7 @@ export class BrowserTask {
           return stop('done', `Completion condition verified: ${doneWhen}`, decision);
         }
 
-        decision = this.#boxRescue(decision, page);
+        decision = this.#openDisclosure(this.#boxRescue(decision, page), page);
         if (decision.operation === 'DONE' && doneWhen && (decision.doneProbability ?? 0) < 0.5) {
           record(false);
           if (++rejectedDone >= MAX_REJECTED_DONE) {
@@ -398,6 +400,7 @@ export class BrowserTask {
         }
         record(true);
         executed++;
+        if (decision.via === 'disclosure') this.#opened.add(action.node!);
         this.#unreachable = { node: undefined, count: 0 };
         this.#lastTyped = decision.operation === 'TYPE_TEXT' && isSearchLike(action) ? action : undefined;
         // A confirmation covers exactly one risky click.
@@ -565,6 +568,24 @@ export class BrowserTask {
       return { ...rescued, operation: 'CLICK', action, target: next.match, commitRisk };
     }
     return this.#options.allowCoordinateClicks ? { ...rescued, operation: 'CLICK_AT' } : decision;
+  }
+
+  // A person opens the folded section they were already looking at before giving up: BLOCKED, yet the click head leans
+  // toward a collapsed control. It then faces the same hand-back checks as any click, judged by name when that is on.
+  #openDisclosure(decision: Decision, page: PageState): Decision {
+    if (decision.operation !== 'BLOCKED' || decision.fieldsWithoutValue.length) return decision;
+    const folded = foldedFavourite(decision.answers, buildActionSpace(page.actions).targets.CLICK ?? {});
+    if (!folded || folded.probability < this.#options.minConfidence || this.#opened.has(folded.action.node!)) return decision;
+    return {
+      ...decision,
+      via: 'disclosure' as const,
+      operation: 'CLICK',
+      action: folded.action,
+      target: folded.id,
+      confidence: folded.probability,
+      targetConfidence: undefined,
+      commitRisk: this.#options.elementRisk ? (decision.elementRisks?.[folded.id] ?? 1) : (decision.commitRisk ?? 1),
+    };
   }
 
   // The screenshot disagrees with the chosen click, or shows it covered: the agent should look.
