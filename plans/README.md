@@ -11,16 +11,17 @@ condition; every plan moves one of them.
 
 | Gate | Measured by | Target | Now |
 |------|-------------|--------|-----|
-| G1 Page reader is correct | `pnpm verify:reader` (model-free fixtures, plan 001) | 100% of fixtures, under 60 s, no API key | **met**: 27/27 keyless (`ad2600e`) |
+| G1 Page reader is correct | `pnpm verify:reader` (model-free fixtures, plan 001) | 100% of fixtures, under 60 s, no API key | **met**: 27/27 keyless (`6a015f0`) |
 | G2 Never crashes on browser/model trouble | unit tests from plan 002 + chaos runs (plan 003) | 0 thrown errors out of `BrowserTask.run()`; every failure is a status | **met**: 0 crashes in 90 gotcha runs; a launched Chrome that died closes in 22 ms instead of hanging (`ad2600e`) |
-| G3 Hard page patterns work | `pnpm verify:gotchas` normal profile (plan 003) | ≥ 95% of runs (strict: page **and** `done`, from plan 010) | **met**: strict 30/30 (`ad2600e`) |
-| G4 Holds up under stress | `pnpm verify:gotchas` chaos profiles (plan 003) | ≥ 90% of runs, 0 crashes (strict from plan 010) | **met**: strict slow 30/30, churn 30/30, 0 crashes (`ad2600e`) |
-| G5 Safe against bait and injection | `pnpm verify:redteam` (plan 004) | 0 destructive or injected actions in all runs | **met**: 0/66 violations incl. a hover-only Delete (`ad2600e`) |
-| G6 Real app, repeatable | `pnpm verify:langfuse` 10 runs/job, desktop (plan 006) | ≥ 95% pass, no job under 80% | **met** at 10 runs on `e18f1df` (158/160); regression check at 3 runs on `ad2600e`: 46/48 (CI 86.0–98.8%), both misses worst-relevance |
-| G7 Generalizes beyond Langfuse | `pnpm verify:grafana` (plan 007) | ≥ 80% pass | **met**: 24/24 (`ad2600e`) |
-| G8 No regressions | `pnpm typecheck`, `pnpm test`, `pnpm verify` | all green | **met**: 87 tests, `pnpm verify` 8/8 (`ad2600e`) |
+| G3 Hard page patterns work | `pnpm verify:gotchas` normal profile (plan 003) | ≥ 95% of runs (strict: page **and** `done`, from plan 010) | **met**: strict 30/30 (`6a015f0`) |
+| G4 Holds up under stress | `pnpm verify:gotchas` chaos profiles (plan 003) | ≥ 90% of runs, 0 crashes (strict from plan 010) | **met**: strict slow 30/30, churn 30/30, 0 crashes (`6a015f0`) |
+| G5 Safe against bait and injection | `pnpm verify:redteam` (plan 004) | 0 destructive or injected actions in all runs | **met**: 0/66 violations incl. a hover-only Delete (`6a015f0`) |
+| G6 Real app, repeatable | `pnpm verify:langfuse` 10 runs/job, desktop (plan 006) | ≥ 95% pass, no job under 80% | **met** at 10 runs on `e18f1df` (158/160); since then: 46/48 at ×3 on `ad2600e`, and 39/40 on the 4-job ×10 slice on `6a015f0` (miss = harness follow-up, not a DONE) |
+| G7 Generalizes beyond Langfuse | `pnpm verify:grafana` (plan 007) | ≥ 80% pass | **met**: 24/24 (`6a015f0`) |
+| G8 No regressions | `pnpm typecheck`, `pnpm test`, `pnpm verify` | all green | **met**: 92 tests, `pnpm verify` 8/8 (`6a015f0`) |
 
-**Round 2 (2026-10-16, `ad2600e`): all eight gates hold; G6 re-checked at 3 runs per job.** Round 1 ended at
+**Round 2 (2026-10-16, `6a015f0`, plans 015–018): seven gates re-run on this commit; G6 holds at ×10 from `e18f1df`
+with ×3 and a 4-job ×10 slice since.** Round 1 ended at
 `e18f1df` with all eight met.
 
 **Final state (2026-10-15, `e18f1df`): all eight gates met.** G3/G4/G5/G7 were confirmed on `6e31730`; `e18f1df` adds
@@ -47,6 +48,7 @@ only plan 014 (connection handling, recording, runner), confirmed by G2/G6/G8 on
 | 015 | consent-first opens a result on its own panel (fixture realism) | P2 | S | — | DONE (`cbbd4d7`) |
 | 016 | Closing a launched Chrome never hangs, even when Chrome already exited | P2 | S | — | DONE (`5b978a9`) |
 | 017 | Hover-revealed targets are guarded by identity; red-team a hover Delete | P1 | M | — | DONE (`ad2600e`) |
+| 018 | A done spike the next-step head contradicts is confirmed with a screenshot | P1 | S | — | DONE (`6a015f0`) |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
 they run in parallel. After merging, the gates are re-confirmed on the merged commit.
@@ -74,10 +76,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - (from 016) An orphan headless Chrome from before the fix (profile `jev-browse-YnXD22`, started 2026-10-15, parent
   pid 1) was still running on 2026-10-16; likely left by the old `close()` hang.
 
-- (from round 2 gates) False DONE on a single done-check spike the next-step head contradicts: worst-relevance #3
-  ended `done` on the unfiltered Scores list (done check 0.90 while the head chose TYPE_TEXT at 0.87). Across all saved
-  Langfuse runs, 16 ended this way (done ≥ 0.9, head wants another action at ≥ 0.6): 14 right, 2 false (this one and
-  dataset-source #4, 0.92). Candidate: one screenshot-backed look before accepting such a spike.
+- (from 018) The contradicted-spike look never fired live (40 runs; spikes stayed at 0.84–0.88). Next Langfuse ×10
+  pass: count looks, their scores, and outcomes from `trace.json` to confirm it catches false DONEs without costing
+  right ones.
+- (from 018) Two-call jobs: when the harness's table read finds no matching row (failed-experiment #8: table likely
+  not loaded yet), the run fails with no second call and reads as a false DONE. Wait for rows before reading, and
+  label "follow-up not found" apart from page failures in the report.
 
 ## Dependency notes
 

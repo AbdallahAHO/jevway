@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what changed, why, and the measured effect. Numbers come from runs, not estimates.
 
+## 2026-10-16 — plan 018 merged (`6a015f0`): a contradicted done spike is confirmed with a screenshot
+
+- **Before**: a single done-check score ≥ 0.9 ended a run `done` whatever the next step wanted. worst-relevance ended
+  `done` on the unfiltered Scores list in 3 of 8 runs on 2026-10-16 (done check 0.90, head on TYPE_TEXT "Search" at
+  0.87). In all saved Langfuse runs, 16 ended through a contradicted spike: 14 right, 2 false.
+- **After**: when the head confidently wants another action (≥ 0.6, not DONE/WAIT/BLOCKED) and the profile is
+  text-first (`fallback`), one screenshot look must also clear 0.5; otherwise the run carries on with the head's step.
+  Steady evidence (≥ 0.75 three times) and unsure or waiting heads end `done` as before.
+- **Measured**: 5 new tests (92), 3 of them red on the old code. Langfuse slice ×10: worst-relevance 10/10,
+  session-to-user 10/10, failed-experiment 9/10 (the harness found no errored row to follow up; not a jev-browse
+  DONE), dataset-source 10/10. **The confirmation look never fired in these 40 runs**: today's spikes stayed at
+  0.84–0.88. So the live result shows no regression (session-to-user, the job most exposed to the extra look, kept
+  10/10), not yet a live catch. Gotchas 90/90 strict, red-team 0/66, `pnpm verify` 8/8.
+
 ## 2026-10-16 — round 2 gates on `ad2600e` (plans 015–017 merged)
 
 | Gate | Round 1 (`e18f1df` / `6e31730`) | Round 2 (`ad2600e`) |
