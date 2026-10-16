@@ -343,14 +343,25 @@ describe('BrowserTask', () => {
 
     const held = await task.run();
     expect(held.status).toBe('needs_confirmation');
-    expect(held.reason).toContain('"Confirm booking and pay €412" looks irreversible');
-    expect(held.reason).toContain("Confirm only if the user's request named this action and target; otherwise ask the user.");
+    expect(held.reason).toContain('"Confirm booking and pay €412" on "Staylist" looks irreversible');
+    expect(held.reason).toContain("Confirm only if the user's request named this action and this target;");
+    expect(held.reason).toContain('a category ("anything unused", "old ones") names no target: list the candidates and ask the user.');
     expect(acted).toEqual([]);
 
     task.update({ confirmIrreversible: true });
     const summary = await task.run();
     expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
     expect(summary.status).toBe('needs_confirmation');
+  });
+
+  it('names the page a risky click is on, cut to 80 characters, and leaves it out when the page has no title', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '4', commit_risk: 0.9 }]);
+    const long = 'Repository - ada/scratch - ' + 'x'.repeat(200);
+    const titled = await new BrowserTask(fakeTab([page({ title: long })]).asTab, ask, { goal: 'Pay' }).run();
+    expect(titled.reason).toContain(`on "${long.slice(0, 80)}" looks irreversible`);
+    expect(titled.reason).not.toContain(long.slice(0, 81));
+    const untitled = await new BrowserTask(fakeTab([page({ title: '' })]).asTab, ask, { goal: 'Pay' }).run();
+    expect(untitled.reason).toContain('"Confirm booking and pay €412" looks irreversible');
   });
 
   describe('a new session started through the runner', () => {

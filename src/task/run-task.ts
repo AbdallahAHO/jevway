@@ -66,6 +66,8 @@ export interface TraceEntry {
 
 // How much of the final page's visible text a summary carries: enough to read a short list or a value, not a whole page.
 const PAGE_TEXT_CHARS = 1500;
+// How much of the page title a needs_confirmation reason quotes.
+const CONFIRM_TITLE_CHARS = 80;
 
 const DEFAULTS = {
   maxSteps: 40,
@@ -320,7 +322,7 @@ export class BrowserTask {
           page = await this.#tab.observe();
           continue;
         }
-        const handBack = this.#handBack(decision);
+        const handBack = this.#handBack(decision, page);
         // A field the model has no value for is first a wrong turn, and only the second time a question for the caller.
         if (handBack?.[0] === 'needs_input' && decision.operation === 'TYPE_TEXT' && !this.#refusedForValue.has(decision.action!.node!)) {
           this.#refusedForValue.add(decision.action!.node!);
@@ -541,12 +543,12 @@ export class BrowserTask {
     };
     const withScreenshot = screenshots === 'always' || (lastLook && screenshots !== 'off');
     const first = await decideOn(withScreenshot);
-    return screenshots === 'fallback' && !withScreenshot && this.#needsSecondLook(first) ? decideOn(true) : first;
+    return screenshots === 'fallback' && !withScreenshot && this.#needsSecondLook(first, page) ? decideOn(true) : first;
   }
 
-  #needsSecondLook(decision: Decision) {
+  #needsSecondLook(decision: Decision, page: PageState) {
     const { doneWhen } = this.#options;
-    const handBack = this.#handBack(decision)?.[0];
+    const handBack = this.#handBack(decision, page)?.[0];
     const last = this.#history.at(-1);
     return (
       handBack === 'uncertain' ||
@@ -660,7 +662,7 @@ export class BrowserTask {
   }
 
   // Returns [status, reason] when this decision is the calling agent's to make.
-  #handBack(decision: Decision): [TaskStatus, string] | undefined {
+  #handBack(decision: Decision, page: PageState): [TaskStatus, string] | undefined {
     const { doneWhen } = this.#options;
     if (decision.operation === 'DONE') {
       return [
@@ -692,9 +694,11 @@ export class BrowserTask {
       return ['needs_input', `No supplied value fits the field "${decision.action!.label}"`];
     }
     if (isRiskyClick(decision) && !this.#confirmedCommit) {
+      // The page title says which target the click acts on (a repository, an order), for the agent to hold against the user's words.
+      const title = page.title.slice(0, CONFIRM_TITLE_CHARS);
       return [
         'needs_confirmation',
-        `Clicking "${decision.action?.label ?? 'the control boxed on the screenshot'}" looks irreversible (risk ${round(decision.commitRisk!)}). Confirm only if the user's request named this action and target; otherwise ask the user.`,
+        `Clicking "${decision.action?.label ?? 'the control boxed on the screenshot'}"${title ? ` on "${title}"` : ''} looks irreversible (risk ${round(decision.commitRisk!)}). Confirm only if the user's request named this action and this target; a category ("anything unused", "old ones") names no target: list the candidates and ask the user.`,
       ];
     }
     return undefined;
