@@ -105,10 +105,14 @@ const BOX_SURE = 0.5;
 const COVERED_BELOW = 0.1;
 // ...and only when its box also barely overlaps where the DOM puts it.
 const COVERED_OVERLAP_BELOW = 0.1;
-// A `done_when` judgment this sure ends the task, whatever the next-step head prefers (it may wander on).
+// A `done_when` judgment this sure ends the task, unless the next step confidently contradicts it (see HEAD_DISAGREES).
 const DONE_EVIDENT = 0.9;
 // The last look before a loop guard hands back accepts the goal as met at this done check: the same bar a DONE needs.
 const LAST_LOOK_DONE = 0.5;
+// A next-step head this sure of another action contradicts a single done spike (measured on Jev: 2 of 16 such spikes were false DONEs).
+const HEAD_DISAGREES = 0.6;
+// The screenshot look confirms the spike at the same bar a DONE needs.
+const SPIKE_CONFIRMED = LAST_LOOK_DONE;
 // Enter is offered only after typing into a field like these; elsewhere it could submit a form.
 const SEARCH_LIKE = /search|query|find/i;
 // A covered target is fed back as history so Jev can clear it (dismiss a popover); this many times per run.
@@ -192,7 +196,7 @@ export class BrowserTask {
     this.#tab.want(Object.values(this.#options.values));
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
-    const { maxSteps, values, doneWhen } = this.#options;
+    const { maxSteps, values, doneWhen, screenshots } = this.#options;
     // `stop` reads the page, so it needs a stand-in until the first observe succeeds.
     let page: PageState = BLANK_PAGE;
     let executed = 0;
@@ -248,9 +252,17 @@ export class BrowserTask {
         }
         const doneProbability = decision.doneProbability ?? 0;
         doneStreak = doneProbability >= GUARDS.doneSteady ? doneStreak + 1 : 0;
-        if (doneWhen && (doneProbability >= DONE_EVIDENT || doneStreak >= GUARDS.doneSustained)) {
-          this.trace.push({ decision: { ...decision, action: decision.action?.label }, executed: false, elapsed_ms: elapsed() });
-          return stop('done', `Completion condition verified: ${doneWhen}`, decision);
+        const steadyDone = doneStreak >= GUARDS.doneSustained;
+        if (doneWhen && (doneProbability >= DONE_EVIDENT || steadyDone)) {
+          // A single done spike that the next step confidently contradicts gets one screenshot look; `always` already saw a screenshot and `off` has nothing new to show.
+          const lookFirst = !steadyDone && contradictsDoneSpike(decision, screenshots);
+          const look = lookFirst ? await this.#lastLook(page) : undefined;
+          if (!lookFirst || (look?.doneProbability ?? 0) >= SPIKE_CONFIRMED) {
+            const verdict = look ?? decision;
+            this.trace.push({ decision: { ...verdict, action: verdict.action?.label }, executed: false, elapsed_ms: elapsed() });
+            return stop('done', `Completion condition verified: ${doneWhen}`, verdict);
+          }
+          if (look) this.trace.push({ decision: { ...look, action: look.action?.label }, executed: false, elapsed_ms: elapsed() });
         }
         const record = (didExecute: boolean) =>
           this.trace.push({
@@ -611,6 +623,9 @@ const isRiskyClick = (decision: Decision) =>
 
 const isGrayZoneClick = (decision: Decision) =>
   ['CLICK', 'CLICK_AT'].includes(decision.operation) && (decision.commitRisk ?? 0) >= GRAY_ZONE_RISK && !isRiskyClick(decision);
+
+const contradictsDoneSpike = (decision: Decision, screenshots: ScreenshotMode) =>
+  screenshots === 'fallback' && !['DONE', 'WAIT', 'BLOCKED'].includes(decision.operation) && decision.confidence >= HEAD_DISAGREES;
 
 const stuckOn = (decision: Decision, page: PageState) => ({
   operation: decision.operation,

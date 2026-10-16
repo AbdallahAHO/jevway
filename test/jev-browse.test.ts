@@ -777,6 +777,67 @@ describe('loop gotchas', () => {
     });
   });
 
+  describe('a done spike the next step contradicts', () => {
+    const options = { goal: 'Open it', doneWhen: 'It is open', changeWaitMs: 0, screenshots: 'fallback' as const };
+    // The right next step (a click at 0.87) while the done check spikes to 0.9: the unfiltered list that looks finished.
+    const spike = { operation: 'CLICK', click_target: '1', confidence: 0.87, done_check: 0.9 };
+    // Distinct fingerprints keep `fallback` from adding a second look after an action that "changed nothing".
+    const pages = () => ['a', 'b', 'c', 'd'].map((fingerprint) => page({ fingerprint }));
+
+    it('carries on with the next step when the screenshot look does not confirm the goal', async () => {
+      const { ask, requests } = scriptedJev([spike, { operation: 'CLICK', click_target: '1', done_check: 0.3 }, { operation: 'DONE', done_check: 0.8 }]);
+      const { tab, acted, asTab } = fakeTab(pages());
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('done');
+      expect(acted).toHaveLength(1);
+      expect(requests).toHaveLength(3);
+      expect(tab.screenshots).toBe(1);
+    });
+
+    it('ends as done without acting when the screenshot look confirms the goal', async () => {
+      const { ask, requests } = scriptedJev([spike, { ...spike, done_check: 0.8 }]);
+      const { tab, acted, asTab } = fakeTab(pages());
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary).toMatchObject({ status: 'done', done_probability: 0.8, reason: 'Completion condition verified: It is open' });
+      expect(acted).toHaveLength(0);
+      expect(requests).toHaveLength(2);
+      expect(tab.screenshots).toBe(1);
+    });
+
+    it('takes no look when the next step is waiting or unsure', async () => {
+      for (const head of [{ operation: 'WAIT' }, { operation: 'CLICK', click_target: '1', confidence: 0.5 }]) {
+        const { ask, requests } = scriptedJev([{ ...spike, ...head }]);
+        const { tab, asTab } = fakeTab(pages());
+        expect(await new BrowserTask(asTab, ask, options).run()).toMatchObject({ status: 'done' });
+        expect(requests).toHaveLength(1);
+        expect(tab.screenshots).toBe(0);
+      }
+    });
+
+    it('takes no look when the profile is text-only or already sends a screenshot every step', async () => {
+      for (const screenshots of ['off', 'always'] as const) {
+        const { ask, requests } = scriptedJev([spike]);
+        const { asTab } = fakeTab(pages());
+        expect(await new BrowserTask(asTab, ask, { ...options, screenshots }).run()).toMatchObject({ status: 'done' });
+        expect(requests).toHaveLength(1);
+      }
+    });
+
+    it('carries on when the look fails', async () => {
+      const scripted = scriptedJev([spike, { operation: 'DONE', done_check: 0.8 }]);
+      let calls = 0;
+      const failingLook: Ask = async (request) => {
+        if (++calls === 2) throw new Error('400 bad request');
+        return scripted.ask(request);
+      };
+      const { acted, asTab } = fakeTab(pages());
+      const summary = await new BrowserTask(asTab, failingLook, options).run();
+      expect(summary.status).toBe('done');
+      expect(acted).toHaveLength(1);
+      expect(calls).toBe(3);
+    });
+  });
+
   describe('waiting for the page to react', () => {
     afterEach(() => vi.useRealTimers());
 
