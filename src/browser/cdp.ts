@@ -1,6 +1,9 @@
 // A stuck renderer or dropped reply must not hang a run.
 const CALL_TIMEOUT_MS = 30_000;
 
+// A wedged browser, or a port held by something else, must not hang the connect.
+const OPEN_TIMEOUT_MS = 15_000;
+
 /**
  * Minimal Chrome DevTools Protocol client over Node's global WebSocket.
  * Flattened sessions let one socket drive the browser and every owned tab.
@@ -51,11 +54,32 @@ export class CdpConnection {
     return new CdpConnection(socket);
   }
 
-  static open(endpoint: string): Promise<CdpConnection> {
+  static open(endpoint: string, timeoutMs = OPEN_TIMEOUT_MS): Promise<CdpConnection> {
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(endpoint);
-      socket.addEventListener('open', () => resolve(new CdpConnection(socket)), { once: true });
-      socket.addEventListener('error', () => reject(new CdpError(`Cannot connect to ${endpoint}`)), { once: true });
+      const timer = setTimeout(() => {
+        // Reject first: closing a connecting socket fires its error listener, which would win with the vaguer message.
+        reject(new CdpError(`Cannot connect to ${endpoint}: no handshake within ${timeoutMs} ms`));
+        try {
+          socket.close();
+        } catch {}
+      }, timeoutMs);
+      socket.addEventListener(
+        'open',
+        () => {
+          clearTimeout(timer);
+          resolve(new CdpConnection(socket));
+        },
+        { once: true },
+      );
+      socket.addEventListener(
+        'error',
+        () => {
+          clearTimeout(timer);
+          reject(new CdpError(`Cannot connect to ${endpoint}`));
+        },
+        { once: true },
+      );
     });
   }
 

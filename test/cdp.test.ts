@@ -1,3 +1,4 @@
+import { createServer, type Socket } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CdpConnection } from '../src/browser/cdp.ts';
 
@@ -54,5 +55,22 @@ describe('CdpConnection', () => {
     await expect(call).resolves.toEqual({ targetId: 'T1' });
     expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(30_000);
+  });
+});
+
+describe('CdpConnection.open', () => {
+  it('gives up on an endpoint that accepts the connection but never completes the handshake', async () => {
+    const accepted: Socket[] = [];
+    const silentServer = createServer((socket) => accepted.push(socket));
+    await new Promise<void>((resolve) => silentServer.listen(0, '127.0.0.1', resolve));
+    try {
+      const { port } = silentServer.address() as { port: number };
+      await expect(CdpConnection.open(`ws://127.0.0.1:${port}/devtools/browser/x`, 200)).rejects.toThrow(
+        'no handshake within 200 ms',
+      );
+    } finally {
+      accepted.forEach((socket) => socket.destroy());
+      silentServer.close();
+    }
   });
 });
