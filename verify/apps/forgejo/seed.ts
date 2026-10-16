@@ -46,18 +46,19 @@ const mintAdminToken = async () => {
   return `token ${(await response.json()).sha1}`;
 };
 
-const request = async (method: string, path: string, body?: unknown) => {
+// `asUser` acts as that user through the admin token's `Sudo` header, so the record shows them as the author.
+const request = async (method: string, path: string, body?: unknown, asUser?: string) => {
   adminToken ??= mintAdminToken();
   return fetch(`${API}${path}`, {
     method,
-    headers: { authorization: await adminToken, 'content-type': 'application/json' },
+    headers: { authorization: await adminToken, 'content-type': 'application/json', ...(asUser && { sudo: asUser }) },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   });
 };
 
 // A call that must succeed: anything else is a seeding bug worth stopping for.
-const send = async (method: string, path: string, body?: unknown) => {
-  const response = await request(method, path, body);
+const send = async (method: string, path: string, body?: unknown, asUser?: string) => {
+  const response = await request(method, path, body, asUser);
   if (!response.ok) throw new Error(`${method} ${path} → ${response.status}: ${await response.text()}`);
   return response;
 };
@@ -105,15 +106,15 @@ const createRepo = (name: string, description: string) =>
   send('POST', `/admin/users/${ADA.username}/repos`, { name, description, auto_init: true, default_branch: 'main', readme: 'Default', private: false });
 
 /**
- * Deletes and recreates `ada/app` (README, four labels, three issues, wiki on, no milestones) and `ada/scratch`, so a
+ * Deletes and recreates `ada/app` (README, four labels, three issues filed by ada, wiki on, no milestones) and `ada/scratch`, so a
  * run starts from the same state whatever the last run did. About two seconds.
  */
 export const resetDemo = async () => {
   await Promise.all(['app', 'scratch'].map((name) => request('DELETE', `/repos/${ADA.username}/${name}`)));
   await Promise.all([createRepo('app', 'Demo app'), createRepo('scratch', 'Scratch repository')]);
   await Promise.all(LABELS.map((label) => send('POST', `/repos/${ADA.username}/app/labels`, label)));
-  // One at a time: the numbers #1 to #3 follow the order.
-  for (const issue of ISSUES) await send('POST', `/repos/${ADA.username}/app/issues`, issue);
+  // One at a time: the numbers #1 to #3 follow the order. Ada files her own issues, so her dashboard lists them.
+  for (const issue of ISSUES) await send('POST', `/repos/${ADA.username}/app/issues`, issue, ADA.username);
 };
 
 // Readers for the suite's `passes`: the app's own state, as admin.
