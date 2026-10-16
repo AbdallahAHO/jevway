@@ -543,10 +543,22 @@ describe('screenshots as TypeSafe assets, with Box', () => {
     expect(decision.targetCheck!.visible).toBe(0.99);
     expect(decision.targetCheck!.overlap).toBeCloseTo(1);
   });
+
+  it('asks the risk of the element the box covers by name, even when no click was chosen', async () => {
+    const { ask, requests } = scriptedJev([
+      { operation: 'BLOCKED', next_click_box: boxAt(PAY_RECT), next_click_present: 0.9, next_click_commit_risk: 0.02, risk_4: 0.95 },
+    ]);
+    const decision = await decide(ask, { ...input, screenshot: 'AAAA', imageTransport: 'assets', box: true, elementRisk: 'chosen' });
+    expect(Object.keys(requests[1].questions)).toEqual(['risk_4']);
+    expect(decision).toMatchObject({ nextClick: { match: '4', commitRisk: 0.02 }, elementRisks: { '4': 0.95 }, requests: 2 });
+  });
 });
 
 describe('Box in the task loop', () => {
   const boxed = { goal: 'Pay', screenshots: 'always' as const, imageTransport: 'assets' as const, box: true };
+  // As Jev's profile runs it: the click is also judged by name, and the higher risk wins.
+  const judgedByName = { ...boxed, elementRisk: true, pageRisk: true };
+  // Without the text fields, the Pay button is click target 3 (4 on the full booking page).
   // BLOCKED with empty text fields is needs_input; these pages have none.
   const noFields = (overrides: Partial<PageState> = {}) =>
     page({ actions: bookingActions.filter((action) => action.kind !== 'fill'), ...overrides });
@@ -600,6 +612,37 @@ describe('Box in the task loop', () => {
     const run = fakeTab([noFields({ fingerprint: 'a' }), noFields({ fingerprint: 'b' })]);
     await new BrowserTask(run.asTab, safe.ask, boxed).run();
     expect(run.acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
+  });
+
+  it('a rescue onto an element that is risky by name asks for confirmation even when the box rates its target safe', async () => {
+    const { ask } = scriptedJev([
+      {
+        operation: 'BLOCKED',
+        next_click_box: boxAt(PAY_RECT),
+        next_click_present: 0.9,
+        next_click_commit_risk: 0.02,
+        risk_3: 0.95,
+      },
+    ]);
+    const { asTab, acted } = fakeTab([noFields()]);
+    const summary = await new BrowserTask(asTab, ask, judgedByName).run();
+    expect(summary).toMatchObject({ status: 'needs_confirmation' });
+    expect(acted).toEqual([]);
+  });
+
+  it('a rescue onto an element that is safe by name still clicks it', async () => {
+    const blockedOnPay = {
+      operation: 'BLOCKED',
+      next_click_box: boxAt(PAY_RECT),
+      next_click_present: 0.9,
+      next_click_commit_risk: 0.02,
+      risk_3: 0.02,
+    };
+    // The risk follow-up is the second request, so it reads the second step's script too.
+    const { ask } = scriptedJev([blockedOnPay, { operation: 'DONE', risk_3: 0.02 }]);
+    const { asTab, acted } = fakeTab([noFields({ fingerprint: 'a' }), noFields({ fingerprint: 'b' })]);
+    await new BrowserTask(asTab, ask, judgedByName).run();
+    expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
   });
 
   it('follows a confident screenshot box when the next-step head is unsure', async () => {
