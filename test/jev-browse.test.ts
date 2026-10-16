@@ -837,6 +837,54 @@ describe('per-element commit risk', () => {
       expect(buildRequest({ ...input, elementRisk: 'chosen', pageRisk: true }, space).questions).toHaveProperty('commit_risk');
       expect(buildRequest({ ...input, elementRisk: 'chosen', pageRisk: false }, space).questions).not.toHaveProperty('commit_risk');
     });
+
+    // An issue form: a Labels dropdown beside a Create button, so the page-level question reads the Create button.
+    describe('opening a collapsed control', () => {
+      const issueForm = (expanded?: string) =>
+        page({
+          actions: [
+            { id: 'labels', kind: 'click', node: 10, role: 'button', label: 'Labels', ...(expanded && { expanded }) },
+            { id: 'create', kind: 'click', node: 11, role: 'button', label: 'Create issue' },
+            { id: 'wait', kind: 'wait', label: 'Wait for the page to update' },
+          ],
+        });
+      const opening = async (form: PageState, script: Record<string, any>) => {
+        const labels = clickTargetOf(form, 'Labels');
+        const { ask } = scriptedJev([{ operation: 'CLICK', click_target: labels, [`risk_${labels}`]: 0.01, ...script }]);
+        const { asTab, acted } = fakeTab([form]);
+        const options = { goal: 'Label the issue', maxSteps: 1, elementRisk: true, pageRisk: true, changeWaitMs: 0 };
+        const task = new BrowserTask(asTab, ask, options);
+        const summary = await task.run();
+        return { summary, acted, commitRisk: task.trace[0].decision.commitRisk };
+      };
+
+      it('is judged by its name alone: the page-level question reads the Create button, not the dropdown', async () => {
+        const { summary, acted, commitRisk } = await opening(issueForm('false'), { commit_risk: 0.55 });
+        expect(commitRisk).toBe(0.01);
+        expect(acted).toEqual([{ label: 'Labels' }]);
+        expect(summary.status).not.toBe('needs_confirmation');
+      });
+
+      it('keeps the higher of the two for a control that is not collapsed', async () => {
+        const { summary, acted, commitRisk } = await opening(issueForm(), { commit_risk: 0.55 });
+        expect(commitRisk).toBe(0.55);
+        expect(summary.status).toBe('needs_confirmation');
+        expect(acted).toEqual([]);
+      });
+
+      it('keeps the higher of the two for a control that is already open', async () => {
+        const { summary, acted } = await opening(issueForm('true'), { commit_risk: 0.55 });
+        expect(summary.status).toBe('needs_confirmation');
+        expect(acted).toEqual([]);
+      });
+
+      it('still asks for confirmation when its name says irreversible', async () => {
+        const form = issueForm('false');
+        const { summary, acted } = await opening(form, { commit_risk: 0.1, [`risk_${clickTargetOf(form, 'Labels')}`]: 0.7 });
+        expect(summary.status).toBe('needs_confirmation');
+        expect(acted).toEqual([]);
+      });
+    });
   });
 });
 
@@ -1342,8 +1390,16 @@ describe('loop gotchas', () => {
       expect(acted).toEqual([]);
     });
 
-    it('a control that is safe by name but on a page judged irreversible asks for confirmation', async () => {
+    it('a collapsed control that is safe by name opens even on a page judged irreversible', async () => {
       const { ask } = scriptedJev([{ ...blockedOnMore, commit_risk: 0.9, [`risk_${more}`]: 0.02 }]);
+      const { asTab, acted } = fakeTab([foldedPage('a', 'false'), foldedPage('b', 'false')]);
+      const summary = await new BrowserTask(asTab, ask, { ...options, pageRisk: true }).run();
+      expect(summary.status).not.toBe('needs_confirmation');
+      expect(acted).toEqual([{ label: 'Show more details' }]);
+    });
+
+    it('a collapsed control judged irreversible by name still asks for confirmation when the page-level question is on', async () => {
+      const { ask } = scriptedJev([{ ...blockedOnMore, commit_risk: 0.1, [`risk_${more}`]: 0.9 }]);
       const { asTab, acted } = fakeTab([foldedPage('a', 'false'), foldedPage('b', 'false')]);
       const summary = await new BrowserTask(asTab, ask, { ...options, pageRisk: true }).run();
       expect(summary).toMatchObject({ status: 'needs_confirmation' });
