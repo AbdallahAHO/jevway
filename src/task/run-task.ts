@@ -312,6 +312,15 @@ export class BrowserTask {
         }
         const handBack = this.#handBack(decision);
         if (handBack) {
+          // A page still loading (skeleton rows have no text) gets up to changeWaitMs before the agent is asked for input or told the run is stuck.
+          if (handBack[0] === 'needs_input' || handBack[0] === 'blocked') {
+            const settled = await this.#awaitChange(page.fingerprint, page);
+            if (settled.fingerprint !== page.fingerprint) {
+              record(false);
+              page = settled;
+              continue;
+            }
+          }
           // A stop decided on a page that has since changed is stale: re-observe instead of reporting it.
           if (!(await this.#tab.fresh(page))) {
             record(false);

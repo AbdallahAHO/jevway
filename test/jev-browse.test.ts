@@ -1020,6 +1020,33 @@ describe('loop gotchas', () => {
       expect(summary.steps).toHaveLength(3);
     });
 
+    describe('a page that is still loading when Jev asks for input or says it is stuck', () => {
+      const noFields = page({ actions: bookingActions.filter((action) => action.kind !== 'fill') });
+      const arrived = page({ fingerprint: 'list arrived' });
+      const askingForInput = { operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: NO_SUPPLIED_VALUE };
+
+      it.each([
+        ['needs_input', askingForInput, page()],
+        ['blocked', { operation: 'BLOCKED' }, noFields],
+      ])('gives the page a moment before handing back %s, and goes on once it changed', async (_status, handBack, loading) => {
+        const { ask } = scriptedJev([handBack, { operation: 'DONE' }]);
+        const { asTab, acted } = fakeTab([loading, arrived]);
+        const summary = await new BrowserTask(asTab, ask, { goal: 'Open datasets', values: { name: 'Ada' }, changeWaitMs: 1000 }).run();
+        expect(summary.status).toBe('done');
+        expect(acted).toEqual([]);
+      });
+
+      it('still hands back needs_input when the page never changes, only later', async () => {
+        vi.useFakeTimers();
+        const { ask, requests } = scriptedJev([askingForInput, { operation: 'DONE' }]);
+        const running = new BrowserTask(fakeTab().asTab, ask, { goal: 'Book', values: { name: 'Ada' }, changeWaitMs: 300 }).run();
+        await vi.advanceTimersByTimeAsync(2000);
+        const summary = await running;
+        expect(summary.status).toBe('needs_input');
+        expect(requests).toHaveLength(1);
+      });
+    });
+
     it('does not count WAITs on a shimmering skeleton as a toggle or repeat loop', async () => {
       const { ask } = scriptedJev([...Array.from({ length: 8 }, () => ({ operation: 'WAIT' })), { operation: 'DONE' }]);
       const shimmer = Array.from({ length: 20 }, (_, i) => page({ fingerprint: i % 2 ? 's2' : 's1' }));
