@@ -364,6 +364,76 @@
       if (editable) actions.push({ ...base, kind: 'click', value, label: 'Open ' + base.label });
     }
   }
+  // jev-browse: controls sharing a role and label (a product grid's "Add to cart" buttons) are told apart by the card or
+  // row each sits in, as a person reads the page: "Add to cart — Sauce Labs Bike Light". Only colliding labels change;
+  // a nameless control (its label is its bare role) has nothing to share, and members whose cards read the same stay as is.
+  const squash = (text) => text.replace(/\s+/g, ' ').trim();
+  const bareLabel = (a) => (a.hover ? a.label.slice(0, -hoverSuffix.length) : a.label);
+  const alone = (list, value) => list.indexOf(value) === list.lastIndexOf(value);
+  // The biggest ancestor (up to 4 levels) holding this control and none of the other members: its card or row.
+  const cardOf = (e, members) => {
+    let card = null;
+    for (let p = e.parentElement, depth = 0; p && p !== document.body && depth < 4; p = p.parentElement, depth++) {
+      if (members.some((other) => other !== e && p.contains(other))) break;
+      card = p;
+    }
+    return card;
+  };
+  // Ways to read a card, best first: its heading, a short link (a product name), then its own text outside controls.
+  const headings = 'h1,h2,h3,h4,h5,h6,[role="heading"]';
+  const apart = (members) => (el) => visible(el) && !members.some((m) => m.contains(el) || el.contains(m));
+  const cardReadings = [
+    (card, members) => [...card.querySelectorAll(headings)].filter(apart(members)).map((h) => squash(h.innerText)),
+    (card, members) =>
+      [...card.querySelectorAll('a[href]')]
+        .filter(apart(members))
+        .map((a) => squash(a.innerText))
+        .filter((text) => text.length <= 60),
+    (card, members) => {
+      const walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
+      const words = [];
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const parent = node.parentElement,
+          control = parent.closest(interactive);
+        if ((control && card.contains(control)) || members.some((m) => m.contains(parent))) continue;
+        if (!parent.closest('script,style,noscript,template') && visible(parent)) words.push(node.textContent);
+      }
+      return [squash(words.join(' '))];
+    },
+  ];
+  const sharedLabels = new Map();
+  for (const a of actions) {
+    const label = bareLabel(a);
+    if (label === a.role || label === 'Open ' + a.role) continue;
+    const key = a.role + '\0' + label;
+    sharedLabels.set(key, [...(sharedLabels.get(key) || []), a]);
+  }
+  for (const group of sharedLabels.values()) {
+    const members = [...new Set(group.map((a) => cache.nodes.get(a.node)))];
+    if (members.length < 2) continue;
+    const shared = bareLabel(group[0]).toLowerCase();
+    const cards = members.map((e) => cardOf(e, members));
+    // The first reading that tells the most members apart wins; a context already in the label adds nothing. Repeated
+    // cards all read as something: if one member's card says nothing, the members share a card (two links to one
+    // page) and a context from the other's surroundings would mislead.
+    let best = { contexts: [], count: 0 };
+    for (const read of cardReadings) {
+      const contexts = cards.map((card) => {
+        const context = card ? cap(read(card, members).find(Boolean) || '', 60) : '';
+        return shared.includes(context.toLowerCase()) ? '' : context;
+      });
+      if (!contexts.every(Boolean)) continue;
+      const count = contexts.filter((context) => context && alone(contexts, context)).length;
+      if (count > best.count) best = { contexts, count };
+      if (count === members.length) break;
+    }
+    for (const a of group) {
+      const context = best.contexts[members.indexOf(cache.nodes.get(a.node))];
+      if (!context || !alone(best.contexts, context)) continue;
+      const suffix = a.hover ? hoverSuffix : '';
+      a.label = cap(bareLabel(a), 200 - suffix.length - context.length - 3) + ' — ' + context + suffix;
+    }
+  }
   const words = [];
   const range = document.createRange();
   let node,
