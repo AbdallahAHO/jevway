@@ -75,7 +75,7 @@ const JOBS: Job[] = [
     id: 'onboard',
     title: 'Sign up, activate, and set the full name',
     job: 'When I join a service, I want my account activated and my full name on my profile, so teammates recognise me.',
-    goal: 'Create an account with the username and email in values, then after activating it, set your full name to the name in values in your profile settings.',
+    goal: 'Create an account with the username and email in values.',
     confirms: REGISTER,
     firstDoneWhen: FIRST_DONE,
     doneWhen: 'The profile settings were saved with the full name from values, and Forgejo says the profile was updated.',
