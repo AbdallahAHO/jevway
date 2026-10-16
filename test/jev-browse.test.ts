@@ -352,7 +352,7 @@ describe('BrowserTask', () => {
   it('turns BLOCKED on empty fields without values into needs_input naming them, with no retry', async () => {
     const { ask, requests } = scriptedJev([{ operation: 'BLOCKED', value_for_1: 'name', value_for_2: NO_SUPPLIED_VALUE }]);
     const { asTab } = fakeTab();
-    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', values: { name: 'Ada' } }).run();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', values: { name: 'Ada' }, changeWaitMs: 0 }).run();
     expect(summary).toMatchObject({ status: 'needs_input', reason: 'Blocked: no supplied value for "Email address"' });
     expect(requests).toHaveLength(1);
   });
@@ -403,6 +403,7 @@ describe('BrowserTask', () => {
         url: 'http://fixture/pay',
         maxSteps: 1,
         confirmIrreversible,
+        changeWaitMs: 0,
       });
       return { summary: await task.run(), acted };
     };
@@ -424,7 +425,7 @@ describe('BrowserTask', () => {
     const run = async (commit_risk: number) => {
       const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '4', commit_risk }]);
       const { tab, asTab, acted } = fakeTab();
-      await new BrowserTask(asTab, ask, { goal: 'Pay', maxSteps: 1, screenshots: 'fallback' }).run();
+      await new BrowserTask(asTab, ask, { goal: 'Pay', maxSteps: 1, screenshots: 'fallback', changeWaitMs: 0 }).run();
       return { requests, screenshots: tab.screenshots, acted };
     };
 
@@ -716,7 +717,7 @@ describe('per-element commit risk', () => {
     const run = async (script: Record<string, any>) => {
       const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '4', ...script }]);
       const { asTab, acted } = fakeTab();
-      const summary = await new BrowserTask(asTab, ask, { goal: 'Pay', maxSteps: 1, elementRisk: true, pageRisk: true }).run();
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Pay', maxSteps: 1, elementRisk: true, pageRisk: true, changeWaitMs: 0 }).run();
       return { summary, acted };
     };
 
@@ -918,14 +919,15 @@ describe('Box in the task loop', () => {
 
   it('clicks a box the DOM never reported only with allowCoordinateClicks', async () => {
     const canvasOnly = { operation: 'BLOCKED', next_click_box: boxAt({ x: 100, y: 400, w: 100, h: 50 }), next_click_present: 0.9 };
+    const options = { ...boxed, changeWaitMs: 0 };
     const off = scriptedJev([canvasOnly]);
     const offTab = fakeTab([noFields()]);
-    expect((await new BrowserTask(offTab.asTab, off.ask, boxed).run()).status).toBe('blocked');
+    expect((await new BrowserTask(offTab.asTab, off.ask, options).run()).status).toBe('blocked');
     expect(offTab.tab.clicksAt).toEqual([]);
 
     const on = scriptedJev([canvasOnly, { operation: 'DONE' }]);
     const onTab = fakeTab([noFields({ fingerprint: 'a' }), noFields({ fingerprint: 'b' })]);
-    const summary = await new BrowserTask(onTab.asTab, on.ask, { ...boxed, allowCoordinateClicks: true }).run();
+    const summary = await new BrowserTask(onTab.asTab, on.ask, { ...options, allowCoordinateClicks: true }).run();
     expect(onTab.tab.clicksAt).toHaveLength(1);
     expect(onTab.tab.clicksAt[0].x).toBeCloseTo(150);
     expect(onTab.tab.clicksAt[0].y).toBeCloseTo(425);
@@ -1055,7 +1057,7 @@ describe('loop gotchas', () => {
       { operation: 'CLICK', click_target: '1', done_check: 0.1 },
       { operation: 'BLOCKED' },
     ]);
-    const once = await new BrowserTask(fakeTab(pages).asTab, spike.ask, { goal: 'x', doneWhen: 'y' }).run();
+    const once = await new BrowserTask(fakeTab(pages).asTab, spike.ask, { goal: 'x', doneWhen: 'y', changeWaitMs: 0 }).run();
     expect(once.status).not.toBe('done');
   });
 
