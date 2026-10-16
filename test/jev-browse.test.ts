@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CdpError, type CdpConnection } from '../src/browser/cdp.ts';
 import * as chrome from '../src/browser/chrome.ts';
 import { jpegSize, PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
-import { showsTarget } from '../src/browser/words.ts';
+import { messageNames, showsTarget } from '../src/browser/words.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
 import { buildRequest, decide, NO_SUPPLIED_VALUE, overflowFolds, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
 import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
@@ -179,8 +179,20 @@ const fakeTab = (pages: PageState[] = [page()]) => {
     /** Dialogs the page opened and the tab answered, until the run takes them. */
     dialogs: [] as { type: string; message: string; accepted: boolean }[],
     takeDialogs: () => tab.dialogs.splice(0),
+    /** What the run armed for the next confirm dialog, and what was armed each time it acted. */
+    armed: undefined as string[] | undefined,
+    armedAtAct: [] as (string[] | undefined)[],
+    armConfirm: (phrases: string[]) => {
+      tab.armed = phrases;
+    },
+    disarmConfirm: () => {
+      tab.armed = undefined;
+    },
+    /** A dialog every click opens, as the tab would have answered it. */
+    dialogOnAct: undefined as { type: string; message: string; accepted: boolean } | undefined,
     act: async (action: PageAction, _page: PageState, text?: string, options?: { evenIfChanged?: boolean }) => {
       tab.calls.push({ kind: action.kind, forced: Boolean(options?.evenIfChanged) });
+      tab.armedAtAct.push(tab.armed);
       if (tab.busy && PAGE_LEVEL_KINDS.includes(action.kind) && !options?.evenIfChanged) {
         throw new StalePage('Page changed since this decision');
       }
@@ -193,6 +205,7 @@ const fakeTab = (pages: PageState[] = [page()]) => {
         throw new TargetUnreachable('covered');
       }
       acted.push({ label: action.label, ...(text && { text }) });
+      if (tab.dialogOnAct) tab.dialogs.push(tab.dialogOnAct);
     },
   };
   return { tab, acted, asTab: tab as unknown as Tab };
@@ -216,6 +229,29 @@ describe('the words a confirmation quotes', () => {
     ['v1.2', 'Release v1.2.3'],
   ])('does not find "%s" inside a longer word in "%s"', (target, shown) => {
     expect(showsTarget(target, 'Delete', [shown])).toBe(false);
+  });
+});
+
+describe('a dialog that names the click the caller confirmed', () => {
+  const DRAFT_COMMENTS =
+    'Page will be reloaded, but there are draft comments. Continuing to reload will discard the comments. Continue?';
+
+  it.each([
+    ['Delete the draft?', ['the draft', 'Delete draft']],
+    ['Delete ada/scratch? This cannot be undone.', ['ada/scratch', 'Delete this repository']],
+    ['Really delete this repository?', ['ada/app', 'Delete this repository']],
+  ])('names it: "%s"', (message, phrases) => {
+    expect(messageNames(message, phrases)).toBe(true);
+  });
+
+  it.each([
+    [DRAFT_COMMENTS, ['Labels', 'Labels']],
+    [DRAFT_COMMENTS, ['Safari', 'Comment']],
+    ['Delete your account and all its data?', ['profile', 'Save profile']],
+    ['Delete the draft?', ['', '']],
+    ['Delete the draft?', ['the', 'qq']],
+  ])('does not name it: "%s" for %j', (message, phrases) => {
+    expect(messageNames(message, phrases)).toBe(false);
   });
 });
 
@@ -777,6 +813,89 @@ describe('BrowserTask', () => {
       await task.run();
 
       expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
+    });
+  });
+
+  describe('the confirm dialog a confirmed click opens', () => {
+    const PAY = 'Confirm booking and pay €412';
+    const pay = { operation: 'CLICK', click_target: '4', commit_risk: 0.9 };
+    const safe = { operation: 'CLICK', click_target: '4', commit_risk: 0.1 };
+    const pages = () => Array.from({ length: 12 }, (_, i) => page({ fingerprint: String(i) }));
+    const options = { goal: 'Pay', maxSteps: 1, changeWaitMs: 0 };
+    // What the tab records when it answered OK to the dialog the click opened.
+    const answeredOk = { type: 'confirm', message: 'Pay €412 now?', accepted: true };
+    const confirmed = { confirmIrreversible: true, confirmTarget: STAYLIST };
+
+    it('arms the next confirm with the user\'s words and the control\'s label, and notes the OK on the step', async () => {
+      const { ask } = scriptedJev([pay]);
+      const { tab, asTab } = fakeTab(pages());
+      const task = new BrowserTask(asTab, ask, options);
+      expect((await task.run()).status).toBe('needs_confirmation');
+      expect(tab.armedAtAct).toEqual([]);
+
+      tab.dialogOnAct = answeredOk;
+      task.update(confirmed);
+      const summary = await task.run();
+
+      expect(tab.armedAtAct).toEqual([[STAYLIST, PAY]]);
+      expect(summary.steps[0].element).toContain('asked "Pay €412 now?" in a confirm dialog; answered OK (the click the caller confirmed)');
+    });
+
+    it('never arms a click the caller did not confirm', async () => {
+      const { ask } = scriptedJev([pay]);
+      const { tab, asTab, acted } = fakeTab(pages());
+      expect((await new BrowserTask(asTab, ask, options).run()).status).toBe('needs_confirmation');
+      expect(acted).toEqual([]);
+      expect(tab.armedAtAct).toEqual([]);
+      expect(tab.armed).toBeUndefined();
+    });
+
+    it('never arms a click that is not risky, even with a confirmation waiting', async () => {
+      const { ask } = scriptedJev([safe]);
+      const { tab, asTab, acted } = fakeTab(pages());
+      const task = new BrowserTask(asTab, ask, options);
+      task.update(confirmed);
+      await task.run();
+      expect(acted).toEqual([{ label: PAY }]);
+      expect(tab.armedAtAct).toEqual([undefined]);
+    });
+
+    it('takes the arm back after the step, also when no dialog opened', async () => {
+      const { ask } = scriptedJev([pay]);
+      const { tab, asTab, acted } = fakeTab(pages());
+      const task = new BrowserTask(asTab, ask, options);
+      task.update(confirmed);
+      await task.run();
+      expect(acted).toEqual([{ label: PAY }]);
+      expect(tab.armedAtAct).toEqual([[STAYLIST, PAY]]);
+      expect(tab.armed).toBeUndefined();
+    });
+
+    it('does not carry the arm into the next step when the click never reached the page', async () => {
+      const { ask } = scriptedJev([pay, safe]);
+      const { tab, asTab, acted } = fakeTab(pages());
+      tab.staleOnce = true;
+      const task = new BrowserTask(asTab, ask, options);
+      task.update(confirmed);
+      await task.run();
+      expect(acted).toEqual([{ label: PAY }]);
+      expect(tab.armedAtAct).toEqual([[STAYLIST, PAY], undefined]);
+    });
+
+    it('does not count an accepted confirm toward "the page keeps asking", where a declined one is a loop', async () => {
+      const dialogTwice = async (accepted: boolean) => {
+        const { ask } = scriptedJev([pay]);
+        const { tab, asTab } = fakeTab(pages());
+        tab.dialogOnAct = { ...answeredOk, accepted };
+        const task = new BrowserTask(asTab, ask, options);
+        task.update(confirmed);
+        await task.run();
+        expect((await task.run()).status).toBe('needs_confirmation');
+        task.update(confirmed);
+        return task.run();
+      };
+      expect((await dialogTwice(true)).status).toBe('step_budget');
+      expect((await dialogTwice(false)).status).toBe('blocked');
     });
   });
 

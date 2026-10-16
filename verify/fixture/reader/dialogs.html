@@ -5,19 +5,32 @@
 <title>Native dialogs</title>
 </head>
 <body>
-<!-- A site's native dialogs: a confirm, an alert, and a beforeunload guard on a half-typed draft. -->
+<!-- A site's native dialogs: confirms, an alert, a prompt, and a beforeunload guard on a half-typed draft. -->
 <button type="button" id="discard">Discard draft</button>
 <button type="button" id="notice">Notice</button>
+<button type="button" id="delete-draft">Delete draft</button>
+<!-- Closing this menu reloads the page, which asks about the draft comments rather than about the menu. -->
+<button type="button" id="labels">Labels</button>
+<button type="button" id="rename">Rename</button>
 <textarea id="draft" aria-label="Draft"></textarea>
 <button type="button" id="reload">Reload</button>
 <script>
-  window.__fixture = { answer: null, afterAlert: false };
+  window.__fixture = { answer: null, afterAlert: false, deleted: null, discarded: null, renamed: 'untouched' };
   document.getElementById('discard').addEventListener('click', () => {
     window.__fixture.answer = confirm('Discard the draft?');
   });
   document.getElementById('notice').addEventListener('click', () => {
     alert('Saved');
     window.__fixture.afterAlert = true;
+  });
+  document.getElementById('delete-draft').addEventListener('click', () => {
+    window.__fixture.deleted = confirm('Delete the draft?');
+  });
+  document.getElementById('labels').addEventListener('click', () => {
+    window.__fixture.discarded = confirm('Page will be reloaded, but there are draft comments. Continuing to reload will discard the comments. Continue?');
+  });
+  document.getElementById('rename').addEventListener('click', () => {
+    window.__fixture.renamed = prompt('Rename the draft?', 'x');
   });
   addEventListener('beforeunload', (event) => {
     if (document.getElementById('draft').value) event.preventDefault();

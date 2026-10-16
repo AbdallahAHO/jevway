@@ -803,6 +803,68 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'a confirmed click answers OK to its own confirm dialog, and nothing else does',
+    file: 'dialogs.html',
+    run: async (tab) => {
+      const press = async (label: RegExp) => {
+        const page = await tab.observe();
+        const button = find(page.actions, 'button', label);
+        assert.ok(button, `${label} not listed: ${labelsOf(page.actions)}`);
+        await tab.act(button, page);
+      };
+      const answered = (message: string, accepted: boolean) => [{ type: 'confirm', message, accepted }];
+      const DELETE = 'Delete the draft?';
+
+      // Nothing armed: the answer that changes nothing.
+      await press(/^Delete draft$/);
+      assert.equal((await fixtureState(tab)).deleted, false);
+      assert.deepEqual(tab.takeDialogs(), answered(DELETE, false));
+
+      // Armed with the user's words and the control's label, the click's own dialog names them: OK.
+      tab.armConfirm(['the draft', 'Delete draft']);
+      await press(/^Delete draft$/);
+      assert.equal((await fixtureState(tab)).deleted, true);
+      assert.deepEqual(tab.takeDialogs(), answered(DELETE, true));
+
+      // The arm went with that dialog: the same click again is declined.
+      await press(/^Delete draft$/);
+      assert.equal((await fixtureState(tab)).deleted, false);
+      assert.deepEqual(tab.takeDialogs(), answered(DELETE, false));
+
+      // An arm the loop took back at the end of its step answers nothing, even for a dialog that names the words.
+      tab.armConfirm(['the draft', 'Delete draft']);
+      tab.disarmConfirm();
+      await press(/^Discard draft$/);
+      assert.equal((await fixtureState(tab)).answer, false);
+      assert.deepEqual(tab.takeDialogs(), answered('Discard the draft?', false));
+
+      // A dialog about something else than the confirmed click (the draft comments a reload would discard) stays declined.
+      tab.armConfirm(['Labels', 'Labels']);
+      await press(/^Labels$/);
+      assert.equal((await fixtureState(tab)).discarded, false, 'the draft comments were discarded');
+      const [reload] = tab.takeDialogs();
+      assert.equal(reload.type, 'confirm');
+      assert.equal(reload.accepted, false);
+
+      // A prompt and a leave-the-page guard are never accepted, armed or not.
+      tab.armConfirm(['Rename the draft', 'Rename']);
+      await press(/^Rename$/);
+      assert.equal((await fixtureState(tab)).renamed, null);
+      assert.deepEqual(tab.takeDialogs(), [{ type: 'prompt', message: 'Rename the draft?', accepted: false }]);
+      tab.disarmConfirm();
+
+      const page = await tab.observe();
+      const draft = page.actions.find((action) => action.kind === 'fill');
+      assert.ok(draft, `no draft field: ${labelsOf(page.actions)}`);
+      await tab.act(draft, page, 'half-typed comment');
+      tab.armConfirm(['Reload', 'Reload']);
+      await press(/^Reload$/);
+      assert.equal(await tab.evaluate('document.getElementById("draft").value'), 'half-typed comment', 'the page left');
+      assert.deepEqual(tab.takeDialogs(), [{ type: 'beforeunload', message: '', accepted: false }]);
+      tab.disarmConfirm();
+    },
+  },
+  {
     name: 'escape and scroll refused once on a page whose text keeps changing run when forced',
     file: 'busy-page-menu.html',
     run: async (tab) => {
