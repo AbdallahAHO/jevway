@@ -365,6 +365,23 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'a focusable dropdown trigger with an unknown role is listed as a button and opens',
+    file: 'fomantic-dropdown.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const trigger = find(page.actions, 'button', /^Profile and settings…$/);
+      assert.ok(trigger, `trigger not listed: ${labelsOf(page.actions)}`);
+      assert.equal(trigger.expanded, 'false');
+      assert.ok(!page.actions.some((action) => /Plain menu/.test(action.label)), `a plain menu container is listed: ${labelsOf(page.actions)}`);
+      await tab.act(trigger, page);
+      const opened = await tab.observe();
+      const settings = find(opened.actions, 'menuitem', /^Settings$/);
+      assert.ok(settings, `Settings not listed after opening the menu: ${labelsOf(opened.actions)}`);
+      await tab.act(settings, opened);
+      assert.equal((await fixtureState(tab)).opened, 'settings');
+    },
+  },
+  {
     name: 'a row action with opacity 0 until its row is hovered is listed as appearing on hover',
     file: 'hover-row-actions.html',
     run: async (tab) => {

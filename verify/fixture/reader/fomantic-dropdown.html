@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fomantic dropdown</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  header { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 16px; background: #f3f3f3; }
+  /* Fomantic UI's user menu: a div with a role the reader does not list, announcing what it opens with aria-expanded. */
+  .dropdown { position: relative; padding: 6px 10px; cursor: pointer; }
+  .dropdown img { width: 24px; height: 24px; border-radius: 50%; background: #888; vertical-align: middle; }
+  .menu { position: absolute; top: 100%; right: 0; min-width: 160px; background: #fff; border: 1px solid #bbb; }
+  .menu[hidden] { display: none; }
+  .menu a { display: block; padding: 8px 12px; color: inherit; text-decoration: none; }
+  main { padding: 16px; }
+  /* A plain menu container: tabbable and given the same role, but it opens nothing. */
+  .plain { border: 1px solid #ddd; padding: 8px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div id="user" class="dropdown" role="menu" aria-haspopup="" aria-expanded="false" aria-controls="user-menu" aria-label="Profile and settings…" tabindex="0">
+    <img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
+    <div id="user-menu" class="menu" hidden>
+      <a href="#" role="menuitem">Profile</a>
+      <a href="#" role="menuitem" id="settings">Settings</a>
+      <a href="#" role="menuitem">Sign out</a>
+    </div>
+  </div>
+</header>
+<main>
+  <div class="plain" role="menu" tabindex="0" aria-label="Plain menu">
+    A list of recent items, always shown.
+  </div>
+</main>
+<script>
+  window.__fixture = { opened: null };
+  const user = document.getElementById('user');
+  const menu = document.getElementById('user-menu');
+  user.addEventListener('click', () => {
+    menu.hidden = !menu.hidden;
+    user.setAttribute('aria-expanded', String(!menu.hidden));
+  });
+  document.getElementById('settings').addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    window.__fixture.opened = 'settings';
+    menu.hidden = true;
+    user.setAttribute('aria-expanded', 'false');
+  });
+</script>
+</body>
+</html>
