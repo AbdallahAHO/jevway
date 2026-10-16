@@ -40,6 +40,8 @@ export interface RunResult {
   summaries: TaskSummary[];
   /** The values the calling agent passed in its second call. */
   followUp?: Record<string, string>;
+  /** Two-call jobs: the first call ended done but the table had no row to continue with, so the second call never ran. */
+  followUpMissing?: boolean;
   error?: string;
 }
 
@@ -90,12 +92,14 @@ const actions = (r: RunResult) => r.summaries.reduce((t, s) => t + s.steps.lengt
 const statuses = (r: RunResult) => r.summaries.map((s) => s.status).join(' → ');
 const verdict = (r: RunResult) => (r.passed ? 'pass' : r.reached ? 'some' : 'fail');
 
+const noRowForSecondCall = 'The first call ended done but the table had no row to continue with, so the second call never ran.';
+
 const runChip = (r: RunResult) => {
   // A run that needed no action started on a page that already met the goal (state saved by an earlier run).
   const already = r.summaries.length && actions(r) === 0 ? ' · already met at start' : '';
   const detail = r.summaries.length ? `${statuses(r)} · ${seconds(elapsed(r))} · ${requests(r)} req${already}` : 'error';
   const mark = r.passed ? '✔' : r.reached ? '◐' : '✘';
-  return `<a class="chip ${verdict(r)}" href="${r.dir}index.html" title="${escape(r.summaries.at(-1)?.reason ?? r.error ?? '')}">${mark} Run ${r.run} · ${detail}</a>`;
+  return `<a class="chip ${verdict(r)}" href="${r.dir}index.html" title="${escape(r.followUpMissing ? noRowForSecondCall : (r.summaries.at(-1)?.reason ?? r.error ?? ''))}">${mark} Run ${r.run} · ${detail}</a>`;
 };
 
 const stepList = (featured: RunResult, recording: Recording, videoId: string) =>
@@ -124,7 +128,13 @@ const jobSection = (
     .filter((r) => !r.passed)
     .map((r) => {
       const last = r.summaries.at(-1);
-      const why = r.error ?? (r.reached ? `reached the right page, but Jev reported ${last?.status}: ${last?.reason}` : `${last?.status}: ${last?.reason}`);
+      const why =
+        r.error ??
+        (r.followUpMissing
+          ? noRowForSecondCall
+          : r.reached
+            ? `reached the right page, but Jev reported ${last?.status}: ${last?.reason}`
+            : `${last?.status}: ${last?.reason}`);
       return `<li class="${verdict(r)}">Run ${r.run}: ${escape(why)}${r.url ? ` <span class="url">${escape(r.url)}</span>` : ''}</li>`;
     })
     .join('');

@@ -36,6 +36,22 @@ const readTable = async (tab: Tab): Promise<Record<string, string>[]> =>
       Object.fromEntries([...tr.children].map((td, i) => [headers[i] ?? String(i), td.innerText.trim()])));
   })()`);
 
+// A list's rows can arrive after the first call reports the list.
+const FOLLOW_UP_WAIT_MS = 5_000;
+const FOLLOW_UP_POLL_MS = 250;
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// A calling agent's second call: the job's follow-up from the table, polled only when the first call ended on the list.
+const readFollowUp = async (tab: Tab, followUp: NonNullable<Job['followUp']>, firstCallDone: boolean) => {
+  const deadline = Date.now() + (firstCallDone ? FOLLOW_UP_WAIT_MS : 0);
+  for (;;) {
+    const rows = await readTable(tab);
+    const next = followUp(rows);
+    if (next || Date.now() >= deadline) return { next, rowCount: rows.length };
+    await sleep(FOLLOW_UP_POLL_MS);
+  }
+};
+
 // A dropped DevTools connection is replaced between runs; past this many replacements the suite stops.
 const MAX_RECONNECTS = 3;
 const CONNECTION_CLOSED = 'Browser connection closed';
@@ -127,7 +143,9 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before }: 
           });
           const summaries = [await task.run()];
           // Two-call jobs: like a calling agent, read the page's table and continue the same session with a value.
-          const next = job.followUp?.(await readTable(tab));
+          const firstCallDone = summaries[0].status === 'done';
+          const { next, rowCount } = (job.followUp && (await readFollowUp(tab, job.followUp, firstCallDone))) || {};
+          const followUpMissing = Boolean(job.followUp && firstCallDone && !next);
           if (next) {
             task.update({ ...next, doneWhen: job.doneWhen });
             summaries.push(await task.run());
@@ -140,9 +158,10 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before }: 
           // A pass needs both: the page is right and Jev said so. Right page with another status is only "reached".
           const passed = reached && summary.status === 'done';
           writeFileSync(new URL(`${dir}trace.json`, outDir), JSON.stringify(task.trace, null, 1));
-          result.runs.push({ run, dir, passed, reached, url: url.href, summaries, ...(next && { followUp: next.values }) });
+          result.runs.push({ run, dir, passed, reached, url: url.href, summaries, ...(next && { followUp: next.values }), ...(followUpMissing && { followUpMissing }) });
+          const whyNot = followUpMissing ? `no matching row for the second call (read ${rowCount} rows)` : summary.reason;
           process.stdout.write(
-            `${passed ? '✔' : reached ? '◐' : '✘'} ${job.id} #${run} — ${summaries.map((s) => s.status).join(' → ')} in ${summaries.reduce((t, s) => t + s.elapsed_ms, 0)}ms · ${summaries.reduce((t, s) => t + s.steps.length, 0)} actions · ${summaries.reduce((t, s) => t + s.jev.requests, 0)} requests${passed ? '' : ` · ${summary.reason} · ${url.href}`}\n`,
+            `${passed ? '✔' : reached ? '◐' : '✘'} ${job.id} #${run} — ${summaries.map((s) => s.status).join(' → ')} in ${summaries.reduce((t, s) => t + s.elapsed_ms, 0)}ms · ${summaries.reduce((t, s) => t + s.steps.length, 0)} actions · ${summaries.reduce((t, s) => t + s.jev.requests, 0)} requests${passed ? '' : ` · ${whyNot} · ${url.href}`}\n`,
           );
         } catch (error) {
           const { message } = error as Error;
