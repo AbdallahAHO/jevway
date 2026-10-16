@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { CdpError, type CdpConnection, type CdpListener } from './cdp.ts';
 import { DEVICES, type Device } from './devices.ts';
+import { messageNames } from './words.ts';
 
 // Atomic DOM read from browser-use/jev-ultrafast (MIT): visible text + indexed controls + freshness guards.
 const READ_STATE = readFileSync(new URL('./snapshot.js', import.meta.url), 'utf8');
@@ -73,7 +74,7 @@ export interface DialogRecord {
   /** `alert`, `confirm`, `prompt` or `beforeunload`. */
   type: string;
   message: string;
-  /** True only for an alert's OK; every other dialog is declined. */
+  /** True for an alert's OK and for the confirm a confirmed click opened (see `Tab.armConfirm`); every other dialog is declined. */
   accepted: boolean;
 }
 
@@ -106,6 +107,8 @@ export class Tab {
   #wanted: string[] = [];
   #touch = false;
   #dialogs: DialogRecord[] = [];
+  /** The phrases the next confirm dialog must name to get OK; set only around a click the caller confirmed. */
+  #confirmArm: string[] | undefined;
   private cdp: CdpConnection;
   readonly targetId: string;
   private sessionId: string;
@@ -272,12 +275,30 @@ export class Tab {
     return tab;
   }
 
-  // jev-browse: an open dialog freezes the page for every protocol call, so it is answered at once, always with the choice
-  // that changes nothing: OK only for an alert (its only button), Cancel for confirm and prompt, Stay for beforeunload.
+  // jev-browse: an open dialog freezes the page for every protocol call, so it is answered at once, with the choice that
+  // changes nothing: OK for an alert (its only button), Cancel for confirm and prompt, Stay for beforeunload. The one
+  // exception is the confirm dialog a confirmed click opens, when its message names the confirmed target or the control:
+  // that is the same action asking again. Any other dialog, including one the same click opens about something else, is declined.
   #answerDialog({ type, message }: { type: string; message?: string }) {
-    const accepted = type === 'alert';
+    const armed = type === 'confirm' ? this.#confirmArm : undefined;
+    // The arm covers the first confirm after it, named or not.
+    if (type === 'confirm') this.#confirmArm = undefined;
+    const accepted = type === 'alert' || (armed !== undefined && messageNames(message ?? '', armed));
     this.#dialogs.push({ type, message: message ?? '', accepted });
     void this.#call('Page.handleJavaScriptDialog', { accept: accepted }).catch(() => undefined);
+  }
+
+  /**
+   * One shot, for a click the caller confirmed: the next confirm dialog gets OK if its message names one of `phrases`
+   * (the confirmed target, the clicked control). Prompts and leave-the-page guards are never accepted.
+   */
+  armConfirm(phrases: string[]) {
+    this.#confirmArm = phrases;
+  }
+
+  /** Takes the arm back; the run does so when the step that armed it is over. */
+  disarmConfirm() {
+    this.#confirmArm = undefined;
   }
 
   /** The dialogs the page opened (and this tab answered) since the last call, oldest first. */

@@ -327,6 +327,8 @@ export class BrowserTask {
       if (repeatedAtStart) return stop('blocked', repeatedAtStart);
       page = await this.#tab.observe();
       while (executed < maxSteps) {
+        // The arm belongs to one step: a click that never reached the page leaves none for the next decision.
+        this.#tab.disarmConfirm();
         if (++decisions > maxSteps * 2) return stop('step_budget', `Made ${maxSteps * 2} decisions without finishing`);
         let decision: Decision;
         try {
@@ -457,6 +459,8 @@ export class BrowserTask {
         const action = decision.action!;
         const text = decision.valueKey ? values[decision.valueKey] : undefined;
         let element: string;
+        // jev-browse: the dialog a confirmed click opens is the same action asking again; any other dialog still gets the answer that changes nothing.
+        if (isRiskyClick(decision) && this.#confirmedCommit) this.#tab.armConfirm([this.#confirmTarget ?? '', bareLabel(decision.action?.label ?? '')]);
         try {
           await this.#recording?.step(
             this.#tab,
@@ -573,6 +577,7 @@ export class BrowserTask {
           this.#openedByRun.add(action.node!);
         }
         const repeatedDialog = this.#reportDialogs(firstStep);
+        this.#tab.disarmConfirm();
         if (repeatedDialog) return stop('blocked', repeatedDialog, decision);
         if (repeatingWithoutEffect(this.#history)) {
           const ended = await stopAfterLastLook('blocked', 'The last 3 actions did not change the page', decision);
@@ -600,6 +605,8 @@ export class BrowserTask {
       return stop('step_budget', `Reached ${maxSteps} actions without finishing`);
     } catch (error) {
       return stop('blocked', describeError(error));
+    } finally {
+      this.#tab.disarmConfirm();
     }
   }
 
@@ -609,12 +616,12 @@ export class BrowserTask {
     let repeated: string | undefined;
     for (const dialog of this.#tab.takeDialogs()) {
       const message = dialog.message.slice(0, DIALOG_MESSAGE_CHARS);
-      this.#dialogNotes.push(`the page then ${describeDialog(dialog.type, message)}`);
+      this.#dialogNotes.push(`the page then ${describeDialog(dialog.type, message, dialog.accepted)}`);
       const key = `${dialog.type}\n${message}`;
       const seen = (this.#dialogsSeen.get(key) ?? 0) + 1;
       this.#dialogsSeen.set(key, seen);
-      // An alert's OK changes nothing, so a repeated one is no loop; a declined confirm, prompt or leave-the-page prompt that returns is.
-      if (seen > 1 && dialog.type !== 'alert') {
+      // An alert's OK and the OK for a confirmed click's own confirm are no loop; a declined confirm, prompt or leave-the-page prompt that returns is.
+      if (seen > 1 && !dialog.accepted) {
         repeated ??= `The page keeps asking ${message ? `"${message}" ` : ''}(${dialog.type} dialog). jev-browse only answers Cancel to these; ask the user how to proceed.`;
       }
     }
@@ -990,10 +997,10 @@ const contradictsDoneSpike = (decision: Decision, screenshots: ScreenshotMode) =
   screenshots === 'fallback' && !['DONE', 'WAIT', 'BLOCKED'].includes(decision.operation) && decision.confidence >= HEAD_DISAGREES;
 
 // What a caller reads in a step: the dialog's kind and the one answer given (see Tab.#answerDialog).
-const describeDialog = (type: string, message: string) => {
+const describeDialog = (type: string, message: string, accepted: boolean) => {
   if (type === 'alert') return `showed an alert "${message}"; answered OK`;
   if (type === 'beforeunload') return 'asked whether to leave the page; stayed on it';
-  return `asked "${message}" in a ${type} dialog; answered Cancel`;
+  return `asked "${message}" in a ${type} dialog; answered ${accepted ? 'OK (the click the caller confirmed)' : 'Cancel'}`;
 };
 
 const stuckOn = (decision: Decision) => ({

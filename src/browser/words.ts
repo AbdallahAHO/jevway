@@ -38,3 +38,20 @@ export const showsTarget = (target: string, control: string, shown: string[]) =>
   const corpus = shown.map(normalized).join('\n');
   return specific.length > 0 && specific.every((word) => appearsWhole(word, corpus));
 };
+
+/**
+ * Whether a dialog's message names what the caller confirmed or the control they clicked: every word of either phrase
+ * (3+ characters, not filler) is in it, whole. A dialog about something else, like the draft comments a reload would
+ * discard, names neither.
+ *
+ * @example
+ * messageNames('Delete the draft?', ['the draft', 'Delete draft']) // true
+ * messageNames('Page will be reloaded, but there are draft comments. Continue?', ['Labels', 'Labels']) // false
+ */
+export const messageNames = (message: string, phrases: string[]) => {
+  const text = normalized(message);
+  return phrases.some((phrase) => {
+    const words = wordsOf(phrase).filter((word) => !FILLER_WORDS.has(word));
+    return words.length > 0 && words.every((word) => appearsWhole(word, text));
+  });
+};
