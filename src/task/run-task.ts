@@ -56,6 +56,8 @@ export interface TaskSummary {
   done_probability?: number;
   /** Present whenever control returns before DONE: what Jev was deciding. */
   stuck?: { operation: string; element?: string; candidates: Candidate[] };
+  /** Present once, when this call's `confirm_irreversible` was dropped because the previous call did not end `needs_confirmation`. */
+  confirm_ignored?: string;
 }
 
 export interface TraceEntry {
@@ -173,6 +175,9 @@ export class BrowserTask {
   #inputTokens = 0;
   #screenshots = 0;
   #confirmedCommit = false;
+  /** How the previous call ended (none before the first), and the status a dropped confirmation is reported against. */
+  #lastStatus: TaskStatus | undefined;
+  #confirmIgnored: TaskStatus | undefined;
   // Dialogs the page opened that no step carries yet, and how often each one has come back.
   #dialogNotes: string[] = [];
   #dialogsSeen = new Map<string, number>();
@@ -217,7 +222,10 @@ export class BrowserTask {
   update(patch: Partial<TaskOptions> & { confirmIrreversible?: boolean }) {
     const { confirmIrreversible, values, recordDir: _recordDir, ...options } = patch;
     this.#options = { ...this.#options, ...definedOnly(options), values: { ...this.#options.values, ...values } };
-    if (confirmIrreversible) this.#confirmedCommit = true;
+    if (!confirmIrreversible) return;
+    // A confirmation answers the question jev-browse asked, so a flag carried onto a later call allows nothing (an unused earlier one stands).
+    if (this.#lastStatus === undefined || this.#lastStatus === 'needs_confirmation') this.#confirmedCommit = true;
+    else if (!this.#confirmedCommit) this.#confirmIgnored = this.#lastStatus;
   }
 
   async run(): Promise<TaskSummary> {
@@ -248,6 +256,9 @@ export class BrowserTask {
     const stop = (status: TaskStatus, reason: string, decision?: Decision): TaskSummary => {
       // A dialog that opened late still belongs on the step that caused it.
       this.#reportDialogs(firstStep);
+      const confirmIgnored = this.#confirmIgnored;
+      this.#confirmIgnored = undefined;
+      this.#lastStatus = status;
       return {
         status,
         reason,
@@ -265,6 +276,7 @@ export class BrowserTask {
         },
         ...(decision?.doneProbability !== undefined && { done_probability: round(decision.doneProbability) }),
         ...(status !== 'done' && decision && { stuck: stuckOn(decision) }),
+        ...(confirmIgnored && { confirm_ignored: `the previous call ended ${confirmIgnored}, not needs_confirmation` }),
       };
     };
 
