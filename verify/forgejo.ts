@@ -164,8 +164,20 @@ const JOBS: Job[] = [
   },
 ];
 
+// A calling agent opens the page its user means, as the real-agent suite's agent did: from the repository page the model
+// picks the global navbar's "Issues" and "Milestones", which list nothing of this repository.
+const START_PAGE: Record<string, string> = {
+  'new-issue': `${APP_URL}/issues`,
+  comment: `${APP_URL}/issues`,
+  'close-issue': `${APP_URL}/issues`,
+  'add-label': `${APP_URL}/issues`,
+  milestone: `${APP_URL}/milestones`,
+  'delete-label': `${APP_URL}/labels`,
+  'bad-name': `${ORIGIN}/`,
+};
+
 // The harness, not the agent, signs ada in; an agent hunting for a login form is not what these jobs measure.
-const signIn = async (tab: Tab) => {
+const signIn = async (tab: Tab, startPage: string) => {
   await tab.navigate(`${ORIGIN}/user/login`);
   // The session cookie outlives the tab: when it is still good, the login page redirects away.
   if (await tab.evaluate(`Boolean(document.querySelector('#user_name'))`)) {
@@ -185,7 +197,7 @@ const signIn = async (tab: Tab) => {
   if (await tab.evaluate(`Boolean(document.querySelector('#user_name'))`)) {
     throw new Error(`Cannot sign in to Forgejo as ${ADA.username}: run \`pnpm apps:forgejo:up\` to seed the users.`);
   }
-  await tab.navigate(APP_URL);
+  await tab.navigate(startPage);
 };
 
 if (!(await stackIsUp())) {
@@ -199,6 +211,6 @@ await runJobs({
   startUrl: APP_URL,
   browser: process.env.JEV_FORGEJO_BROWSER ?? 'launch-headless',
   jobs: JOBS,
-  before: signIn,
+  before: (tab, job) => signIn(tab, START_PAGE[job.id] ?? APP_URL),
   reset: () => resetDemo(),
 });
