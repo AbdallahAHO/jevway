@@ -137,6 +137,8 @@ const SPIKE_CONFIRMED = LAST_LOOK_DONE;
 const SEARCH_LIKE = /search|query|find|filter/i;
 const UNSAVED_EDIT_NOTE =
   'not accepted: the last step changed a field and nothing was saved or submitted since; save or submit it, then say DONE';
+// The rows of a menu or picker the run opened: a supplied value listed in one is picked before the form is sent.
+const MENU_OPTION_ROLES = ['option', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'checkbox'];
 // A covered target is fed back as history so Jev can clear it (dismiss a popover); this many times per run.
 const MAX_COVERED_RETRIES = 2;
 const ESCAPE: PageAction = { id: 'press_escape', kind: 'escape', label: 'Press Escape to close the open menu, popover or suggestion list' };
@@ -206,6 +208,10 @@ export class BrowserTask {
   #openedByRun = new Set<number>();
   /** Nodes closed with Escape before a done: each is closed once, so a goal whose evidence is the open menu still finishes. */
   #closedBeforeDone = new Set<number>();
+  /** Keys of the supplied values this task typed, selected or clicked. */
+  #usedValues = new Set<string>();
+  /** Menu options already sent back for an unpicked value, as `node:key`: each is sent back once. */
+  #pickNoted = new Set<string>();
   /** Nodes of fields the model chose with no supplied value to type: each is refused once before the caller is asked. */
   #refusedForValue = new Set<number>();
   #tab: Tab;
@@ -415,6 +421,19 @@ export class BrowserTask {
           page = await this.#tab.observe();
           continue;
         }
+        const unpicked = this.#unpickedMenuValue(decision, page);
+        if (unpicked) {
+          this.#pickNoted.add(`${unpicked.option.node}:${unpicked.key}`);
+          record(false);
+          this.#history.push({
+            operation: decision.operation,
+            element: '',
+            not_executed: `not accepted: the menu you opened lists "${unpicked.option.label}" (${unpicked.key}) and it isn't picked yet; pick it first, or answer BLOCKED`,
+            confidence: round(decision.confidence),
+          });
+          page = await this.#tab.observe();
+          continue;
+        }
         const handBack = this.#handBack(decision, page);
         // A field the model has no value for is first a wrong turn, and only the second time a question for the caller.
         if (handBack?.[0] === 'needs_input' && decision.operation === 'TYPE_TEXT' && !this.#refusedForValue.has(decision.action!.node!)) {
@@ -542,6 +561,9 @@ export class BrowserTask {
         this.#pageLevelStale = 0;
         this.#lastTyped = decision.operation === 'TYPE_TEXT' && isSearchLike(action) ? action : undefined;
         if (decision.operation === 'TYPE_TEXT') this.#typedFields.push({ label: action.label, path: pathOf(page.url), ...(text && { value: text }) });
+        // A value counts as used once it was typed, or a click or selection named it.
+        const named = ['CLICK', 'SELECT'].includes(decision.operation) ? valueKeysIn(action.label, values) : [];
+        for (const key of [...named, ...(decision.valueKey ? [decision.valueKey] : [])]) this.#usedValues.add(key);
         // A confirmation covers exactly one risky click.
         if (isRiskyClick(decision)) this.#spendConfirmation();
         // What a rejected submit is told from later: where the click was, what had been typed, and the page's text before it.
@@ -844,6 +866,23 @@ export class BrowserTask {
     return [...new Set(this.#typedFields.filter((field) => field.path === path).map((field) => field.label))];
   }
 
+  // A person who opened a menu to pick a supplied value picks it before pressing the button that sends the form: a risky click
+  // elsewhere, while a menu this run opened still lists that value unpicked, is sent back once per option.
+  #unpickedMenuValue(decision: Decision, page: PageState): { option: PageAction; key: string } | undefined {
+    if (!isRiskyClick(decision)) return undefined;
+    const menuOpen = [...this.#openedByRun].some((node) => page.actions.some((a) => a.node === node && a.expanded === 'true'));
+    if (!menuOpen) return undefined;
+    for (const option of page.actions) {
+      if (option.kind !== 'click' || !MENU_OPTION_ROLES.includes(option.role ?? '') || option.node === decision.action?.node) continue;
+      if (option.checked === 'true' || option.selected === 'true') continue;
+      const key = valueKeysIn(option.label, this.#options.values).find(
+        (candidate) => !this.#usedValues.has(candidate) && !this.#pickNoted.has(`${option.node}:${candidate}`),
+      );
+      if (key) return { option, key };
+    }
+    return undefined;
+  }
+
   // A form that came back with new text after its submit was rejected, and sending the same values again repeats the
   // rejection: the same click, on the same path, with every typed field still listed. A page that moved on (another path,
   // a wizard's next step where the fields are gone) is a new form, and a click with nothing typed before it (a list of
@@ -958,6 +997,14 @@ const decoded = (url: string) => {
 };
 
 const bareLabel = (label: string) => label.replace(/ \(appears on hover\)$/, '');
+
+// The keys of the supplied values a control's label names (case-insensitive, three characters at least, not a page-wide label).
+const valueKeysIn = (label: string, values: Record<string, string>) =>
+  label.length > 80
+    ? []
+    : Object.entries(values)
+        .filter(([, value]) => value.trim().length >= 3 && label.toLowerCase().includes(value.trim().toLowerCase()))
+        .map(([key]) => key);
 
 // The URL path plus search, without the hash: the same form comes back on the same one.
 const pathOf = (url: string) => {
