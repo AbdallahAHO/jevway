@@ -175,6 +175,8 @@ export class BrowserTask {
   #inputTokens = 0;
   #screenshots = 0;
   #confirmedCommit = false;
+  /** The user's words the caller gave with the confirmation, for the page to show before the click runs. */
+  #confirmTarget: string | undefined;
   /** How the previous call ended (none before the first), and the status a dropped confirmation is reported against. */
   #lastStatus: TaskStatus | undefined;
   #confirmIgnored: TaskStatus | undefined;
@@ -186,7 +188,7 @@ export class BrowserTask {
   /** Set while the last executed step changed a field (typed, ticked) and nothing was saved since; `noted` once a DONE was sent back for it. */
   #unsavedEdit: { noted: boolean } | undefined;
   /** Every field this task typed into, with the path it was on: what a submit sent, for telling a form that came back from a new page. */
-  #typedFields: { label: string; path: string }[] = [];
+  #typedFields: { label: string; path: string; value?: string }[] = [];
   /** Risky clicks that executed, with what the page said right after (see #rejectedSubmit). */
   #submits: Submit[] = [];
   /** Consecutive misses on the same target node because it couldn't be reached on an unchanged page. */
@@ -219,13 +221,15 @@ export class BrowserTask {
   }
 
   /** Merge new values, a new goal, or a one-time confirmation for the next irreversible click. */
-  update(patch: Partial<TaskOptions> & { confirmIrreversible?: boolean }) {
-    const { confirmIrreversible, values, recordDir: _recordDir, ...options } = patch;
+  update(patch: Partial<TaskOptions> & { confirmIrreversible?: boolean; confirmTarget?: string }) {
+    const { confirmIrreversible, confirmTarget, values, recordDir: _recordDir, ...options } = patch;
     this.#options = { ...this.#options, ...definedOnly(options), values: { ...this.#options.values, ...values } };
     if (!confirmIrreversible) return;
     // A confirmation answers the question jev-browse asked, so a flag carried onto a later call allows nothing (an unused earlier one stands).
-    if (this.#lastStatus === undefined || this.#lastStatus === 'needs_confirmation') this.#confirmedCommit = true;
-    else if (!this.#confirmedCommit) this.#confirmIgnored = this.#lastStatus;
+    if (this.#lastStatus === undefined || this.#lastStatus === 'needs_confirmation') {
+      this.#confirmedCommit = true;
+      this.#confirmTarget = confirmTarget;
+    } else if (!this.#confirmedCommit) this.#confirmIgnored = this.#lastStatus;
   }
 
   async run(): Promise<TaskSummary> {
@@ -256,6 +260,8 @@ export class BrowserTask {
     const stop = (status: TaskStatus, reason: string, decision?: Decision): TaskSummary => {
       // A dialog that opened late still belongs on the step that caused it.
       this.#reportDialogs(firstStep);
+      // A hand-back asks a new question, so a confirmation still pending (a refused one) is spent.
+      if (status === 'needs_confirmation') this.#spendConfirmation();
       const confirmIgnored = this.#confirmIgnored;
       this.#confirmIgnored = undefined;
       this.#lastStatus = status;
@@ -522,9 +528,9 @@ export class BrowserTask {
         this.#unreachable = { node: undefined, count: 0 };
         this.#pageLevelStale = 0;
         this.#lastTyped = decision.operation === 'TYPE_TEXT' && isSearchLike(action) ? action : undefined;
-        if (decision.operation === 'TYPE_TEXT') this.#typedFields.push({ label: action.label, path: pathOf(page.url) });
+        if (decision.operation === 'TYPE_TEXT') this.#typedFields.push({ label: action.label, path: pathOf(page.url), ...(text && { value: text }) });
         // A confirmation covers exactly one risky click.
-        if (isRiskyClick(decision)) this.#confirmedCommit = false;
+        if (isRiskyClick(decision)) this.#spendConfirmation();
         // What a rejected submit is told from later: where the click was, what had been typed, and the page's text before it.
         const submitted =
           isRiskyClick(decision) && decision.action
@@ -842,6 +848,23 @@ export class BrowserTask {
       );
   }
 
+  #spendConfirmation() {
+    this.#confirmedCommit = false;
+    this.#confirmTarget = undefined;
+  }
+
+  // A confirmation is for the target the user named, so it carries their words and the page must show them. A category
+  // ("anything unused") names nothing on a page: this is what keeps it from deleting.
+  #targetRefusal(decision: Decision, page: PageState): string | undefined {
+    const label = decision.action?.label ?? 'the control boxed on the screenshot';
+    const target = this.#confirmTarget?.trim();
+    if (!target) return `confirm_irreversible needs confirm_target: the words from the user's request that name what "${label}" acts on.`;
+    const typedHere = this.#typedFields.filter((field) => field.path === pathOf(page.url)).map((field) => field.value ?? '');
+    if (showsTarget(target, decision.action?.label ?? '', [page.title, decoded(page.url), page.text, ...typedHere])) return undefined;
+    const title = page.title.slice(0, CONFIRM_TITLE_CHARS);
+    return `confirm_target "${target}" names nothing "${label}" acts on here (${title ? `page "${title}", ` : ''}its address, the visible text or the values typed on this page); ask the user which one they mean.`;
+  }
+
   // Returns [status, reason] when this decision is the calling agent's to make.
   #handBack(decision: Decision, page: PageState): [TaskStatus, string] | undefined {
     const { doneWhen } = this.#options;
@@ -874,6 +897,10 @@ export class BrowserTask {
     if (decision.operation === 'TYPE_TEXT' && !decision.valueKey) {
       return ['needs_input', `No supplied value fits the field "${decision.action!.label}"`];
     }
+    if (isRiskyClick(decision) && this.#confirmedCommit) {
+      const refusal = this.#targetRefusal(decision, page);
+      if (refusal) return ['needs_confirmation', refusal];
+    }
     if (isRiskyClick(decision) && !this.#confirmedCommit) {
       const rejected = this.#rejectedSubmit(decision, page);
       if (rejected) {
@@ -886,7 +913,7 @@ export class BrowserTask {
       const title = page.title.slice(0, CONFIRM_TITLE_CHARS);
       return [
         'needs_confirmation',
-        `Clicking "${decision.action?.label ?? 'the control boxed on the screenshot'}"${title ? ` on "${title}"` : ''} looks irreversible (risk ${round(decision.commitRisk!)}). Confirm only if the user's request named this action and this target; a category ("anything unused", "old ones") names no target: list the candidates and ask the user.`,
+        `Clicking "${decision.action?.label ?? 'the control boxed on the screenshot'}"${title ? ` on "${title}"` : ''} looks irreversible (risk ${round(decision.commitRisk!)}). Confirm only if the user's request named this action and this target; a category ("anything unused", "old ones") names no target: list the candidates and ask the user. To continue, call again with confirm_irreversible and confirm_target (the user's words naming the target).`,
       ];
     }
     return undefined;
@@ -905,6 +932,45 @@ interface Submit {
   textBefore: string;
   answer: string;
 }
+
+// The words a confirmation names are compared the way a person would: case, accents and spacing set aside.
+const normalized = (text: string) => text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+const AT_THE_ENDS = /^[\s"'“”‘’`()[\]{}.,;:!?]+|[\s"'“”‘’`()[\]{}.,;:!?]+$/gu;
+// Words split on spaces and quotes; `/ . _ -` stay inside, so "ada/scratch" is one word.
+const WORD_BREAKS = /[\s,;:!?()"'“”‘’`]+/u;
+const MIN_WORD_CHARS = 3;
+// Words that join a phrase and name nothing: "the repository named ada/scratch".
+const FILLER_WORDS = new Set(['the', 'and', 'for', 'from', 'with', 'its', 'our', 'your', 'their', 'named', 'called', 'titled']);
+const wordsOf = (text: string) =>
+  normalized(text)
+    .split(WORD_BREAKS)
+    .map((word) => word.replace(AT_THE_ENDS, ''))
+    .filter((word) => word.length >= MIN_WORD_CHARS);
+
+/**
+ * Whether the page shows the user's words for the target. The words of the clicked control and filler words describe
+ * the action, not its target, so they never count; what is left must be there, every word, and at least one must be.
+ * Without that, "delete" would match any page that shows a Delete button.
+ *
+ * @example
+ * showsTarget('the repository ada/scratch', 'Delete this repository', ['ada/scratch - Settings']) // true
+ * showsTarget('delete', 'Delete this repository', ['ada/scratch - Settings', 'Delete this repository']) // false
+ * showsTarget('anything unused', 'Delete this repository', ['ada/scratch - Settings']) // false
+ */
+const showsTarget = (target: string, control: string, shown: string[]) => {
+  const controlWords = new Set(wordsOf(control));
+  const specific = wordsOf(target).filter((word) => !controlWords.has(word) && !FILLER_WORDS.has(word));
+  const corpus = shown.map(normalized).join('\n');
+  return specific.length > 0 && specific.every((word) => corpus.includes(word));
+};
+
+const decoded = (url: string) => {
+  try {
+    return decodeURIComponent(url);
+  } catch {
+    return url;
+  }
+};
 
 const bareLabel = (label: string) => label.replace(/ \(appears on hover\)$/, '');
 

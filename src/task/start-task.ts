@@ -11,6 +11,8 @@ export interface StartOptions extends TaskOptions {
   tab?: string;
   /** Allow exactly one irreversible click on this first call, as `update({ confirmIrreversible })` does on a later one. */
   confirmIrreversible?: boolean;
+  /** With `confirmIrreversible`: the user's own words that name what the click acts on; the page must show them. */
+  confirmTarget?: string;
 }
 
 /**
@@ -29,7 +31,7 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
   const browser = () => (chrome ??= connectChrome(source));
 
   return {
-    async start({ url, tab, confirmIrreversible, ...options }: StartOptions) {
+    async start({ url, tab, confirmIrreversible, confirmTarget, ...options }: StartOptions) {
       const { cdp } = await browser();
       if (!url && !tab) throw new Error('Pass `url` to open a new tab or `tab` to reuse an open one.');
       const page = url ? await Tab.open(cdp, url) : await Tab.find(cdp, tab!);
@@ -38,7 +40,7 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
         ...definedOnly(options),
         screenshots: options.screenshots ?? screenshots,
       });
-      task.update({ confirmIrreversible });
+      task.update({ confirmIrreversible, confirmTarget });
       return task;
     },
     /** Mobile journey mapping; in the user's own Chrome it opens a separate window so screenshots keep rendering. */
