@@ -55,6 +55,9 @@ export class TargetUnreachable extends StalePage {
   }
 }
 
+/** The browser took the press but the page never received it, so nothing was clicked. Not a StalePage: it is never retried blind. */
+export class InputNotDelivered extends Error {}
+
 /**
  * One browser tab driven through observed actions only.
  * Model output selects an observed action id; it never becomes a selector, coordinate or script.
@@ -223,6 +226,11 @@ export class Tab {
     const tab = new Tab(cdp, targetId, sessionId);
     // Keep rAF, menus and autocomplete rendering in a background tab.
     await tab.#call('Emulation.setFocusEmulationEnabled', { enabled: true });
+    // Registered ahead of the page's own scripts, so its listeners cannot hide a press from ours; the open document gets it
+    // too. Chrome only runs a new-document script for a session with Page enabled.
+    await tab.#call('Page.enable');
+    await tab.#call('Page.addScriptToEvaluateOnNewDocument', { source: INPUT_COUNTER });
+    await tab.#call('Runtime.evaluate', { expression: INPUT_COUNTER }).catch(() => undefined);
     return tab;
   }
 
@@ -358,6 +366,7 @@ export class Tab {
     if (action.kind === 'select') return;
     // Focused in the page already: a press on the field's plain decoration would only take the focus away again.
     if (!target.focused) {
+      const before = await this.#pressesReceived();
       if (this.#touch) {
         await this.#call('Input.dispatchTouchEvent', {
           type: 'touchStart',
@@ -369,6 +378,13 @@ export class Tab {
         for (const type of ['mousePressed', 'mouseReleased']) {
           await this.#call('Input.dispatchMouseEvent', { type, x: target.x, y: target.y, button: 'left', clickCount: 1 });
         }
+      }
+      // The counter was registered before the page's scripts, so only a browser that never delivered the press leaves it
+      // unchanged. The press is never repeated here: a delivered click we failed to see must not run twice.
+      if (!(await this.#pageReceivedPress(before))) {
+        throw new InputNotDelivered(
+          `The page received no input from the click on "${action.label.slice(0, 60)}": the browser dropped it, so nothing was clicked. Retry the call or check the browser.`,
+        );
       }
     }
     if (action.kind !== 'fill') return;
@@ -388,6 +404,22 @@ export class Tab {
       await this.#call('Input.dispatchKeyEvent', { type: 'keyDown', key: char, text: char });
       await this.#call('Input.dispatchKeyEvent', { type: 'keyUp', key: char });
     }
+  }
+
+  // The trusted presses this document has received so far; undefined when it can't be read (no counter, navigated away).
+  async #pressesReceived(): Promise<string | undefined> {
+    return this.#evaluate(READ_INPUT).catch(() => undefined);
+  }
+
+  // False only while the count stays what it was before the press, after a short grace for a busy page. An unreadable
+  // count or a new document means the press was delivered or can't be judged, so it never blocks.
+  async #pageReceivedPress(before: string | undefined) {
+    if (before === undefined) return true;
+    for (let attempt = 0; attempt < INPUT_READS; attempt++) {
+      if (attempt) await sleep(INPUT_POLL_MS);
+      if ((await this.#pressesReceived()) !== before) return true;
+    }
+    return false;
   }
 
   // Read-only wait: two animation frames, or visible autocomplete options (≤200ms) after typing into a combobox.
@@ -444,6 +476,20 @@ export const jpegSize = (base64: string) => {
 
 // A finger's tap lasts tens of milliseconds; a zero-length tap made some widgets open and close at once.
 const TAP_MS = 60;
+
+// Counts the pointer presses the page really received (trusted events only, so our synthetic outside press never counts).
+const INPUT_COUNTER = `(() => {
+  if (window.__jevInput !== undefined) return;
+  window.__jevInput = 0;
+  for (const type of ['pointerdown', 'mousedown', 'touchstart']) {
+    window.addEventListener(type, (event) => { if (event.isTrusted) window.__jevInput++; }, true);
+  }
+})()`;
+// The count with its document's start time: a page that navigated restarts at 0, which must not read as "no input".
+const READ_INPUT = `window.__jevInput === undefined ? undefined : performance.timeOrigin + ':' + window.__jevInput`;
+// A dropped press is judged only after this many reads, INPUT_POLL_MS apart, so a slow main thread isn't mistaken for it.
+const INPUT_READS = 4;
+const INPUT_POLL_MS = 40;
 
 const fingerprint = (state: Omit<PageState, 'fingerprint'> & { scroll?: unknown }) =>
   createHash('sha256')
