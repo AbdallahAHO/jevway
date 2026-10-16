@@ -348,6 +348,10 @@
       const value = e.getAttribute('aria-' + key);
       if (value !== null) base[key] = value;
     }
+    // jev-browse: a summary's section is open or closed, as its triangle shows; <details> carries no aria-expanded.
+    if (e.tagName === 'SUMMARY' && e.parentElement?.tagName === 'DETAILS' && base.expanded === undefined) {
+      base.expanded = String(e.parentElement.open);
+    }
     const toggle = hiddenInput ?? e;
     if (['checkbox', 'radio'].includes(toggle.type)) base.checked = String(toggle.checked);
     if (e.tagName === 'SELECT') {
