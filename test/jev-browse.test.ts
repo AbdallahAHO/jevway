@@ -1508,6 +1508,46 @@ describe('loop gotchas', () => {
       expect(acted).toEqual([{ label: 'help wanted' }]);
     });
 
+    it('leaves a fold the disclosure rescue opened to read alone', async () => {
+      const chip = 'Show 1 more session details';
+      const folded = overflowPage('a', [overflowChip(32, chip)]);
+      const unfolded = overflowPage('b', [overflowChip(32, chip, 'true'), SOURCE_LINK]);
+      const chipTarget = clickTargetOf(folded, chip);
+      const { ask } = scriptedJev([
+        { operation: 'BLOCKED', click_target: clickTargetOf(folded, 'Open menu'), [`risk_${chipTarget}`]: 0.02 },
+        { [`risk_${chipTarget}`]: 0.02 },
+        { operation: 'DONE', done_check: 0.6 },
+      ]);
+      const { asTab, acted } = fakeTab([folded, unfolded]);
+      const summary = await new BrowserTask(asTab, ask, { ...options, elementRisk: true }).run();
+      expect(summary.status).toBe('done');
+      expect(acted).toEqual([{ label: chip }]);
+    });
+
+    it('sends an unsaved edit back before it closes the menu: not done yet, so nothing is closed for it', async () => {
+      const tick = (checked: string): PageAction => ({ id: 'tick', kind: 'click', node: 51, role: 'checkbox', label: 'help wanted', checked });
+      const save: PageAction = { id: 'save', kind: 'click', node: 52, role: 'button', label: 'Save' };
+      const form = (fingerprint: string, expanded: string, ticked = 'false') =>
+        page({ actions: [trigger(expanded), ...(expanded === 'true' ? [tick(ticked)] : []), save], fingerprint });
+      const [start, opened, ticked] = [form('a', 'false'), form('b', 'true'), form('c', 'true', 'true')];
+      const done = { operation: 'DONE', done_check: 0.6 };
+      const { ask } = scriptedJev([
+        { operation: 'CLICK', click_target: clickTargetOf(start, 'Labels') },
+        { operation: 'CLICK', click_target: clickTargetOf(opened, 'help wanted') },
+        done,
+        { operation: 'CLICK', click_target: clickTargetOf(ticked, 'Save') },
+        done,
+        done,
+      ]);
+      // The pages after the send-back and after Save still show the menu open and the box ticked; the last one is closed.
+      const { asTab, acted } = fakeTab([start, opened, ticked, form('d', 'true', 'true'), form('e', 'true', 'true'), form('f', 'false', 'true')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('done');
+      expect(summary.steps.map((step) => step.operation)).toEqual(['CLICK', 'CLICK', 'DONE', 'CLICK', 'PRESS_ESCAPE']);
+      expect(summary.steps[2].not_executed).toContain('the last step changed a field and nothing was saved');
+      expect(acted).toEqual([{ label: 'Labels' }, { label: 'help wanted' }, { label: 'Save' }, { label: 'dismissPopup' }]);
+    });
+
     it('closes it only once: a goal whose evidence is the open menu still finishes', async () => {
       const done = { operation: 'DONE', done_check: 0.6 };
       const reopen = { operation: 'CLICK', click_target: clickTargetOf(issue('d', 'false'), 'Labels') };

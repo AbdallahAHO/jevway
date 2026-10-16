@@ -192,6 +192,10 @@ export class BrowserTask {
   #outcomes: { action: string; print: string }[] = [];
   /** Nodes of collapsed controls already opened instead of handing back blocked: each is tried once. */
   #opened = new Set<number>();
+  /** Nodes of controls this run's own click flipped from collapsed to expanded. */
+  #openedByRun = new Set<number>();
+  /** Nodes closed with Escape before a done: each is closed once, so a goal whose evidence is the open menu still finishes. */
+  #closedBeforeDone = new Set<number>();
   /** Nodes of fields the model chose with no supplied value to type: each is refused once before the caller is asked. */
   #refusedForValue = new Set<number>();
   #tab: Tab;
@@ -264,12 +268,35 @@ export class BrowserTask {
       };
     };
 
+    // Many pickers apply a choice only when they close, and a person closes the menu they opened before calling it done:
+    // the fixed Escape closes it once, then the page is read again so done is judged on the closed page.
+    const closeMenuBeforeDone = async (): Promise<boolean> => {
+      const node = [...this.#openedByRun].find(
+        (n) => !this.#closedBeforeDone.has(n) && page.actions.some((a) => a.node === n && a.expanded === 'true'),
+      );
+      if (node === undefined) return false;
+      this.#closedBeforeDone.add(node);
+      await this.#recording?.step(this.#tab, page, { operation: 'PRESS_ESCAPE' });
+      await this.#tab.dismissPopup();
+      this.#history.push({
+        operation: 'PRESS_ESCAPE',
+        element: 'closed the menu this run opened before finishing',
+        page_changed: true,
+        confidence: 1,
+      });
+      page = await this.#tab.observe();
+      return true;
+    };
+    // Every way of ending `done` goes through here: undefined means a menu was closed first, so the loop decides again.
+    const stopDone = async (reason: string, decision?: Decision): Promise<TaskSummary | undefined> =>
+      (await closeMenuBeforeDone()) ? undefined : stop('done', reason, decision);
+
     // A loop guard fires on a page the actions may already have brought to the goal: take one last look before handing back.
-    const stopAfterLastLook = async (status: TaskStatus, reason: string, decision: Decision): Promise<TaskSummary> => {
+    const stopAfterLastLook = async (status: TaskStatus, reason: string, decision: Decision): Promise<TaskSummary | undefined> => {
       const look = await this.#lastLook(page);
       if (look && (look.doneProbability ?? 0) >= LAST_LOOK_DONE) {
         this.trace.push({ decision: { ...look, action: look.action?.label }, executed: false, elapsed_ms: elapsed() });
-        return stop('done', `Completion condition verified: ${doneWhen}`, look);
+        return stopDone(`Completion condition verified: ${doneWhen}`, look);
       }
       return stop(status, reason, decision);
     };
@@ -302,7 +329,9 @@ export class BrowserTask {
           if (!lookFirst || (look?.doneProbability ?? 0) >= SPIKE_CONFIRMED) {
             const verdict = look ?? decision;
             this.trace.push({ decision: { ...verdict, action: verdict.action?.label }, executed: false, elapsed_ms: elapsed() });
-            return stop('done', `Completion condition verified: ${doneWhen}`, verdict);
+            const ended = await stopDone(`Completion condition verified: ${doneWhen}`, verdict);
+            if (ended) return ended;
+            continue;
           }
           if (look) this.trace.push({ decision: { ...look, action: look.action?.label }, executed: false, elapsed_ms: elapsed() });
         }
@@ -322,7 +351,9 @@ export class BrowserTask {
             page = await this.#tab.observe();
             continue;
           }
-          return stop('done', `Completion condition verified: ${doneWhen}`, decision);
+          const ended = await stopDone(`Completion condition verified: ${doneWhen}`, decision);
+          if (ended) return ended;
+          continue;
         }
 
         decision = this.#openDisclosure(this.#boxRescue(decision, page), page);
@@ -395,10 +426,13 @@ export class BrowserTask {
           // An unsure step on a page the screenshot-backed completion check accepts has nothing left to do (6 of 6 uncertain endings at done check ≥ 0.75 were on the right page).
           const unsureOnMetGoal =
             handBack[0] === 'uncertain' && this.#lowConfidence(decision) && !this.#boxStop(decision) && decision.sawScreenshot;
-          if (doneWhen && unsureOnMetGoal && doneProbability >= GUARDS.doneSteady) {
-            return stop('done', `Completion condition verified: ${doneWhen}`, decision);
-          }
-          return stop(handBack[0], handBack[1], decision);
+          const [status, reason] =
+            doneWhen && unsureOnMetGoal && doneProbability >= GUARDS.doneSteady
+              ? (['done', `Completion condition verified: ${doneWhen}`] as const)
+              : handBack;
+          const ended = status === 'done' ? await stopDone(reason, decision) : stop(status, reason, decision);
+          if (ended) return ended;
+          continue;
         }
 
         const action = decision.action!;
@@ -514,21 +548,34 @@ export class BrowserTask {
         if (submitted) {
           this.#submits = [...this.#submits, { ...submitted, answer: newTextOf(page.text, submitted.textBefore) }].slice(-SUBMITS_KEPT);
         }
+        // A click that flipped a collapsed control open leaves the run's own menu: it is closed before the run says done.
+        // A fold the disclosure rescue opened is for reading what is inside it, so it stays open.
+        if (decision.operation === 'CLICK' && decision.via !== 'disclosure' && action.expanded === 'false' && page.actions.some((a) => a.node === action.node && a.expanded === 'true')) {
+          this.#openedByRun.add(action.node!);
+        }
         const repeatedDialog = this.#reportDialogs(firstStep);
         if (repeatedDialog) return stop('blocked', repeatedDialog, decision);
         if (repeatingWithoutEffect(this.#history)) {
-          return stopAfterLastLook('blocked', 'The last 3 actions did not change the page', decision);
+          const ended = await stopAfterLastLook('blocked', 'The last 3 actions did not change the page', decision);
+          if (ended) return ended;
+          continue;
         }
         if (wandering(this.#history.slice(firstStep))) {
-          return stopAfterLastLook('uncertain', `Jev was unsure for ${GUARDS.wanderSteps} actions in a row (confidence under ${GUARDS.wanderConfidence})`, decision);
+          const ended = await stopAfterLastLook('uncertain', `Jev was unsure for ${GUARDS.wanderSteps} actions in a row (confidence under ${GUARDS.wanderConfidence})`, decision);
+          if (ended) return ended;
+          continue;
         }
         // Waiting is bounded by maxSteps and the wander guard; a shimmering skeleton must not look like a toggle loop.
         if (decision.operation !== 'WAIT') this.#outcomes.push({ action: `${decision.operation} ${element}`, print: page.fingerprint });
         if (togglingInPlace(this.#outcomes)) {
-          return stopAfterLastLook('blocked', `"${element}" only toggles the page back and forth (${GUARDS.toggleLoop}× in a row)`, decision);
+          const ended = await stopAfterLastLook('blocked', `"${element}" only toggles the page back and forth (${GUARDS.toggleLoop}× in a row)`, decision);
+          if (ended) return ended;
+          continue;
         }
         if (repeating(this.#outcomes)) {
-          return stopAfterLastLook('blocked', `"${element}" was used ${GUARDS.repeatLimit} times in ${GUARDS.repeatWindow} actions without finishing`, decision);
+          const ended = await stopAfterLastLook('blocked', `"${element}" was used ${GUARDS.repeatLimit} times in ${GUARDS.repeatWindow} actions without finishing`, decision);
+          if (ended) return ended;
+          continue;
         }
       }
       return stop('step_budget', `Reached ${maxSteps} actions without finishing`);
