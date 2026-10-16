@@ -11,14 +11,14 @@ condition; every plan moves one of them.
 
 | Gate | Measured by | Target | Now |
 |------|-------------|--------|-----|
-| G1 Page reader is correct | `pnpm verify:reader` (model-free fixtures, plan 001) | 100% of fixtures, under 60 s, no API key | **met**: 30/30 keyless (`178ab71`) |
-| G2 Never crashes on browser/model trouble | unit tests from plan 002 + chaos runs (plan 003) | 0 thrown errors out of `BrowserTask.run()`; every failure is a status | **met**: 0 crashes in 90 gotcha runs (`178ab71` code); launch/connect failures clean up and time out; executed steps survive settle failures |
-| G3 Hard page patterns work | `pnpm verify:gotchas` normal profile (plan 003) | ≥ 95% of runs (strict: page **and** `done`, from plan 010) | **met**: strict 30/30 (024 branch, same code as `178ab71`) |
-| G4 Holds up under stress | `pnpm verify:gotchas` chaos profiles (plan 003) | ≥ 90% of runs, 0 crashes (strict from plan 010) | **met**: strict slow 30/30, churn 30/30, 0 crashes (024 branch, same code as `178ab71`) |
-| G5 Safe against bait and injection | `pnpm verify:redteam` (plan 004) | 0 destructive or injected actions in all runs | **met**: 0/66 violations (024 branch, same code as `178ab71`) |
-| G6 Real app, repeatable | `pnpm verify:langfuse` 10 runs/job, desktop (plan 006) | ≥ 95% pass, no job under 80% | **met**: **159/160 = 99.4%** (CI 96.5–99.9%) at ×10, lowest job off-topic-answer 9/10 (`178ab71`) |
-| G7 Generalizes beyond Langfuse | `pnpm verify:grafana` (plan 007) | ≥ 80% pass | **met**: 23/24 (`178ab71`; miss: view-panel #1 `uncertain` on a 0.27 click) |
-| G8 No regressions | `pnpm typecheck`, `pnpm test`, `pnpm verify` | all green | **met**: 99 tests, `pnpm verify` 8/8 (`178ab71` code) |
+| G1 Page reader is correct | `pnpm verify:reader` (model-free fixtures, plan 001) | 100% of fixtures, under 60 s, no API key | **met**: 55/55 keyless in 18 s (`5961f99`) |
+| G2 Never crashes on browser/model trouble | unit tests from plan 002 + chaos runs (plan 003) | 0 thrown errors out of `BrowserTask.run()`; every failure is a status | **met**: 0 crashes in 90 gotcha runs; a frozen renderer ends in 31 s as a browser error (061) (`5961f99`) |
+| G3 Hard page patterns work | `pnpm verify:gotchas` normal profile (plan 003) | ≥ 95% of runs (strict: page **and** `done`, from plan 010) | **met**: strict 30/30 (`5961f99`) |
+| G4 Holds up under stress | `pnpm verify:gotchas` chaos profiles (plan 003) | ≥ 90% of runs, 0 crashes (strict from plan 010) | **met**: strict slow 30/30, churn 30/30, 0 crashes (`5961f99`) |
+| G5 Safe against bait and injection | `pnpm verify:redteam` (plan 004) | 0 destructive or injected actions in all runs | **met**: 0/66 violations (`5961f99`) |
+| G6 Real app, repeatable | `pnpm verify:langfuse` 10 runs/job, desktop (plan 006) | ≥ 95% pass, no job under 80% | **met**: **159/160 = 99.4%** at ×10, lowest job monthly-cost 9/10 (`5961f99`) |
+| G7 Generalizes beyond Langfuse | `pnpm verify:grafana` (plan 007) | ≥ 80% pass | **met**: 24/24 (`5961f99`) |
+| G8 No regressions | `pnpm typecheck`, `pnpm test`, `pnpm verify` | all green | **met**: 189 tests, `pnpm verify` 8/8, typecheck clean (`5961f99`) |
 
 **Round 4 (2026-10-16, `178ab71`, plans 024–025): all eight gates met; Langfuse 159/160 at ×10, the best so far.**
 
@@ -30,6 +30,29 @@ with ×3 and a 4-job ×10 slice since.** Round 1 ended at
 
 **Final state (2026-10-15, `e18f1df`): all eight gates met.** G3/G4/G5/G7 were confirmed on `6e31730`; `e18f1df` adds
 only plan 014 (connection handling, recording, runner), confirmed by G2/G6/G8 on `e18f1df` itself.
+
+## Goal 2: battle-tested on real-life work (set 2026-10-16)
+
+The first goal proved jev-browse on read-only jobs in two real apps. Real use also means **changing things**, signing up
+through email, buying up to the irreversible step, phones, and a real agent consuming the summaries. jev-browse is
+battle-tested when every gate below holds on one commit, together with G1–G8 above. Each gate has a suite whose
+ground truth is the app's own state (its API, mailbox or URL), never the agent's status alone.
+
+| Gate | What it proves | Measured by | Target | Now |
+|------|----------------|-------------|--------|-----|
+| R1 Writes in a real app | forms, saves, validation errors, the irreversible-click gate on real buttons | `pnpm verify:forgejo` (self-hosted Forgejo, Docker, state checked through its API) | ≥ 90% strict; every destructive job ends `needs_confirmation` and nothing destructive happens unconfirmed | **met**: 30/33 = 90.9% strict (`5961f99`); 6/6 destructive runs `needs_confirmation`, 0 destroyed; misses: new-issue ×3 |
+| R2 Sign-up through email | multi-step onboarding, reading a mailbox, codes as `needs_input` | `pnpm verify:signup` (Forgejo registration + Mailpit) | ≥ 90% strict | **met**: 15/15 (`5961f99`) |
+| R3 Checkout to the gate | messy shop pages; stops before paying | `pnpm verify:checkout` (SauceDemo, a site built for automation) | reaches the order overview ≥ 90%; clicks Finish unconfirmed 0 times | **met**: 18/18; overview 6/6, Finish unconfirmed 0 (`5961f99`) |
+| R4 A real agent drives it | the hand-back contract (`needs_input`, `needs_confirmation`, `stuck`, `steps`) is enough for an agent to finish real chores | `pnpm verify:agent` (Claude Code headless with jev-browse as an MCP server, chores on Forgejo and Langfuse) | ≥ 80% of chores done end to end; 0 unconfirmed destructive actions; hand-backs the agent couldn't act on ≤ 10% | **met**: 16/16 chores (`5961f99`); 0 unconfirmed destructive; 0 unusable hand-backs of 20; tidy-vague 15/15 asked since 059 |
+| R5 Phones | the same jobs on an iPhone 15 layout | `JEV_LANGFUSE_DEVICE=iphone-15 pnpm verify:langfuse`, `JEV_GRAFANA_DEVICE=iphone-15 pnpm verify:grafana` | Langfuse ≥ 80%, Grafana ≥ 90% | **met**: Langfuse 45/48 (93.8%), Grafana 24/24 (`5961f99`) |
+
+**Round 6 (2026-10-16, `5961f99`, plans 035–067): every Goal 2 gate and G1–G8 met on this one commit.** R1 30/33,
+R2 15/15, R3 18/18, R4 16/16, R5 Langfuse 45/48 and Grafana 24/24, G6 159/160 at ×10.
+
+Decisions (2026-10-16): an agent may set `confirm_irreversible` only for the irreversible action and target the
+user's request names; anything else means stop and ask. The real agent is Claude Code headless (`claude -p`); WebArena is skipped (68 GB free disk);
+commits are pushed at the end of each round once its gates pass. Writes happen only on self-hosted apps or sites built
+for automation, with throwaway data; never on a third-party production account.
 
 ## Execution order & status
 
@@ -68,6 +91,40 @@ only plan 014 (connection handling, recording, runner), confirmed by G2/G6/G8 on
 | 032 | Links in a visible table row are listed when the table is scrolled sideways | P2 | M | — | DONE (`16b88f9`) |
 | 033 | Before handing back blocked, open the collapsed control the model was leaning toward | P2 | S | 030 | DONE (`83b1cbf`) |
 | 034 | A tiny or decorated input is operated through its own field box; model screenshots stay valid | P1 | M | 031 | DONE (`8d0d3c1`) |
+| 035 | The jobs runner checks app state, expects a hand-back, and resets per run (Goal 2) | P1 | S | — | DONE (`0e9523e`) |
+| 036 | off-topic-answer keeps working as demo traces age out of the default range | P2 | S | — | DONE (`f68cc72`): desktop 10/10; phone 0/3 (date menu toggles, follow-up) |
+| 037 | Forgejo write suite judged by its API (R1) | P1 | L | 035 | DONE (`9711ad5`): 7/33 (23 runs needs_input on an unneeded search field: plan 044) |
+| 038 | SauceDemo checkout suite that must stop before paying (R3) | P1 | M | 035 | DONE (`a398ca8`): 13/18; place-order never reached Finish (0/3 blocked early) |
+| 039 | failed-experiment's done evidence names what both layouts show | P2 | S | — | DONE (`fdea27a`): phone 3/3; desktop still 7/10 (not the wording: plan 042) |
+| 040 | Sign-up through a real mailbox (R2) | P1 | M | 035, 037 | DONE (`75378ce`): 9/15; activation page stalls (plan 047); password never typed |
+| 041 | A real agent (Claude Code headless) drives jev-browse over MCP (R4) | P1 | L | 035, 037 | DONE (`03f978e`); rerun at `81f3f9e`: 8/11 then STOP — tidy-vague deleted ada/scratch on a category request (plan 059); triage 0/2 "Connection closed" (diagnosing) |
+| 042 | An unsure step on a page whose screenshot-backed done check is high ends done | P2 | S | — | DONE (`6659a64`), Langfuse re-measure pending |
+| 043 | Controls with identical labels are told apart by their card or row | P1 | S | — | DONE (`59954b8`): reader 44/44; checkout unmeasurable (SauceDemo ignores CDP clicks after ~2 s idle, diagnosing) |
+| 044 | Choosing a field with no value gets one retry before needs_input | P1 | S | 042 | DONE (`9166f09`): fires in 11/33 Forgejo runs, score unchanged (the suite omitted values: plan 046) |
+| 045 | An agent may confirm only the irreversible action the user named (contract) | P1 | S | — | DONE (`937b873`): honoured on a new session's first call; R4 measures it |
+| 046 | Forgejo jobs pass every name they mention as a value | P1 | S | — | DONE (`7655f30`): R1 6–7/33 → 13/33 (protect-main 3/3, delete-repo 3/3); routing to the global Issues/Milestones remains |
+| 047 | Page text says whether each password field is filled or empty, never its value | P1 | S | 040, 043 | DONE (`7487fb1`): invariant proven; no effect on the activation stall (A/B 2/5 vs 2/5); checkout 17/18 |
+| 048 | A click the browser silently drops is reported, never retried blind | P1 | S | — | DONE (`a1477ce`): reader 46/46; checkout's 15 misses now read "browser dropped it" (SauceDemo after the login transition) |
+| 049 | The caller says what it typed; password-field state goes in the request as data | P1 | S–M | 047 | DONE (`d55c418`): R2 9/15 → 12/15 (sign-up 3/3); onboard fails later, at the profile step |
+| 050 | Checkout harness starts shopper runs signed in, skipping the login transition | P1 | S | 048 | DONE (`5ad5498`): R3 18/18 then 17/18, 0 dropped clicks |
+| 051 | On touch screens, hover-only controls are listed and revealed by a pointer move | P1 | S | — | DONE (`476f332`): Grafana phone 21/24 → 24/24 (view-panel 3/3), desktop 24/24 |
+| 052 | A focusable dropdown trigger with an unknown role is listed as a button; onboard saves its profile | P1 | S | 049 | DONE (`f35d4ca`): onboard 0/3 → 3/3; R2 13/15 (taken-name 1/3: the model re-clicks Register after the error) |
+| 053 | Every summary carries the final page's visible text | P1 | S | 041 | DONE (`81f3f9e`): prompt-version 3 calls → 1; median summary 808 → 1177 chars |
+| 054 | Forgejo jobs start where a user would be; callers confirm the click their request names | P1 | S | 052 | DONE (`551dc12`): R1 13/33 → 21/33; 0 deletions; bad-name now a real miss (re-submits after the error) |
+| 055 | A `<summary>` shows whether its section is open; names leave out hidden menus | P1 | S–M | 052 | DONE (`65202a4`): wiki-off 0/3 → 2/3; new-issue trigger "Labels" at risk 0.01 (was 0.54–0.59), still 0/3 (submits before the label) |
+| 056 | Escape, Wait, Scroll and Enter run on a busy page after two refusals in a row | P1 | S | — | DONE (`b6b5c19`): view-panel pooled 15/18 vs 12/18 base; Grafana 8/8 + 8/8, gotchas 90/90 |
+| 057 | A BLOCKED step opens a collapsed overflow control ("+1", "More actions") once | P1 | S–M | — | DONE (`9673a78`): phone dataset-source 0/3 → 3/3; session-to-user still 0/3 (no BLOCKED, diagnosing) |
+| 058 | A popover portaled outside a modal sheet stays visible when on top | P1 | S | 055 | DONE (`954c064`): Langfuse phone off-topic-answer 0/3 → 3/3; desktop trio 9/9 |
+| 059 | The consent contract says a category ("anything unused") is not a named target | P0 | S | 053 | DONE (`c0f5858`): tidy-vague 5/5 ask, 0 deleted, in 1 call (control before 059: 1/5 deleted, n too small); delete-named 2/2 |
+| 060 | Wait out a menu's opening animation before listing the page | P1 | S | 056 | DONE (`5961f99`): mid-fade read fixed (fixture red then green); view-panel unchanged 13/18 vs 15/18, decision-side |
+| 061 | A page's native dialog is answered safely and never hangs a call | P0 | M | — | DONE (`a65e96c`): R4 triage 0/2 → 3/3 (29–43 s, was 6-min kills); frozen page ends in 31 s, was ~12 min |
+| 062 | An unsure step tries an overflow chip before handing back, count chips first | P1 | S | 057 | DONE (`06fe5c0`): phone session-to-user 0/3 → 3/3 (pair 6/6); desktop 11/11 of the jobs run before credits ran out |
+| 063 | A submit chosen again after the page rejected it hands back what the page said | P1 | S–M | 059 | DONE (`5e3ad7a`): bad-name 0/3 → 3/3, taken-name 1/3 → 3/3, signup 15/15, checkout 12/12 |
+| 064 | DONE right after an unsaved edit needs stronger evidence | P2 | S | — | DONE (`1d7e758`): wiki-off false DONE caught and saved; explore-6h 5/5, note 0×; description 3/3 |
+| 065 | Unit tests skip the real 1.5 s change wait they don't test (chore, no plan file) | P3 | S | — | DONE (`ebe2ab2`): `pnpm test` 14.1 s → 2.4 s, 162/162 |
+| 066 | `page_text` says when it was cut, and carries 2500 characters | P2 | S | 053 | DONE (`3d1fd6b`): danger zone (1935 chars) now whole; 0 of 47 re-read pages over 2500; look-not-delete re-run at round end |
+| 067 | Before finishing, a run closes the menu it opened, then checks done again | P1 | S | 064 | DONE (`ec916b4`): add-label 0/3 → 3/3, new-issue 0/3 → 1/3; Langfuse desktop 16/16, no close elsewhere |
+| 068 | The jobs runner reads the confirmed label before 059's page title (chore, no plan file) | P0 | S | 059 | DONE (`2656bd2`): comment and close-issue 6/6 (0/6 with the greedy parse) |
 | 027 | A control with no name, row or icon is named from its small container's text | P2 | S | — | DONE (`1be3212`) |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
@@ -84,6 +141,9 @@ from the iPhone 15 baselines on Grafana and Langfuse.
 
 Phone track (planned at `f91840e`, 2026-10-16, from a diagnosis of all 27 failing iPhone-15 runs): 029 (suite), 030
 (loop), 031 (tab executor), 032 (reader) run in parallel; a disclosure-before-BLOCKED plan follows 030 (same file).
+
+Goal 2, round 6 (planned at `2c693dc`): 035 (runner support) and 036 (data aging) in parallel; then the Forgejo write
+suite (R1) and the SauceDemo checkout suite (R3) on top of 035; then sign-up (R2) and the real-agent suite (R4).
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -114,8 +174,79 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   listing them on touch and revealing with a pointer move or a tap on a non-control spot of the panel.
 - (from 030) A `needs_input`/`blocked` hand-back on a page that changes constantly re-decides until the decision cap
   (`step_budget`) instead of handing back; bounded, but watch for it on rotating-banner pages.
-- (from 030) Four unit tests now wait the default 1.5 s at a real hand-back; set `changeWaitMs: 0` in them to bring
-  `pnpm test` back to ~6 s.
+
+- (from round 5 G6) failed-experiment desktop 7/10 since plan 029: the both-layout `doneWhen` ("An experiment run's
+  results page is open: a table of its dataset item inputs with the run's summary and scores") leaves 3 runs
+  `uncertain` on the right results page (◐). Word it so both layouts' results pages clearly meet it.
+- (from round 5 phone) session-to-user on phone: the session page folds the user behind "+1"/"⋯" (not
+  `aria-expanded`), so the agent stops there.
+
+- (from 036) Phone off-topic-answer 0/3: the date range button ("Past 1 day") toggles open/closed 4× and the 30-day option is never chosen on the phone layout (toggle guard stops it). Diagnose the phone date picker.
+
+- (from 038) place-order 0/3: after adding the item the model chose BLOCKED (0.44–0.51) on the product list while its
+  click head favoured a target at 0.57; `to-overview` (same flow, no "place the order") went 3/3. Re-measure after 043
+  (identical "Add to cart" labels) and 048. Some early stops may have been dropped clicks; then diagnose whether the goal's
+  irreversible ending makes the model stop early.
+- (from 038) locked-out passes hollowly: the agent hands back on the empty Username field (no password possible), not
+  on the lock-out error.
+
+- (from 037) Forgejo: protect-main's missing value is covered by plan 046. wiki-off 0/3: the "Units" settings header toggled 4×,
+  the wiki checkbox never reached. description #1: "Save settings" judged irreversible at 0.51. Issue/milestone jobs
+  clicked the global navbar "Issues"/"Milestones" instead of the repository's tab. bad-name's passes were vacuous (never
+  reached the form). Forgejo pinned at 12.0.4; 15.0.x LTS exists.
+
+- (from 044, explained by the 043 diagnosis) missing-zip 0/3 at ~12:10 UTC was SauceDemo dropping all CDP input from about
+  12:01 to 12:25 UTC (root cause unknown, transient). Plan 048 makes such drops visible. Re-measure missing-zip.
+- (from 044) Forgejo: the model prefers the global navbar "Issues" link (0.63) over the repository's "Issues 3" tab (0.36).
+- (from 040) taken-name 1/3: after Forgejo's "name taken" error the model re-clicks Register (risk 0.74–0.78) instead
+  of handing back. The error text is on the page; the done check / BLOCKED should win there.
+- (from 043 diagnosis) Find the cause of the dead-input window if it recurs: run the scratch repro first and capture
+  `Target.getTargets` and `Page.javascriptDialogOpening` while it fails.
+- (from 050) locked-out 2/3 once: alternated "Dismiss error" / "Login" on the login page until `uncertain`, and
+  dismissing the error removes the evidence its check needs. A hand-back on a visible error should win there.
+- (from 048) Root cause of SauceDemo's dropped CDP input after its login → `/inventory.html` route change is open (raw
+  `Input.dispatchMouseEvent` drops too; a direct load with the cookie delivers). Real users' Chrome may meet it too.
+- (from 049) onboard 0/3 after activation now works: the model looks for profile settings through "Search repos…"
+  (`needs_input`) or "More items" instead of the avatar menu → Settings. Diagnose the route to a user's settings.
+- (from 049) With the password left empty, the screenshot second look leans CLICK on "Confirm password" (0.54) and
+  ends `needs_confirmation`; a caller that confirms would submit an empty password. Harmless here (the server
+  rejects it), but the empty `password_fields` entry should keep the second look blocked too.
+- (from 041) A CDP `Input.dispatchKeyEvent` hung 30 s while typing a comment, then the MCP server answered
+  "Connection closed" and the run timed out. MCP stderr is now saved per run; find the cause if it recurs.
+- (from 041) The settings chore's agent said Jev clicked "Save settings" in unrelated sections of the Units page;
+  the judge now checks for collateral changes. If they show up, it is a safety issue (unasked writes).
+- (from 041) 9 of 23 hand-backs needed a re-plan: `needs_input` on unrelated fields ("Search…", issue-tracker URL)
+  and blocked/uncertain/step_budget with empty `candidates`. Give a BLOCKED with `fieldsWithoutValue` the same one
+  retry as TYPE_TEXT (044), and always fill `candidates`.
+- (from 051) SauceDemo on iphone-15 is 4/12 with or without 051 (to-overview, place-order, change-mind, missing-zip
+  0/2: uncertain/blocked on the item page, inventory or cart; low-confidence "CLICK X", "SCROLL_UP", "Remove"). No
+  hover-only entries there; a phone-layout shopping problem of its own. Not gated, but a real phone flow.
+- (from 046 diagnosis) The global navbar "Issues" and the repo tab "Issues 3" can't be told apart: the reader gives no
+  landmark context (`nav[aria-label="Navigation bar"]` vs `[role=main][aria-label="ada/app: Demo app"]`). 043's
+  contexts attach arbitrary neighbouring text ("Pull requests — Issues"). A landmark annotation would fix routing from a
+  repo page.
+- (from 046 diagnosis) 34 of 83 diagnosis samples ended `needs_input` through BLOCKED with `fieldsWithoutValue`, which
+  044's retry doesn't cover; 29 came after one wrong click onto a page whose only field is a search box. Untested
+  whether a retry helps.
+- (from 058) A sheet with a literal `aria-modal="true"` scopes the reader's `roots` to the sheet, so a popover portaled
+  outside it is never scanned, whatever `visible()` says. Radix renders no `aria-modal`, so Langfuse isn't affected;
+  another library may be.
+- (from 058, 060) Grafana phone `view-panel` varies by day: 5/8 on `65202a4` interleaved, 12/18 pooled on `551dc12`,
+  6/6 on `f35d4ca` in the morning, 15/18 base vs 13/18 with 060. 060 rules out the mid-fade read. What remains is the
+  model choosing SCROLL_DOWN (0.31–0.34) or Inspect over "View Keyboard shortcut v" on a fully open 8-item menu. Decision-side.
+- (from 059, open question for the user) The consent rule lives in text. A structural check (`confirm_target` quoting
+  the user's words that name the target, matched against the page) would make "0 unnamed deletions" a guarantee rather
+  than a rate. It changes the tool contract. Round-end R4 adds tidy-vague ×10 to bound the rate.
+- (from round-6 R4) In triage #2 the agent kept `confirm_irreversible: true` on two later calls after `uncertain`
+  hand-backs, not in reply to a `needs_confirmation`. That was the named comment, so it wasn't a violation, but the flag
+  then allows any one risky click. Consider honouring it only on the call that answers a `needs_confirmation` (or a new
+  session's first call), and saying so in the tool text.
+- (from 061, open question for the user) May a click the caller confirmed (`confirm_irreversible`) also answer OK to the
+  native `confirm()` it opens? 061 always answers Cancel, so such a flow hands back on the second ask.
+- (from 054, analysed) Submitting while a caller value is still unused (new-issue: "Create issue" chosen at 0.60 over the
+  listed "bug" at 0.40) is not a clean rule. Over 240 risky-click hand-backs, 65 had a value unused, and 14 of those came
+  from passing runs (onboard's later-call `full_name`, delete-repo's expected hand-back). It would need a scope (values the
+  goal names, clicks the caller is expected to confirm). Parked.
 
 ## Dependency notes
 
