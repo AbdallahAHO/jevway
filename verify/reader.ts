@@ -51,6 +51,38 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'a link in a visible row scrolled sideways is listed with its row and opens on click',
+    file: 'sideways-row-links.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const trace = find(page.actions, 'link', /^t-1abc/);
+      assert.ok(trace, `trace link not listed: ${labelsOf(page.actions)}`);
+      assert.match(trace.label, /scorer-1\b/, 'the label does not say which row the link belongs to');
+      await tab.act(trace, page);
+      const state = await fixtureState(tab);
+      assert.equal(state.opened, 't-1');
+      assert.equal(state.sorted, null, 'a header was clicked on the way');
+    },
+  },
+  {
+    name: 'sideways row links are capped',
+    file: 'sideways-row-links.html',
+    run: async (tab) => {
+      // Scrolled to the bottom, the rows above the viewport come first in document order, so a rule that ignored where the
+      // row is would list them first. Thirteen rows are left on screen with three link columns each: two per row, twenty in all.
+      await tab.evaluate('window.scrollTo(0, document.body.scrollHeight)');
+      const onScreen: number[] = await tab.evaluate(`[...document.querySelectorAll('tbody tr')]
+        .filter((row) => { const box = row.getBoundingClientRect(), y = box.y + box.height / 2; return y >= 0 && y < innerHeight; })
+        .map((row) => row.rowIndex)`);
+      const links = (await listed(tab)).filter((action) => action.role === 'link');
+      const rowOf = (action: PageAction) => Number(action.label.match(/^[tdr]-(\d+)/)?.[1]);
+      assert.equal(links.length, 20, `listed ${links.length} sideways links: ${labelsOf(links)}`);
+      assert.ok(links.every((action) => onScreen.includes(rowOf(action))), `a link of an off-screen row is listed: ${labelsOf(links)}`);
+      for (const row of new Set(links.map(rowOf)))
+        assert.ok(links.filter((action) => rowOf(action) === row).length <= 2, `row ${row} lists more than 2 links`);
+    },
+  },
+  {
     name: 'a sortable header holding a drag button is still a column header',
     file: 'header-with-button.html',
     run: async (tab) => {

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sideways row links</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  /* A phone-shaped scores table: a narrow scroll box around a wide table, link columns far to the right. */
+  .box { width: 400px; overflow-x: auto; }
+  table { border-collapse: collapse; width: 2000px; table-layout: fixed; }
+  /* 60px rows: the header and rows 1-12 have their centres in the 780px viewport, row 13 and below do not. */
+  th, td { height: 60px; box-sizing: border-box; padding: 0 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid #ddd; }
+  th:nth-child(1) { width: 150px; }
+  th:nth-child(2) { width: 100px; }
+  th:nth-child(3) { width: 1150px; }
+  th:nth-child(n+4) { width: 200px; }
+  th.sortable { cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="box">
+  <table>
+    <thead><tr><th>Name</th><th class="sortable">Value</th><th>Comment</th><th>Trace</th><th>Dataset</th><th>Raw</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<script>
+  window.__fixture = { sorted: null, opened: null };
+  const rows = document.getElementById('rows');
+  for (let n = 1; n <= 30; n++) {
+    const row = document.createElement('tr');
+    row.innerHTML =
+      `<td>scorer-${n}</td><td>0.${String(n).padStart(2, '0')}</td>` +
+      `<td>The answer was judged against the reference and scored on relevance (row ${n}).</td>` +
+      `<td><a href="#" data-opened="t-${n}">t-${n}abc</a></td>` +
+      `<td><a href="#" data-opened="d-${n}">d-${n}xyz</a></td>` +
+      `<td><a href="#" data-opened="r-${n}">r-${n}raw</a></td>`;
+    rows.append(row);
+  }
+  document.querySelector('th.sortable').addEventListener('click', () => (window.__fixture.sorted = 'value'));
+  for (const link of document.querySelectorAll('a')) {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      window.__fixture.opened = link.dataset.opened;
+    });
+  }
+</script>
+</body>
+</html>
