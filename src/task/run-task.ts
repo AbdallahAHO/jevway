@@ -748,16 +748,15 @@ export class BrowserTask {
     const goalMet = !!this.#options.doneWhen && !!decision.sawScreenshot && (decision.doneProbability ?? 0) >= GUARDS.doneSteady;
     const unsure = !blocked && !goalMet && this.#lowConfidence(decision) && !['WAIT', 'PRESS_ESCAPE'].includes(decision.operation);
     if (blocked ? decision.fieldsWithoutValue.length : !unsure) return decision;
-    const { minConfidence, elementRisk, pageRisk } = this.#options;
+    const { minConfidence, elementRisk } = this.#options;
     const clicks = buildActionSpace(page.actions).targets.CLICK ?? {};
     const favourite = blocked ? foldedFavourite(decision.answers, clicks) : undefined;
     const likely = favourite && favourite.probability >= minConfidence && !this.#opened.has(favourite.action.node!) ? favourite : undefined;
     // A person who can't find something opens the "+1" / "More" overflow first, even when it looks unlikely.
     const folded = likely ?? overflowFolds(decision.answers, clicks).find((fold) => !this.#opened.has(fold.action.node!));
     if (!folded) return decision;
-    const byName = decision.elementRisks?.[folded.id] ?? 1;
-    // As for a chosen click: with both questions on, either one saying irreversible holds it.
-    const commitRisk = !elementRisk ? (decision.commitRisk ?? 1) : pageRisk ? Math.max(byName, decision.commitRisk ?? 0) : byName;
+    // A fold is collapsed by definition: as for any collapsed control, only its name is judged (the page-level question reads the page).
+    const commitRisk = elementRisk ? (decision.elementRisks?.[folded.id] ?? 1) : (decision.commitRisk ?? 1);
     return {
       ...decision,
       via: 'disclosure' as const,

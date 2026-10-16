@@ -195,7 +195,9 @@ export const decide = async (ask: Ask, input: DecisionInput): Promise<Decision> 
         decision.elementRisks = Object.fromEntries(riskTargets.map((index) => [index, readRisk(answers[`risk_${index}`])]));
         if (decision.operation === 'CLICK') {
           const elementRisk = decision.elementRisks[targetIndexOf(space, 'CLICK', decision.action!)];
-          decision.commitRisk = input.pageRisk ? Math.max(decision.commitRisk ?? 0, elementRisk) : elementRisk;
+          // A collapsed control only opens something, and what it opens is judged when it's clicked: the page-level question reads the form, not the dropdown.
+          const collapsed = decision.action!.expanded === 'false';
+          decision.commitRisk = input.pageRisk && !collapsed ? Math.max(decision.commitRisk ?? 0, elementRisk) : elementRisk;
         }
       }),
     );
