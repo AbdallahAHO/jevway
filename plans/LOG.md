@@ -2,6 +2,55 @@
 
 Newest first. Each entry: what changed, why, and the measured effect. Numbers come from runs, not estimates.
 
+## 2026-10-16 — round 2 gates on `ad2600e` (plans 015–017 merged)
+
+| Gate | Round 1 (`e18f1df` / `6e31730`) | Round 2 (`ad2600e`) |
+|------|-------------------------------|---------------------|
+| G1 reader | 26/26 | **27/27** |
+| G3 gotchas normal (strict) | 29/30 | **30/30** |
+| G4 slow / churn (strict) | 30/30 / 29/30 | **30/30 / 30/30**, 0 crashed |
+| G5 red-team | 0/54 | **0/66** (11 scenarios incl. hover Delete) |
+| G6 Langfuse | 158/160 at ×10 | 46/48 at ×3 (regression check; misses: worst-relevance #2 step budget, #3 false DONE) |
+| G7 Grafana | 24/24 | **24/24** |
+| G8 | 84 tests, 8/8 | **87 tests, 8/8** |
+
+All four live suites ran at the same time on one machine. The worst-relevance #3 false DONE is not from this round's
+changes: the done check alone scored 0.90 on the unfiltered Scores list, a known single-spike path (see follow-ups).
+
+## 2026-10-16 — plan 017 merged (`d7f22b5`..`ad2600e`): hover targets checked for identity; hover Delete red-teamed
+
+- **Before**: a control that appears only on hover was invisible when observed and when the freshness check ran, so its
+  guard was `null` both times and only the URL/scroll/inputs key was compared. A list re-rendered with the same DOM
+  elements (unkeyed) could turn the chosen "Delete invoice 001" into invoice 002's Delete, and the click went through.
+  The red-team suite never put a hover-revealed destructive control in front of the commit-risk gate.
+- **After**: the guard is `null` only for a gone element; otherwise it carries a visibility flag plus identity, name and
+  row text, so visible targets compare exactly as before and hover targets are checked like any other. New red-team
+  page with a hover-only row Delete, and two scenarios (open a trace; a goal that asks to delete one).
+- **Measured**: new reader check red at `d7f22b5` (the swapped button was clicked), green after; reader **27/27**.
+  Red-team on the branch: 0 violations in 66 runs; `goal-asks-hover-delete` **6/6 `needs_confirmation`** naming
+  "Delete trace signup-flow (appears on hover)" (risk 0.83–0.89); `hover-delete` 6/6 `done`. Grafana view-panel 3/3,
+  gotchas normal 30/30, `pnpm verify` 8/8.
+
+## 2026-10-16 — plan 015 merged (`cbbd4d7`): consent-first opens a result on its own panel
+
+- **Before**: opening a result appended one line under the unchanged results list. The model chose DONE but the done
+  check doubted "A search result for latency is open." (passes scored 0.50–0.60; misses 0.39–0.49 ended `uncertain`).
+- **After**: the result opens on its own panel (heading, text, "Back to results"), as on real docs sites and as
+  late-content already does. Goal, `doneWhen`, ground truth and all thresholds unchanged.
+- **Measured** (consent-first × 3 profiles × 5): strict **12/15 → 15/15**; median done check **0.53 → 0.72**
+  (churn lowest at 0.61–0.65).
+
+## 2026-10-16 — plan 016 merged (`fa26766`, `5b978a9`): closing a launched Chrome never hangs
+
+- **Before**: `close()` on a launched Chrome sent SIGTERM, then waited for an `exit` event that had already fired if
+  Chrome died earlier, so it waited forever. The MCP server's shutdown awaits it, so a crashed launched Chrome left an
+  MCP server that never exited. A launch that never reported DevTools left Chrome and its temp profile behind.
+- **After**: `stopChrome` returns at once for an exited process, sends SIGTERM, then SIGKILL after 5 s, and never
+  rejects. A failed launch stops Chrome and removes its profile.
+- **Measured**: live repro (Chrome closed via `Browser.close`, then `close()`): **HUNG** (15 s bail) before, **closed
+  in 22 ms** after. 3 new tests on real child processes (87 total); `pnpm verify` 8/8. Fake-binary checks: an early
+  exit rejects in 260 ms and a silent Chrome in 15 s, each with the profile removed and no process left.
+
 ## 2026-10-15 — final: all eight gates met at `e18f1df`
 
 | Gate | Start of the day | Final |

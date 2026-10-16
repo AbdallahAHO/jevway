@@ -11,14 +11,17 @@ condition; every plan moves one of them.
 
 | Gate | Measured by | Target | Now |
 |------|-------------|--------|-----|
-| G1 Page reader is correct | `pnpm verify:reader` (model-free fixtures, plan 001) | 100% of fixtures, under 60 s, no API key | **met**: 20/20 in ~11 s, keyless (`d38dc7e`) |
-| G2 Never crashes on browser/model trouble | unit tests from plan 002 + chaos runs (plan 003) | 0 thrown errors out of `BrowserTask.run()`; every failure is a status | **met**: 0 crashes in 90 chaos runs; dropped/silent connections reject and the runner reconnects; 160-run Langfuse pass completed (`e18f1df`) |
-| G3 Hard page patterns work | `pnpm verify:gotchas` normal profile (plan 003) | ≥ 95% of runs (strict: page **and** `done`, from plan 010) | **met**: strict 29/30 (96.7%), reached 30/30 (`144d2d2`) |
-| G4 Holds up under stress | `pnpm verify:gotchas` chaos profiles (plan 003) | ≥ 90% of runs, 0 crashes (strict from plan 010) | **met**: strict slow 30/30, churn 28/30 (93.3%), 0 crashes (`144d2d2`) |
-| G5 Safe against bait and injection | `pnpm verify:redteam` (plan 004) | 0 destructive or injected actions in all runs | **met**: 0/54 incl. goals that ask to pay, + 0/40 extra (`d92d0c1`) |
-| G6 Real app, repeatable | `pnpm verify:langfuse` 10 runs/job, desktop (plan 006) | ≥ 95% pass, no job under 80% | **met**: 158/160 = 98.8% (CI 95.6–99.7%), lowest job 8/10 (`e18f1df`) |
-| G7 Generalizes beyond Langfuse | `pnpm verify:grafana` (plan 007) | ≥ 80% pass | **met**: 24/24 (`6e31730`), from 9/24 |
-| G8 No regressions | `pnpm typecheck`, `pnpm test`, `pnpm verify` | all green | **met** at `e18f1df`: 84 tests, 8/8, reader 26/26 |
+| G1 Page reader is correct | `pnpm verify:reader` (model-free fixtures, plan 001) | 100% of fixtures, under 60 s, no API key | **met**: 27/27 keyless (`ad2600e`) |
+| G2 Never crashes on browser/model trouble | unit tests from plan 002 + chaos runs (plan 003) | 0 thrown errors out of `BrowserTask.run()`; every failure is a status | **met**: 0 crashes in 90 gotcha runs; a launched Chrome that died closes in 22 ms instead of hanging (`ad2600e`) |
+| G3 Hard page patterns work | `pnpm verify:gotchas` normal profile (plan 003) | ≥ 95% of runs (strict: page **and** `done`, from plan 010) | **met**: strict 30/30 (`ad2600e`) |
+| G4 Holds up under stress | `pnpm verify:gotchas` chaos profiles (plan 003) | ≥ 90% of runs, 0 crashes (strict from plan 010) | **met**: strict slow 30/30, churn 30/30, 0 crashes (`ad2600e`) |
+| G5 Safe against bait and injection | `pnpm verify:redteam` (plan 004) | 0 destructive or injected actions in all runs | **met**: 0/66 violations incl. a hover-only Delete (`ad2600e`) |
+| G6 Real app, repeatable | `pnpm verify:langfuse` 10 runs/job, desktop (plan 006) | ≥ 95% pass, no job under 80% | **met** at 10 runs on `e18f1df` (158/160); regression check at 3 runs on `ad2600e`: 46/48 (CI 86.0–98.8%), both misses worst-relevance |
+| G7 Generalizes beyond Langfuse | `pnpm verify:grafana` (plan 007) | ≥ 80% pass | **met**: 24/24 (`ad2600e`) |
+| G8 No regressions | `pnpm typecheck`, `pnpm test`, `pnpm verify` | all green | **met**: 87 tests, `pnpm verify` 8/8 (`ad2600e`) |
+
+**Round 2 (2026-10-16, `ad2600e`): all eight gates hold; G6 re-checked at 3 runs per job.** Round 1 ended at
+`e18f1df` with all eight met.
 
 **Final state (2026-10-15, `e18f1df`): all eight gates met.** G3/G4/G5/G7 were confirmed on `6e31730`; `e18f1df` adds
 only plan 014 (connection handling, recording, runner), confirmed by G2/G6/G8 on `e18f1df` itself.
@@ -41,38 +44,40 @@ only plan 014 (connection handling, recording, runner), confirmed by G2/G6/G8 on
 | 012 | Controls that appear only on hover can be chosen (hover before click) | P2 | M | 011 | DONE (`e063e4f`) |
 | 013 | Every jobs-suite run starts from clean storage; Grafana re-measured | P2 | S | 011 (012 if landed) | DONE (`6e31730`) |
 | 014 | A dropped or stuck browser connection ends a run with a status, never a hang | P1 | S | — | DONE (`e18f1df`) |
+| 015 | consent-first opens a result on its own panel (fixture realism) | P2 | S | — | DONE (`cbbd4d7`) |
+| 016 | Closing a launched Chrome never hangs, even when Chrome already exited | P2 | S | — | DONE (`5b978a9`) |
+| 017 | Hover-revealed targets are guarded by identity; red-team a hover Delete | P1 | M | — | DONE (`ad2600e`) |
+
+Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
+they run in parallel. After merging, the gates are re-confirmed on the merged commit.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
 ## Follow-ups found while executing
 
-- (from 002) `recording.start()` / `recording.finish()` in `BrowserTask.run()` sit outside the new error catch: a CDP
-  failure while recording can still throw. Small; fold into the next plan touching `run-task.ts`.
 - (from 002) A settle timeout right after an action ends the run with that action missing from `summary.steps`.
 - (from 004) After a correct Cancel on a delete-confirm modal, 3/6 runs ended `blocked` instead of `done`: the done
   check didn't recognise "dialog closed, project still there". Done-evidence discrimination on cleared pages.
 - (from 004) In `always` mode the Box cross-check pointed at bait controls 4 times and handed back (safe). Check
   that `#boxRescue` can never follow a Box match onto a risky control without the commit-risk gate (it is gated
   today; add a red-team case that would catch a regression).
-- (from 006) A loop guard can stop a run as `blocked` after the right page is already open (worst-relevance: the
-  same trace link clicked 6× in 7 while its peek panel toggled). Before handing back from a guard, check the done
-  evidence on the current page.
 - (from 006) Loose done evidence again: dataset-source accepted a dataset *item* page as "the source trace is open".
 - (from 006) trace-to-prompt drifts into filter facets (`needs_input` for "Filter values") 3 times in 18 runs.
 - (from 006) Phone layout (iphone-15) is weak: 9/15, worst-relevance 0/3 and trace-to-prompt 0/3 (step budget or
   blocked). Separate track; desktop/laptop are the headline.
-- (from 010) consent-first's detail view is one line under the unchanged list (the same realism gap late-content had);
-  all 3 strict misses are there, via the rejected-DONE path (`uncertain`), which the last look doesn't cover.
-- (from 012) Freshness is identity-blind for hover-revealed targets (`cache.guard()` returns null for invisible
-  elements, so only `page_key` is compared). Consider guarding hover targets by label + container text.
-- (from 012) The red-team suite has no hover-revealed destructive control (a row "Delete" that appears on hover);
-  add one so the commit-risk gate is exercised on that path live.
-- (from 014) `src/browser/chrome.ts` in launch mode: `close()` hangs if Chrome already died (the child's `exit`
-  never fires again). Not hit by the :9333 suites; give it the same never-hang treatment as `cdp.ts`.
 - (from 014) The cause of the original DevTools socket close (the exit-13 run) was not reproduced; close code and
   reason are now recorded, so the next occurrence will say why.
 - (from Grafana probe) Unnamed column headers are labelled `columnheader`, unnamed buttons `button`: add a
   conformance fixture and name them from context.
+- (from 016) `launchChrome` still leaks Chrome and its profile if `CdpConnection.open(endpoint)` rejects after DevTools
+  was reported; wrap that call the same way as the endpoint read.
+- (from 016) An orphan headless Chrome from before the fix (profile `jev-browse-YnXD22`, started 2026-10-15, parent
+  pid 1) was still running on 2026-10-16; likely left by the old `close()` hang.
+
+- (from round 2 gates) False DONE on a single done-check spike the next-step head contradicts: worst-relevance #3
+  ended `done` on the unfiltered Scores list (done check 0.90 while the head chose TYPE_TEXT at 0.87). Across all saved
+  Langfuse runs, 16 ended this way (done ≥ 0.9, head wants another action at ≥ 0.6): 14 right, 2 false (this one and
+  dataset-source #4, 0.92). Candidate: one screenshot-backed look before accepting such a spike.
 
 ## Dependency notes
 
