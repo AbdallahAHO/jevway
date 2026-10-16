@@ -11,14 +11,16 @@ condition; every plan moves one of them.
 
 | Gate | Measured by | Target | Now |
 |------|-------------|--------|-----|
-| G1 Page reader is correct | `pnpm verify:reader` (model-free fixtures, plan 001) | 100% of fixtures, under 60 s, no API key | **met**: 27/27 keyless (`6a015f0`) |
-| G2 Never crashes on browser/model trouble | unit tests from plan 002 + chaos runs (plan 003) | 0 thrown errors out of `BrowserTask.run()`; every failure is a status | **met**: 0 crashes in 90 gotcha runs; a launched Chrome that died closes in 22 ms instead of hanging (`ad2600e`) |
-| G3 Hard page patterns work | `pnpm verify:gotchas` normal profile (plan 003) | ≥ 95% of runs (strict: page **and** `done`, from plan 010) | **met**: strict 30/30 (`6a015f0`) |
-| G4 Holds up under stress | `pnpm verify:gotchas` chaos profiles (plan 003) | ≥ 90% of runs, 0 crashes (strict from plan 010) | **met**: strict slow 30/30, churn 30/30, 0 crashes (`6a015f0`) |
-| G5 Safe against bait and injection | `pnpm verify:redteam` (plan 004) | 0 destructive or injected actions in all runs | **met**: 0/66 violations incl. a hover-only Delete (`6a015f0`) |
-| G6 Real app, repeatable | `pnpm verify:langfuse` 10 runs/job, desktop (plan 006) | ≥ 95% pass, no job under 80% | **met** at 10 runs on `e18f1df` (158/160); since then: 46/48 at ×3 on `ad2600e`, and 39/40 on the 4-job ×10 slice on `6a015f0` (miss = harness follow-up, not a DONE) |
-| G7 Generalizes beyond Langfuse | `pnpm verify:grafana` (plan 007) | ≥ 80% pass | **met**: 24/24 (`6a015f0`) |
-| G8 No regressions | `pnpm typecheck`, `pnpm test`, `pnpm verify` | all green | **met**: 92 tests, `pnpm verify` 8/8 (`6a015f0`) |
+| G1 Page reader is correct | `pnpm verify:reader` (model-free fixtures, plan 001) | 100% of fixtures, under 60 s, no API key | **met**: 30/30 keyless (`76aa054`) |
+| G2 Never crashes on browser/model trouble | unit tests from plan 002 + chaos runs (plan 003) | 0 thrown errors out of `BrowserTask.run()`; every failure is a status | **met**: 0 crashes in 90 gotcha runs; launch/connect failures clean up and time out; executed steps survive settle failures (`76aa054`) |
+| G3 Hard page patterns work | `pnpm verify:gotchas` normal profile (plan 003) | ≥ 95% of runs (strict: page **and** `done`, from plan 010) | **met**: strict 30/30 (`76aa054`) |
+| G4 Holds up under stress | `pnpm verify:gotchas` chaos profiles (plan 003) | ≥ 90% of runs, 0 crashes (strict from plan 010) | **met**: strict slow 30/30, churn 30/30, 0 crashes (`76aa054`) |
+| G5 Safe against bait and injection | `pnpm verify:redteam` (plan 004) | 0 destructive or injected actions in all runs | **met**: 0/66 violations (`76aa054`) |
+| G6 Real app, repeatable | `pnpm verify:langfuse` 10 runs/job, desktop (plan 006) | ≥ 95% pass, no job under 80% | **met**: 155/160 = 96.9% (CI 92.9–98.7%) at ×10, lowest job failed-experiment 8/10 (`76aa054`) |
+| G7 Generalizes beyond Langfuse | `pnpm verify:grafana` (plan 007) | ≥ 80% pass | **met**: 24/24 (`76aa054`) |
+| G8 No regressions | `pnpm typecheck`, `pnpm test`, `pnpm verify` | all green | **met**: 98 tests, `pnpm verify` 8/8 (`76aa054`) |
+
+**Round 3 (2026-10-16, `76aa054`, plans 019–023): all eight gates met on this one commit, G6 at the full ×10.**
 
 **Round 2 (2026-10-16, `6a015f0`, plans 015–018): seven gates re-run on this commit; G6 holds at ×10 from `e18f1df`
 with ×3 and a 4-job ×10 slice since.** Round 1 ended at
@@ -49,39 +51,46 @@ only plan 014 (connection handling, recording, runner), confirmed by G2/G6/G8 on
 | 016 | Closing a launched Chrome never hangs, even when Chrome already exited | P2 | S | — | DONE (`5b978a9`) |
 | 017 | Hover-revealed targets are guarded by identity; red-team a hover Delete | P1 | M | — | DONE (`ad2600e`) |
 | 018 | A done spike the next-step head contradicts is confirmed with a screenshot | P1 | S | — | DONE (`6a015f0`) |
+| 019 | A launched Chrome that can't be connected to is cleaned up; connecting never hangs | P2 | S | — | DONE (`e6129d6`) |
+| 020 | An executed action is always in the summary, even when the page then fails to settle | P1 | S | — | DONE (`64e5550`) |
+| 021 | Every Box rescue path is pinned behind the irreversible-click gate (tests) | P2 | S | — | DONE (`0459c8a`) |
+| 022 | Icon-only controls get a name from their icon or the control they toggle | P2 | M | — | DONE (`76aa054`) |
+| 023 | Two-call jobs wait for the table; a missing follow-up is reported as such | P2 | S | — | DONE (`2e983ba`) |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
 they run in parallel. After merging, the gates are re-confirmed on the merged commit.
+
+Round 3 (planned at `5822f71`, 2026-10-16): 019–023 from the follow-ups; 020 and 021 add tests to different describes of
+the same test file, everything else is disjoint, so all five run in parallel.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
 ## Follow-ups found while executing
 
-- (from 002) A settle timeout right after an action ends the run with that action missing from `summary.steps`.
 - (from 004) After a correct Cancel on a delete-confirm modal, 3/6 runs ended `blocked` instead of `done`: the done
   check didn't recognise "dialog closed, project still there". Done-evidence discrimination on cleared pages.
-- (from 004) In `always` mode the Box cross-check pointed at bait controls 4 times and handed back (safe). Check
-  that `#boxRescue` can never follow a Box match onto a risky control without the commit-risk gate (it is gated
-  today; add a red-team case that would catch a regression).
-- (from 006) Loose done evidence again: dataset-source accepted a dataset *item* page as "the source trace is open".
 - (from 006) trace-to-prompt drifts into filter facets (`needs_input` for "Filter values") 3 times in 18 runs.
 - (from 006) Phone layout (iphone-15) is weak: 9/15, worst-relevance 0/3 and trace-to-prompt 0/3 (step budget or
   blocked). Separate track; desktop/laptop are the headline.
 - (from 014) The cause of the original DevTools socket close (the exit-13 run) was not reproduced; close code and
   reason are now recorded, so the next occurrence will say why.
-- (from Grafana probe) Unnamed column headers are labelled `columnheader`, unnamed buttons `button`: add a
-  conformance fixture and name them from context.
-- (from 016) `launchChrome` still leaks Chrome and its profile if `CdpConnection.open(endpoint)` rejects after DevTools
-  was reported; wrap that call the same way as the endpoint read.
-- (from 016) An orphan headless Chrome from before the fix (profile `jev-browse-YnXD22`, started 2026-10-15, parent
-  pid 1) was still running on 2026-10-16; likely left by the old `close()` hang.
-
+- (from 022) Unnamed column headers were not seen in the Grafana probe; check Langfuse's tables for them before planning.
 - (from 018) The contradicted-spike look never fired live (40 runs; spikes stayed at 0.84–0.88). Next Langfuse ×10
   pass: count looks, their scores, and outcomes from `trace.json` to confirm it catches false DONEs without costing
   right ones.
-- (from 018) Two-call jobs: when the harness's table read finds no matching row (failed-experiment #8: table likely
-  not loaded yet), the run fails with no second call and reads as a false DONE. Wait for rows before reading, and
-  label "follow-up not found" apart from page failures in the report.
+
+- (from round 3 G6) worst-relevance #4 ended `done` on the unfiltered Scores list through the **steady** path (done
+  check 0.89, 0.87, 0.77 while the head kept choosing TYPE_TEXT/CLICK at ≥ 0.87). Its `doneWhen` ("A trace is open next
+  to or after its answer_relevance score") also matches a list row's trace link next to a score; tighten it like
+  dataset-source's ("a trace's own view is open…").
+- (from round 3 G6) Two runs (off-topic-answer #8, trace-to-prompt #5) handed back `uncertain` on PRESS_ESCAPE at
+  0.29. Escape is a fixed key offered only while something is expanded; consider letting an unsure Escape run like an
+  unsure WAIT does (still bounded by the wander guard).
+- (from round 3 G6) Plan 018's look fired 0 times in 200 live runs (one contradicted spike coincided with a steady
+  streak, which ends `done` without a look by design). When the look does confirm, the trace keeps only the look, not
+  the spike that triggered it; record both.
+- (from round 3 G6) failed-experiment #3: `followUpMissing` with 8 rows read; save the rows read on such runs so the
+  report shows why none matched.
 
 ## Dependency notes
 

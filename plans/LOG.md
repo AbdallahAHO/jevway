@@ -2,6 +2,75 @@
 
 Newest first. Each entry: what changed, why, and the measured effect. Numbers come from runs, not estimates.
 
+## 2026-10-16 — round 3 gates on `76aa054` (plans 019–023 merged): all eight met on one commit
+
+| Gate | Round 2 | Round 3 (`76aa054`) |
+|------|---------|---------------------|
+| G1 reader | 27/27 | **30/30** |
+| G3 gotchas normal (strict) | 30/30 | **30/30** |
+| G4 slow / churn (strict) | 30/30 / 30/30 | **30/30 / 30/30**, 0 crashed |
+| G5 red-team | 0/66 | **0/66** |
+| G6 Langfuse | ×3 and a 4-job slice only | **155/160 = 96.9% at ×10** (CI 92.9–98.7%), lowest job 8/10 |
+| G7 Grafana | 24/24 | **24/24** |
+| G8 | 92 tests, 8/8 | **98 tests, 8/8** |
+
+The five Langfuse misses: off-topic-answer #8 and trace-to-prompt #5 handed back `uncertain` on an unsure Escape (0.29);
+worst-relevance #4 a false DONE through the steady path, helped by a loose `doneWhen`; failed-experiment #3 a labelled
+missing follow-up (8 rows, none errored); failed-experiment #4 the step budget. Plan 018's look fired 0 times in 160.
+All four live suites ran at the same time.
+
+## 2026-10-16 — plan 022 merged (`0f99d90`, `76aa054`): icon-only controls get names
+
+- **Before**: a control with no accessible name was listed by its bare role. Probe of five Grafana pages: the
+  dashboards view switch read `radio`, `radio` (hidden inputs whose labels hold only an icon), and a combobox's
+  dropdown arrow read `button`.
+- **After**: only when a control has no name, the reader names it from its hidden input's own name, from the control
+  sharing its `aria-controls` ("Toggle Select labels"), or from an icon hint (`icon-…` test ids; `lucide-`, `fa-`,
+  `bi-`, `mdi-` classes → "folder icon"). `name()` and the freshness guard are unchanged.
+- **Measured**: 3 reader checks red at `0f99d90`, reader **30/30** after. Probe after: 0 unnamed on the four pages
+  (`radio: folder icon`, `radio: list ul icon`, `button: Toggle Select labels`). `pnpm verify` 8/8; Grafana 23/24 on the
+  branch (miss: alert-rules #1 `blocked` on Home after a 0.19 WAIT; no new labels in its trace).
+
+## 2026-10-16 — plan 023 merged (`a195395`, `2e983ba`): two-call jobs wait for the table; a missing follow-up is labelled
+
+- **Before**: the harness read the list's table once, right after the first call; if the rows hadn't arrived
+  (failed-experiment #8), the second call never ran and the run scored like a false DONE.
+- **After**: when the first call ended `done`, the harness polls the table for up to 5 s; if no row matches, the run
+  is marked `followUpMissing` and reported as "no matching row for the second call", apart from agent failures. The
+  runner's unused `origin` option is gone.
+- **Measured**: two-call jobs ×5: costliest-user 5/5, failed-experiment 5/5, power-user-sessions 5/5; every follow-up
+  found on the first read (no slowdown). The missing-row label was checked offline through `renderReport`. Grafana
+  smoke 8/8.
+
+## 2026-10-16 — plan 020 merged (`64e5550`): an executed action is always in the summary
+
+- **Before**: if a click or typed value executed and the page then failed to settle (or the connection dropped), the
+  run ended `blocked` with the action **missing** from `summary.steps`; the calling agent could repeat a submit that
+  already went through.
+- **After**: the step is recorded before the error is rethrown, with `page_changed`/`value_kept` left out (unknown).
+- **Measured**: 2 tests (CLICK, TYPE_TEXT) red on the old code (`steps` empty), green after (98 total with 019 and 021).
+  `pnpm verify` 8/8; gotchas normal 30/30.
+
+## 2026-10-16 — plan 021 merged (`0459c8a`): every Box rescue route is pinned behind the irreversible-click gate
+
+- **Before**: of the four ways a screenshot box can replace a decision with a click, only BLOCKED → CLICK had a test
+  with a risky target; a refactor dropping the rescued decision's commit risk would have gone unnoticed on the
+  rejected-DONE, unsure and coordinate-click routes.
+- **After**: one test per route (risky target → `needs_confirmation`, nothing executed), plus "one confirmation covers
+  one click" on a rescued click.
+- **Measured**: 3 new tests (97 with plan 019's). Mutation check with `commitRisk: 0` in `#boxRescue`: all 4 route tests
+  fail; source unchanged.
+
+## 2026-10-16 — plan 019 merged (`b34362f`, `e6129d6`): connect failures never leak Chrome or hang
+
+- **Before**: if a launched Chrome reported DevTools but the WebSocket connect failed, Chrome and its temp profile were
+  left behind; and connecting had no time limit, so an endpoint that accepted TCP but never completed the handshake
+  hung `connectChrome` (launch, `auto` and explicit endpoints alike).
+- **After**: one cleanup path covers every failure between spawn and a returned handle; `CdpConnection.open` gives up
+  after 15 s with "no handshake within N ms".
+- **Measured**: 2 new offline tests (94): a silent TCP server rejects at 200 ms; a fake Chrome binary whose DevTools
+  address refuses connections — red on the old code (profile left, process leaked), green after. `pnpm verify` 8/8.
+
 ## 2026-10-16 — plan 018 merged (`6a015f0`): a contradicted done spike is confirmed with a screenshot
 
 - **Before**: a single done-check score ≥ 0.9 ended a run `done` whatever the next step wanted. worst-relevance ended
