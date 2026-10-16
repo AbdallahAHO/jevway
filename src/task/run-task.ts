@@ -576,6 +576,10 @@ export class BrowserTask {
     if (decision.operation !== 'BLOCKED' || decision.fieldsWithoutValue.length) return decision;
     const folded = foldedFavourite(decision.answers, buildActionSpace(page.actions).targets.CLICK ?? {});
     if (!folded || folded.probability < this.#options.minConfidence || this.#opened.has(folded.action.node!)) return decision;
+    const { elementRisk, pageRisk } = this.#options;
+    const byName = decision.elementRisks?.[folded.id] ?? 1;
+    // As for a chosen click: with both questions on, either one saying irreversible holds it.
+    const commitRisk = !elementRisk ? (decision.commitRisk ?? 1) : pageRisk ? Math.max(byName, decision.commitRisk ?? 0) : byName;
     return {
       ...decision,
       via: 'disclosure' as const,
@@ -584,7 +588,7 @@ export class BrowserTask {
       target: folded.id,
       confidence: folded.probability,
       targetConfidence: undefined,
-      commitRisk: this.#options.elementRisk ? (decision.elementRisks?.[folded.id] ?? 1) : (decision.commitRisk ?? 1),
+      commitRisk,
     };
   }
 

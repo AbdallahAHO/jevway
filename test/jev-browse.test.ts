@@ -943,6 +943,14 @@ describe('loop gotchas', () => {
       expect(acted).toEqual([]);
     });
 
+    it('a control that is safe by name but on a page judged irreversible asks for confirmation', async () => {
+      const { ask } = scriptedJev([{ ...blockedOnMore, commit_risk: 0.9, [`risk_${more}`]: 0.02 }]);
+      const { asTab, acted } = fakeTab([foldedPage('a', 'false'), foldedPage('b', 'false')]);
+      const summary = await new BrowserTask(asTab, ask, { ...options, pageRisk: true }).run();
+      expect(summary).toMatchObject({ status: 'needs_confirmation' });
+      expect(acted).toEqual([]);
+    });
+
     it('still opens a confirmed control: only a click that ran counts as opened', async () => {
       const { ask } = scriptedJev([{ ...blockedOnMore, [`risk_${more}`]: 0.9 }]);
       const { asTab, acted } = fakeTab([foldedPage('a', 'false'), foldedPage('b', 'false'), foldedPage('c', 'false')]);
