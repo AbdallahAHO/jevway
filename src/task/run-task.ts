@@ -68,6 +68,8 @@ export interface TraceEntry {
 const PAGE_TEXT_CHARS = 1500;
 // How much of the page title a needs_confirmation reason quotes.
 const CONFIRM_TITLE_CHARS = 80;
+// How much of a page dialog's text a step or a repeat reason quotes.
+const DIALOG_MESSAGE_CHARS = 200;
 
 const DEFAULTS = {
   maxSteps: 40,
@@ -163,6 +165,9 @@ export class BrowserTask {
   #inputTokens = 0;
   #screenshots = 0;
   #confirmedCommit = false;
+  // Dialogs the page opened that no step carries yet, and how often each one has come back.
+  #dialogNotes: string[] = [];
+  #dialogsSeen = new Map<string, number>();
   /** The search-like field typed into by the last executed action, if any: PRESS_ENTER may submit it. */
   #lastTyped: PageAction | undefined;
   /** Consecutive misses on the same target node because it couldn't be reached on an unchanged page. */
@@ -220,24 +225,28 @@ export class BrowserTask {
     const tokensBefore = this.#inputTokens;
     const screenshotsBefore = this.#screenshots;
 
-    const stop = (status: TaskStatus, reason: string, decision?: Decision): TaskSummary => ({
-      status,
-      reason,
-      url: page.url,
-      title: page.title,
-      page_text: page.text.slice(0, PAGE_TEXT_CHARS),
-      elapsed_ms: elapsed(),
-      // Counts cover this call only; the session keeps full history for Jev's context.
-      steps: this.#history.slice(firstStep),
-      jev: {
-        requests: this.#latencies.length - firstRequest,
-        input_tokens: this.#inputTokens - tokensBefore,
-        median_latency_ms: median(this.#latencies.slice(firstRequest)),
-        screenshots: this.#screenshots - screenshotsBefore,
-      },
-      ...(decision?.doneProbability !== undefined && { done_probability: round(decision.doneProbability) }),
-      ...(status !== 'done' && decision && { stuck: stuckOn(decision) }),
-    });
+    const stop = (status: TaskStatus, reason: string, decision?: Decision): TaskSummary => {
+      // A dialog that opened late still belongs on the step that caused it.
+      this.#reportDialogs(firstStep);
+      return {
+        status,
+        reason,
+        url: page.url,
+        title: page.title,
+        page_text: page.text.slice(0, PAGE_TEXT_CHARS),
+        elapsed_ms: elapsed(),
+        // Counts cover this call only; the session keeps full history for Jev's context.
+        steps: this.#history.slice(firstStep),
+        jev: {
+          requests: this.#latencies.length - firstRequest,
+          input_tokens: this.#inputTokens - tokensBefore,
+          median_latency_ms: median(this.#latencies.slice(firstRequest)),
+          screenshots: this.#screenshots - screenshotsBefore,
+        },
+        ...(decision?.doneProbability !== undefined && { done_probability: round(decision.doneProbability) }),
+        ...(status !== 'done' && decision && { stuck: stuckOn(decision) }),
+      };
+    };
 
     // A loop guard fires on a page the actions may already have brought to the goal: take one last look before handing back.
     const stopAfterLastLook = async (status: TaskStatus, reason: string, decision: Decision): Promise<TaskSummary> => {
@@ -251,6 +260,9 @@ export class BrowserTask {
 
     // Browser and model errors end the run as `blocked`: the calling agent keeps the session and decides what next.
     try {
+      // A dialog from before this call is told to Jev on the first step; one the page keeps raising ends the run.
+      const repeatedAtStart = this.#reportDialogs(firstStep);
+      if (repeatedAtStart) return stop('blocked', repeatedAtStart);
       page = await this.#tab.observe();
       while (executed < maxSteps) {
         if (++decisions > maxSteps * 2) return stop('step_budget', `Made ${maxSteps * 2} decisions without finishing`);
@@ -460,6 +472,8 @@ export class BrowserTask {
           page_changed: page.fingerprint !== before,
           confidence,
         });
+        const repeatedDialog = this.#reportDialogs(firstStep);
+        if (repeatedDialog) return stop('blocked', repeatedDialog, decision);
         if (repeatingWithoutEffect(this.#history)) {
           return stopAfterLastLook('blocked', 'The last 3 actions did not change the page', decision);
         }
@@ -479,6 +493,29 @@ export class BrowserTask {
     } catch (error) {
       return stop('blocked', describeError(error));
     }
+  }
+
+  // Tells Jev about the dialogs the page opened since the last look, on the latest step of this call (or the next one, when
+  // there is none yet). Returns a reason when a dialog we only ever decline keeps coming back: the run must end then.
+  #reportDialogs(firstStep: number): string | undefined {
+    let repeated: string | undefined;
+    for (const dialog of this.#tab.takeDialogs()) {
+      const message = dialog.message.slice(0, DIALOG_MESSAGE_CHARS);
+      this.#dialogNotes.push(`the page then ${describeDialog(dialog.type, message)}`);
+      const key = `${dialog.type}\n${message}`;
+      const seen = (this.#dialogsSeen.get(key) ?? 0) + 1;
+      this.#dialogsSeen.set(key, seen);
+      // An alert's OK changes nothing, so a repeated one is no loop; a declined confirm, prompt or leave-the-page prompt that returns is.
+      if (seen > 1 && dialog.type !== 'alert') {
+        repeated ??= `The page keeps asking ${message ? `"${message}" ` : ''}(${dialog.type} dialog). jev-browse only answers Cancel to these; ask the user how to proceed.`;
+      }
+    }
+    const last = this.#history.length - 1;
+    if (this.#dialogNotes.length && last >= firstStep) {
+      const entry = this.#history[last];
+      this.#history[last] = { ...entry, element: `${entry.element} ${this.#dialogNotes.splice(0).map((note) => `(${note})`).join(' ')}` };
+    }
+    return repeated;
   }
 
   // Keeps observing a page that still looks like `before`; stops at the first change or after changeWaitMs.
@@ -720,6 +757,13 @@ const isGrayZoneClick = (decision: Decision) =>
 
 const contradictsDoneSpike = (decision: Decision, screenshots: ScreenshotMode) =>
   screenshots === 'fallback' && !['DONE', 'WAIT', 'BLOCKED'].includes(decision.operation) && decision.confidence >= HEAD_DISAGREES;
+
+// What a caller reads in a step: the dialog's kind and the one answer given (see Tab.#answerDialog).
+const describeDialog = (type: string, message: string) => {
+  if (type === 'alert') return `showed an alert "${message}"; answered OK`;
+  if (type === 'beforeunload') return 'asked whether to leave the page; stayed on it';
+  return `asked "${message}" in a ${type} dialog; answered Cancel`;
+};
 
 const stuckOn = (decision: Decision) => ({
   operation: decision.operation,

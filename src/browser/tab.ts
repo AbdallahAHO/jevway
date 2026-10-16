@@ -45,6 +45,15 @@ export interface PageState {
   passwordFields?: { name: string; filled: boolean }[];
 }
 
+/** A native dialog the page opened and how this tab answered it. */
+export interface DialogRecord {
+  /** `alert`, `confirm`, `prompt` or `beforeunload`. */
+  type: string;
+  message: string;
+  /** True only for an alert's OK; every other dialog is declined. */
+  accepted: boolean;
+}
+
 /** The page moved on since it was observed; observe again and re-decide. Never a reason to guess. */
 export class StalePage extends Error {}
 /** The page is as observed, but the chosen target can't be reached: covered, clipped, or gone from its spot. */
@@ -73,6 +82,7 @@ export class Tab {
   #afterInput: PageAction | undefined;
   #wanted: string[] = [];
   #touch = false;
+  #dialogs: DialogRecord[] = [];
   private cdp: CdpConnection;
   readonly targetId: string;
   private sessionId: string;
@@ -233,7 +243,23 @@ export class Tab {
     await tab.#call('Page.enable');
     await tab.#call('Page.addScriptToEvaluateOnNewDocument', { source: INPUT_COUNTER });
     await tab.#call('Runtime.evaluate', { expression: INPUT_COUNTER }).catch(() => undefined);
+    tab.onEvent((method, params) => {
+      if (method === 'Page.javascriptDialogOpening') tab.#answerDialog(params);
+    });
     return tab;
+  }
+
+  // jev-browse: an open dialog freezes the page for every protocol call, so it is answered at once, always with the choice
+  // that changes nothing: OK only for an alert (its only button), Cancel for confirm and prompt, Stay for beforeunload.
+  #answerDialog({ type, message }: { type: string; message?: string }) {
+    const accepted = type === 'alert';
+    this.#dialogs.push({ type, message: message ?? '', accepted });
+    void this.#call('Page.handleJavaScriptDialog', { accept: accepted }).catch(() => undefined);
+  }
+
+  /** The dialogs the page opened (and this tab answered) since the last call, oldest first. */
+  takeDialogs(): DialogRecord[] {
+    return this.#dialogs.splice(0);
   }
 
   async navigate(url: string) {
