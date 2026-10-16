@@ -1359,6 +1359,14 @@ describe('loop gotchas', () => {
       expect(summary.status).toBe('uncertain');
     });
 
+    it('ends done without opening anything when the screenshot-backed check already accepts the goal', async () => {
+      const { ask } = scriptedJev([{ ...unsure, ...risks(0.02), done_check: 0.8 }]);
+      const { asTab, acted } = fakeTab([closed(), closed('b')]);
+      const summary = await new BrowserTask(asTab, ask, { ...options, doneWhen: 'The user is open', screenshots: 'always' }).run();
+      expect(summary.status).toBe('done');
+      expect(acted).toEqual([]);
+    });
+
     it('asks for confirmation instead of opening a count chip judged risky by name', async () => {
       const { ask } = scriptedJev([{ ...unsure, ...risks(0.9) }]);
       const { asTab, acted } = fakeTab([closed(), closed('b')]);

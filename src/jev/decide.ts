@@ -67,6 +67,12 @@ export interface DecisionInput {
   elementRisk?: 'chosen' | 'ranked';
   /** With `elementRisk`: keep the page-level commit-risk head too; a chosen click takes the higher of the two. */
   pageRisk?: boolean;
+  /**
+   * The bar for an unsure step (the task's `minConfidence`). With `elementRisk`, a step whose operation or target
+   * confidence is under it has the collapsed overflow controls judged by name too, as a BLOCKED step does, because the
+   * task may open one instead of handing the step back.
+   */
+  unsureBelow?: number;
 }
 
 export interface NextClick {
@@ -389,25 +395,28 @@ export const foldedFavourite = (answers: Record<string, any>, clicks: Record<str
   }
 };
 
-// At most this many overflow controls are tried or judged per BLOCKED step: more of them are rows of one list, not a fold.
+// At most this many overflow controls are tried or judged per BLOCKED or unsure step: more of them are rows of one list, not a fold.
 const MAX_OVERFLOW_FOLDS = 3;
 // "+1", "Show 2 more tags", "More actions", "⋯": the generic names of a chip that folds details away on a narrow screen.
 const OVERFLOW_LABEL = /^(\+\d+|show \d+ more\b.*|more( actions| options| items)?|…|⋯|⋮|\.\.\.)$/i;
+// A count chip says that something is hidden; "More actions" is only a menu that may hold it.
+const COUNT_LABEL = /^(\+\d+|show \d+ more\b.*)$/i;
 
 /**
- * While the model says BLOCKED: the collapsed overflow controls ("+1", "More actions", an ellipsis icon) the click head
- * ranks highest, at most `MAX_OVERFLOW_FOLDS`. Their labels say nothing about the goal, so the head scores them near 0 even
- * when the target sits behind one; the caller opens the first one not yet tried, so a list page with a "⋯" per row costs
- * a few tries and a few risk questions, not one per row.
+ * When the model says BLOCKED or is unsure: the collapsed overflow controls ("+1", "More actions", an ellipsis icon), count
+ * chips first, then the click head's higher-ranked ones, at most `MAX_OVERFLOW_FOLDS`. Their labels say nothing about the
+ * goal, so the head scores them near 0 even when the target sits behind one; the caller opens the first one not yet tried,
+ * so a list page with a "⋯" per row costs a few tries and a few risk questions, not one per row.
  */
 export const overflowFolds = (answers: Record<string, any>, clicks: Record<string, PageAction>) => {
   const ids = Object.keys(clicks);
   if (ids.length < 2) return [];
   try {
     const { probabilities } = validChoice(answers.click_target, ids);
+    const counts = (id: string) => Number(COUNT_LABEL.test(nameOf(clicks[id])));
     return ids
       .filter((id) => clicks[id].expanded === 'false' && isOverflowLabel(clicks[id]))
-      .sort((a, b) => probabilities[b] - probabilities[a])
+      .sort((a, b) => counts(b) - counts(a) || probabilities[b] - probabilities[a])
       .slice(0, MAX_OVERFLOW_FOLDS)
       .map((id) => ({ id, probability: probabilities[id], action: clicks[id] }));
   } catch {
@@ -418,24 +427,33 @@ export const overflowFolds = (answers: Record<string, any>, clicks: Record<strin
 // A control shown only on hover is listed with this suffix on its label (see snapshot.js).
 const HOVER_SUFFIX = / \(appears on hover\)$/;
 
-const isOverflowLabel = ({ label, hover }: PageAction) => {
-  const name = (hover ? label.replace(HOVER_SUFFIX, '') : label).trim();
+const nameOf = ({ label, hover }: PageAction) => (hover ? label.replace(HOVER_SUFFIX, '') : label).trim();
+
+const isOverflowLabel = (action: PageAction) => {
+  const name = nameOf(action);
   return OVERFLOW_LABEL.test(name) || /ellipsis/i.test(name);
 };
 
 // The chosen click and the element under the screenshot box first (a box rescue clicks it, so it is judged by name too),
-// then the collapsed controls a BLOCKED step may open (opening one is a click too), then (for the autopilot) the remaining
-// taps by the target head's ranking.
-const elementRiskTargets = (input: DecisionInput, space: ActionSpace, decision: Pick<Decision, 'operation' | 'action' | 'answers' | 'nextClick'>) => {
+// then the collapsed controls a BLOCKED or unsure step may open (opening one is a click too), then (for the autopilot) the
+// remaining taps by the target head's ranking.
+const elementRiskTargets = (input: DecisionInput, space: ActionSpace, decision: Pick<Decision, 'operation' | 'action' | 'answers' | 'nextClick' | 'confidence' | 'targetConfidence'>) => {
   const clicks = space.targets.CLICK;
   if (!input.elementRisk || !input.checkCommitRisk || !clicks) return [];
   const chosen = decision.operation === 'CLICK' ? [targetIndexOf(space, 'CLICK', decision.action!)] : [];
   const boxed = decision.nextClick?.match ? [decision.nextClick.match] : [];
-  const folded =
+  // The same steps the task treats as unsure: waiting and closing a menu run anyway, so they never open an overflow control.
+  const unsure =
+    input.unsureBelow !== undefined &&
+    !['DONE', 'BLOCKED', 'WAIT', 'PRESS_ESCAPE'].includes(decision.operation) &&
+    Math.min(decision.confidence, decision.targetConfidence ?? 1) < input.unsureBelow;
+  const folds =
     decision.operation === 'BLOCKED'
-      ? [foldedFavourite(decision.answers, clicks), ...overflowFolds(decision.answers, clicks)].flatMap((fold) => (fold ? [fold.id] : []))
-      : [];
-  const judged = [...new Set([...chosen, ...boxed, ...folded])];
+      ? [foldedFavourite(decision.answers, clicks), ...overflowFolds(decision.answers, clicks)]
+      : unsure
+        ? overflowFolds(decision.answers, clicks)
+        : [];
+  const judged = [...new Set([...chosen, ...boxed, ...folds.flatMap((fold) => (fold ? [fold.id] : []))])];
   if (input.elementRisk === 'chosen') return judged;
   const probabilities: Record<string, number> = decision.answers.click_target?.probabilities ?? {};
   const ranked = Object.keys(clicks).sort((a, b) => (probabilities[b] ?? 0) - (probabilities[a] ?? 0));

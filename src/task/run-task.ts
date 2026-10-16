@@ -552,7 +552,7 @@ export class BrowserTask {
 
   // One decision per step; `fallback` takes a second, screenshot-backed look at a shaky or stalled one.
   async #decide(page: PageState, { lastLook = false } = {}): Promise<Decision> {
-    const { goal, values, doneWhen, screenshots, compactRules, elementRisk, pageRisk, imageTransport, box } = this.#options;
+    const { goal, values, doneWhen, screenshots, compactRules, elementRisk, pageRisk, imageTransport, box, minConfidence } = this.#options;
     const decideOn = async (withScreenshot: boolean) => {
       const screenshot = withScreenshot
         ? await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page)
@@ -568,6 +568,7 @@ export class BrowserTask {
         compactRules,
         imageTransport,
         box,
+        unsureBelow: minConfidence,
         ...(elementRisk && { elementRisk: 'chosen' as const, pageRisk }),
       }).catch((error) => {
         // Only the model call is tagged: a failed screenshot above is a browser error and keeps its own type.
@@ -639,11 +640,16 @@ export class BrowserTask {
 
   // A person opens the folded section they were already looking at before giving up: BLOCKED, yet the click head leans
   // toward a collapsed control. It then faces the same hand-back checks as any click, judged by name when that is on.
+  // A person unsure where to go on a narrow screen opens the "+1" that says something is hidden before giving up: an
+  // unsure step tries the overflow controls too, unless the screenshot-backed check already accepts the goal (that is `done`).
   #openDisclosure(decision: Decision, page: PageState): Decision {
-    if (decision.operation !== 'BLOCKED' || decision.fieldsWithoutValue.length) return decision;
+    const blocked = decision.operation === 'BLOCKED';
+    const goalMet = !!this.#options.doneWhen && !!decision.sawScreenshot && (decision.doneProbability ?? 0) >= GUARDS.doneSteady;
+    const unsure = !blocked && !goalMet && this.#lowConfidence(decision) && !['WAIT', 'PRESS_ESCAPE'].includes(decision.operation);
+    if (blocked ? decision.fieldsWithoutValue.length : !unsure) return decision;
     const { minConfidence, elementRisk, pageRisk } = this.#options;
     const clicks = buildActionSpace(page.actions).targets.CLICK ?? {};
-    const favourite = foldedFavourite(decision.answers, clicks);
+    const favourite = blocked ? foldedFavourite(decision.answers, clicks) : undefined;
     const likely = favourite && favourite.probability >= minConfidence && !this.#opened.has(favourite.action.node!) ? favourite : undefined;
     // A person who can't find something opens the "+1" / "More" overflow first, even when it looks unlikely.
     const folded = likely ?? overflowFolds(decision.answers, clicks).find((fold) => !this.#opened.has(fold.action.node!));
@@ -660,6 +666,9 @@ export class BrowserTask {
       // An overflow try is deliberate but not confident: it sits at the bar, so the unsure guard lets it run.
       confidence: likely ? folded.probability : minConfidence,
       targetConfidence: undefined,
+      // An unsure TYPE_TEXT carried a value for its own field, not for this click.
+      valueKey: undefined,
+      valueConfidence: undefined,
       commitRisk,
     };
   }
