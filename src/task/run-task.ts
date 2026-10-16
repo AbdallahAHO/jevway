@@ -191,7 +191,9 @@ export class BrowserTask {
   /** The search-like field typed into by the last executed action, if any: PRESS_ENTER may submit it. */
   #lastTyped: PageAction | undefined;
   /** Set while the last executed step changed a field (typed, ticked) and nothing was saved since; `noted` once a DONE was sent back for it. */
-  #unsavedEdit: { noted: boolean } | undefined;
+  #unsavedEdit: { noted: boolean; label: string } | undefined;
+  /** Clicks (by node) that already got a "save first" after the page asked before leaving: the second time ends the run. */
+  #leaveNoted = new Set<string>();
   /** Every field this task typed into, with the path it was on: what a submit sent, for telling a form that came back from a new page. */
   #typedFields: { label: string; path: string; value?: string }[] = [];
   /** Risky clicks that executed, with what the page said right after (see #rejectedSubmit). */
@@ -573,6 +575,8 @@ export class BrowserTask {
             : undefined;
 
         const before = page.fingerprint;
+        const pathBefore = pathOf(page.url);
+        const unsavedBefore = this.#unsavedEdit;
         const ran = {
           operation: decision.operation,
           element,
@@ -596,7 +600,7 @@ export class BrowserTask {
           page_changed: page.fingerprint !== before,
           confidence,
         });
-        this.#unsavedEdit = isUnsavedEdit(decision.operation, action, page) ? { noted: false } : undefined;
+        this.#unsavedEdit = isUnsavedEdit(decision.operation, action, page) ? { noted: false, label: action.label } : undefined;
         // ...and what the page said right after it.
         if (submitted) {
           this.#submits = [...this.#submits, { ...submitted, answer: newTextOf(page.text, submitted.textBefore) }].slice(-SUBMITS_KEPT);
@@ -606,7 +610,10 @@ export class BrowserTask {
         if (decision.operation === 'CLICK' && decision.via !== 'disclosure' && action.expanded === 'false' && page.actions.some((a) => a.node === action.node && a.expanded === 'true')) {
           this.#openedByRun.add(action.node!);
         }
-        const repeatedDialog = this.#reportDialogs(firstStep);
+        const repeatedDialog = this.#reportDialogs(
+          firstStep,
+          decision.operation === 'CLICK' ? { action, path: pathBefore, unsaved: unsavedBefore } : undefined,
+        );
         this.#tab.disarmConfirm();
         if (repeatedDialog) return stop('blocked', repeatedDialog, decision);
         if (repeatingWithoutEffect(this.#history)) {
@@ -642,11 +649,25 @@ export class BrowserTask {
 
   // Tells Jev about the dialogs the page opened since the last look, on the latest step of this call (or the next one, when
   // there is none yet). Returns a reason when a dialog we only ever decline keeps coming back: the run must end then.
-  #reportDialogs(firstStep: number): string | undefined {
+  // `click` is the click that ran just before, with what the run had left unsaved on its page.
+  #reportDialogs(firstStep: number, click?: { action: PageAction; path: string; unsaved?: { label: string } }): string | undefined {
     let repeated: string | undefined;
+    let saveFirst: string | undefined;
     for (const dialog of this.#tab.takeDialogs()) {
       const message = dialog.message.slice(0, DIALOG_MESSAGE_CHARS);
       this.#dialogNotes.push(`the page then ${describeDialog(dialog.type, message, dialog.accepted)}`);
+      // jev-browse: a page asking before you leave means the run's own edit isn't saved, and a person saves first.
+      const unsaved = dialog.type === 'beforeunload' && click ? this.#unsavedOn(click.path, click.unsaved) : undefined;
+      if (unsaved && click) {
+        const clicked = String(click.action.node ?? click.action.label);
+        if (this.#leaveNoted.has(clicked)) {
+          repeated ??= `Leaving the page would discard the ${unsaved} (the page asked before leaving); save it first, or ask the user whether to discard it.`;
+        } else {
+          this.#leaveNoted.add(clicked);
+          saveFirst = `${click.action.role === 'link' ? 'this link' : 'this click'} would leave the page with ${unsaved}; save it first (a Save or Update button), or answer BLOCKED`;
+        }
+        continue;
+      }
       const key = `${dialog.type}\n${message}`;
       const seen = (this.#dialogsSeen.get(key) ?? 0) + 1;
       this.#dialogsSeen.set(key, seen);
@@ -660,7 +681,15 @@ export class BrowserTask {
       const entry = this.#history[last];
       this.#history[last] = { ...entry, element: `${entry.element} ${this.#dialogNotes.splice(0).map((note) => `(${note})`).join(' ')}` };
     }
+    if (saveFirst && last >= firstStep) this.#history[last] = { ...this.#history[last], not_executed: saveFirst };
     return repeated;
+  }
+
+  // What the run left unsaved on the page a click was made on: the last field typed there, else the control last ticked.
+  #unsavedOn(path: string, ticked?: { label: string }) {
+    const typed = this.#typedFields.filter((field) => field.path === path).at(-1);
+    if (typed) return `unsaved text in "${typed.label}"`;
+    return ticked ? `unsaved changes to "${ticked.label}"` : undefined;
   }
 
   // Keeps observing a page that still looks like `before`; stops at the first change or after changeWaitMs.
