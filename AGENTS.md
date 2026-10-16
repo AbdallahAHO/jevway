@@ -30,5 +30,6 @@ MCP server + CLI that hands browser goals to TypeSafe Jev (one `/v1/systemone` r
 - `done` requires the `done_when` Noul ≥ 0.5 when `done_when` is given. A BLOCKED whose `done_when` Noul is ≥ 0.5 is `done` too: nothing is left to do. An unsure next step on a screenshot-backed decision whose `done_when` Noul is ≥ 0.75 is `done` too.
 - Verification asserts ground truth (`window.__fixture`, URL), never the agent's own status alone.
 - Screenshot marks come only from snapshot rects and are removed before any input. The image never yields coordinates.
+- Password fields are never listed; page text says only whether each visible one is filled or empty, never its value or length.
 - Recorded (`sharp`) screenshots are for people only and never go into a request.
 - Thresholds and rules are tuned per model. Jev's `NEXT_ACTION`, 0.3 and page-level commit risk are its verified baseline, so don't retune them on other models' data. Jev's chosen click is also judged by name (`pageRisk`), and it is risky if either question says so. The loop guards in `GUARDS` (run-task.ts) are Jev-only provisional baselines.

@@ -434,6 +434,19 @@
       a.label = cap(bareLabel(a), 200 - suffix.length - context.length - 3) + ' — ' + context + suffix;
     }
   }
+  // jev-browse: a person sees whether a password field has dots in it; the model gets only that fact, never the value.
+  // The lines come before the walked text so its cap never cuts them. The value is only compared with '' and never kept.
+  const passwordLines = queried
+    .filter((e) => e.tagName === 'INPUT' && e.type === 'password' && visible(e))
+    .slice(0, 5)
+    .map(
+      (e, i) =>
+        'Password field "' +
+        (cap(name(e).replace(/\s+/g, ' ').trim(), 60) || 'unnamed') +
+        '": ' +
+        (e.value !== '' ? 'filled' : 'empty') +
+        (i === 0 ? ' (passwords are typed by the user, not by you)' : ''),
+    );
   const words = [];
   const range = document.createRange();
   let node,
@@ -452,7 +465,7 @@
       }
     }
   }
-  const text = words.join('\n').slice(0, 6000),
+  const text = [...passwordLines, ...words].join('\n').slice(0, 6000),
     height = document.documentElement.scrollHeight;
   const page_key = cache.pageKey(),
     guards = {};
