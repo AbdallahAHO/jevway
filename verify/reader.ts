@@ -435,6 +435,47 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'a combobox whose input is 4px wide opens through its field box and stays open',
+    file: 'tiny-combobox.html',
+    device: 'iphone-15',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const open = page.actions.find((action) => action.kind === 'click' && action.role === 'combobox' && /Sort/.test(action.label));
+      assert.ok(open, `combobox not listed: ${labelsOf(page.actions)}`);
+      await tab.act(open, page);
+      const after = await tab.observe();
+      assert.equal(await tab.evaluate(`document.querySelector('input').getAttribute('aria-expanded')`), 'true', JSON.stringify(await fixtureState(tab)));
+      assert.ok(find(after.actions, 'option', /Recently viewed/), `option not listed: ${labelsOf(after.actions)}`);
+    },
+  },
+  {
+    name: 'a search input covered by its own prefix and suffix takes typing through its field box',
+    file: 'decorated-search.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const search = page.actions.find((action) => action.kind === 'fill' && /Search/.test(action.label));
+      assert.ok(search, `no fill action: ${labelsOf(page.actions)}`);
+      await tab.act(search, page, 'cpu');
+      assert.equal((await fixtureState(tab)).value, 'cpu');
+    },
+  },
+  {
+    name: 'a search input under a banner that is not part of its field is still refused',
+    file: 'foreign-cover.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const search = page.actions.find((action) => action.kind === 'fill' && /Search/.test(action.label));
+      assert.ok(search, `no fill action: ${labelsOf(page.actions)}`);
+      await assert.rejects(tab.act(search, page, 'cpu'), (error) => {
+        assert.ok(error instanceof TargetUnreachable, `threw ${error}`);
+        return true;
+      });
+      const state = await fixtureState(tab);
+      assert.equal(state.value, null);
+      assert.equal(state.focused, 0, 'the field was focused behind the banner');
+    },
+  },
+  {
     name: 'icon-only radios are named from their icon, and clicking one selects it',
     file: 'unnamed-controls.html',
     run: async (tab) => {

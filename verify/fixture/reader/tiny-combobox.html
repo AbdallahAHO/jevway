@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tiny combobox</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  /* A react-select-like control: the visible field is 220x38, the real input inside it only 4x22. */
+  .control { box-sizing: border-box; display: flex; align-items: center; width: 220px; height: 38px; padding: 0 8px; border: 1px solid #888; border-radius: 4px; }
+  .placeholder { flex: 1; color: #666; }
+  input { box-sizing: border-box; width: 4px; height: 22px; margin: 0; padding: 0; border: 0; outline: 0; background: transparent; }
+  /* Opening shows the typed-text slot first, which pushes the input along: a tap's compat mouse events then land beside it. */
+  .slot { display: none; width: 60px; }
+  .control.open .slot { display: block; }
+  .control.open .placeholder { flex: 0 0 0; overflow: hidden; }
+  [role="listbox"] { width: 220px; margin: 4px 0 0; padding: 0; border: 1px solid #888; list-style: none; }
+  [role="listbox"][hidden] { display: none; }
+  [role="option"] { padding: 6px 8px; }
+</style>
+</head>
+<body>
+<!-- Opens when the input gets focus. A press on the control that is not on the input blurs it, which closes the list. -->
+<div class="control" id="control">
+  <div class="placeholder">Sort</div>
+  <div class="slot"></div>
+  <input role="combobox" aria-label="Sort" aria-controls="list" aria-expanded="false" aria-haspopup="listbox" type="text">
+</div>
+<ul role="listbox" id="list" hidden>
+  <li role="option">Alphabetically (A-Z)</li>
+  <li role="option">Recently viewed</li>
+</ul>
+<script>
+  window.__fixture = { opened: 0, closed: 0 };
+  const control = document.getElementById('control');
+  const input = control.querySelector('input');
+  const list = document.getElementById('list');
+  const setOpen = (open) => {
+    control.classList.toggle('open', open);
+    input.setAttribute('aria-expanded', String(open));
+    list.hidden = !open;
+    window.__fixture[open ? 'opened' : 'closed']++;
+  };
+  input.addEventListener('focus', () => setOpen(true));
+  input.addEventListener('blur', () => setOpen(false));
+  // A finger on the input focuses it at the end of the tap.
+  input.addEventListener('touchend', () => input.focus());
+  // A press on the control body focuses the input and keeps the list open; once focused, a press beside it is a plain blur.
+  control.addEventListener('mousedown', (event) => {
+    if (event.target === input || document.activeElement === input) return;
+    event.preventDefault();
+    input.focus();
+  });
+</script>
+</body>
+</html>

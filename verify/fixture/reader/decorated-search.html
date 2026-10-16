@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Decorated search</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  /* A phone alert list squeezes the Search field to about 54x32: its prefix and suffix wrappers cover the whole input. */
+  .field { position: relative; width: 54px; height: 32px; }
+  .field input { box-sizing: border-box; width: 54px; height: 32px; margin: 0; padding: 0; border: 1px solid #888; }
+  .prefix, .suffix { position: absolute; top: 0; width: 27px; height: 32px; background: #ddd; }
+  .prefix { left: 0; }
+  .suffix { right: 0; }
+</style>
+</head>
+<body>
+<div class="field">
+  <input aria-label="Search" type="text">
+  <span class="prefix" aria-hidden="true"></span>
+  <span class="suffix" aria-hidden="true"></span>
+</div>
+<script>
+  window.__fixture = { value: null };
+  document.querySelector('input').addEventListener('input', (event) => {
+    window.__fixture.value = event.target.value;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Foreign cover</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  .field { width: 54px; height: 32px; }
+  .field input { box-sizing: border-box; width: 54px; height: 32px; margin: 0; padding: 0; border: 1px solid #888; }
+  /* A cookie banner that is not part of the field: it sits over the whole field and everything around it. */
+  .banner { position: fixed; left: 0; top: 0; width: 200px; height: 80px; background: rgba(0, 0, 0, 0.01); }
+</style>
+</head>
+<body>
+<div class="field">
+  <input aria-label="Search" type="text">
+</div>
+<div class="banner"></div>
+<script>
+  window.__fixture = { value: null, focused: 0 };
+  const input = document.querySelector('input');
+  input.addEventListener('input', (event) => { window.__fixture.value = event.target.value; });
+  input.addEventListener('focus', () => window.__fixture.focused++);
+</script>
+</body>
+</html>
