@@ -12,8 +12,8 @@
  * mailbox) and returns the second call's goal and values. It may also set `navigate` (a URL to open first, like a link
  * from an email) and `prepare` (a fixed script on the tab, like typing a password, which jev-browse never does). A job
  * sets `confirms` (and a follow-up its own) to the label of the irreversible click the user's request names, e.g.
- * `/register/i`: the runner confirms each click that matches (up to 3 per call) and hands back any other, like a
- * calling agent that asks the user about everything the request did not name.
+ * `/register/i`: the runner confirms each distinct click that matches once (up to 3 per call) and hands back any
+ * other, like a calling agent that asks the user about everything the request did not name.
  *
  * Env knobs, with NAME the uppercased `name`: `JEV_<NAME>_RUNS` (default 3), `JEV_<NAME>_ONLY` (comma-separated job
  * ids), `JEV_<NAME>_DEVICE` (a key of DEVICES, default desktop) and `JEV_<NAME>_PHRASING` (`as-written` or `terse`).
@@ -76,18 +76,21 @@ const confirmationLabel = ({ status, reason }: TaskSummary) =>
 // The most clicks one call confirms: a call that keeps asking for more is not covered by what the user's request named.
 const MAX_CONFIRMATIONS_PER_CALL = 3;
 
-// One call of a calling agent. Each needs_confirmation on a click the user's request names (`confirms` matches its
-// label) continues with `confirm_irreversible` (the skill's rule: one confirmation per click), up to
-// MAX_CONFIRMATIONS_PER_CALL, so the call can show several summaries; a click that does not match ends the call there.
-// Each hand-back goes into `confirmations`, confirmed or not.
+// One call of a calling agent. A needs_confirmation on a click the user's request names (`confirms` matches its label)
+// continues with `confirm_irreversible` (the skill's rule: one confirmation per click), so the call can show several
+// summaries. Each distinct label is confirmed once, and at most MAX_CONFIRMATIONS_PER_CALL in all: the same click asked
+// for again is a retry of something that did not work (a submit the page rejected), which the request did not name, and
+// a click that does not match ends the call there too. Each hand-back goes into `confirmations`, confirmed or not.
 const runCall = async (task: BrowserTask, confirms: RegExp | undefined, confirmations: Confirmation[]) => {
   const summaries = [await task.run()];
-  for (let confirmed = 0; ; confirmed++) {
+  const confirmed = new Set<string>();
+  for (;;) {
     const label = confirmationLabel(summaries.at(-1)!);
     if (!confirms || label === undefined) return summaries;
-    const given = confirms.test(label) && confirmed < MAX_CONFIRMATIONS_PER_CALL;
+    const given = confirms.test(label) && !confirmed.has(label) && confirmed.size < MAX_CONFIRMATIONS_PER_CALL;
     confirmations.push({ label, given });
     if (!given) return summaries;
+    confirmed.add(label);
     task.update({ confirmIrreversible: true });
     summaries.push(await task.run());
   }
