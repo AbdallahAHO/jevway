@@ -2119,3 +2119,95 @@ describe('DONE right after an unsaved edit', () => {
     expect(notes(summary.steps)).toHaveLength(1);
   });
 });
+
+describe('a risky submit chosen again after the page answered it', () => {
+  const FORM_URL = 'http://fixture/repo/create';
+  const BEFORE = 'New repository\nRepository name\nCreate repository';
+  const BANNER = 'Repository name should contain only alphanumeric, dash ("-"), underscore ("_") and dot (".") characters.';
+  const REJECTED = `${BEFORE}\n${BANNER}`;
+  const control = (label: string, node: number, kind: 'click' | 'fill' = 'click'): PageAction =>
+    kind === 'fill'
+      ? { id: `e${node}`, kind, node, role: 'textbox', label, value: '' }
+      : { id: `e${node}`, kind, node, role: 'button', label };
+  const SCROLL: PageAction = { id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: 600 };
+  // The create form: a name field and the submit; every page differs by fingerprint so no step looks like a no-op.
+  const formPage = (fingerprint: string, text: string, overrides: Partial<PageState> = {}) =>
+    page({ url: FORM_URL, fingerprint, text, actions: [control('Repository name', 1, 'fill'), control('Create repository', 2), SCROLL], ...overrides });
+  const submit = { operation: 'CLICK', click_target: '2', commit_risk: 0.8 };
+  const type = { operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: 'name' };
+  const options = { goal: 'Create a new repository named with the text in name.', values: { name: 'my repo!' }, changeWaitMs: 0, maxSteps: 8 };
+
+  it('hands a rejected submit back blocked, quoting what the page then said', async () => {
+    const { ask } = scriptedJev([type, submit, submit]);
+    const { asTab, acted } = fakeTab([formPage('a', BEFORE), formPage('b', BEFORE), formPage('c', REJECTED)]);
+    const task = new BrowserTask(asTab, ask, options);
+    task.update({ confirmIrreversible: true });
+    const summary = await task.run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain('"Create repository" was already submitted on this page');
+    expect(summary.reason).toContain(`the page then said: "${BANNER}"`);
+    expect(acted.map((a) => a.label)).toEqual(['Repository name', 'Create repository']);
+  });
+
+  it('still quotes the text the page said right after the submit once a scroll took it off the page', async () => {
+    const { ask } = scriptedJev([type, submit, { operation: 'SCROLL_DOWN' }, submit]);
+    const { asTab, acted } = fakeTab([formPage('a', BEFORE), formPage('b', BEFORE), formPage('c', REJECTED), formPage('d', BEFORE)]);
+    const task = new BrowserTask(asTab, ask, options);
+    task.update({ confirmIrreversible: true });
+    const summary = await task.run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain(`the page then said: "${BANNER}"`);
+    expect(acted.map((a) => a.label)).toEqual(['Repository name', 'Create repository', 'Scroll down']);
+  });
+
+  it('asks for confirmation as before when the typed field is gone: the next step of a wizard', async () => {
+    const step1 = (fingerprint: string) =>
+      page({ url: 'http://fixture/signup', fingerprint, text: 'Step 1\nFull name', actions: [control('Full name', 1, 'fill'), control('Continue', 2)] });
+    const step2 = page({ url: 'http://fixture/signup', fingerprint: 'c', text: 'Step 2\nChoose a plan', actions: [control('Continue', 2)] });
+    const { ask } = scriptedJev([{ operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: 'name' }, submit, submit]);
+    const { asTab, acted } = fakeTab([step1('a'), step1('b'), step2]);
+    const task = new BrowserTask(asTab, ask, options);
+    task.update({ confirmIrreversible: true });
+    const summary = await task.run();
+    expect(summary.status).toBe('needs_confirmation');
+    expect(summary.reason).toContain('"Continue" on "Staylist" looks irreversible');
+    expect(acted.map((a) => a.label)).toEqual(['Full name', 'Continue']);
+  });
+
+  it('asks for confirmation as before when the submit took the page to another path', async () => {
+    const created = formPage('c', 'ada/new-repo\nCreate repository', { url: 'http://fixture/ada/new-repo' });
+    const { ask } = scriptedJev([type, submit, submit]);
+    const { asTab, acted } = fakeTab([formPage('a', BEFORE), formPage('b', BEFORE), created]);
+    const task = new BrowserTask(asTab, ask, options);
+    task.update({ confirmIrreversible: true });
+    const summary = await task.run();
+    expect(summary.status).toBe('needs_confirmation');
+    expect(summary.reason).toContain('"Create repository" on "Staylist" looks irreversible');
+    expect(acted.map((a) => a.label)).toEqual(['Repository name', 'Create repository']);
+  });
+
+  it('remembers the rejection across calls: confirm in one, rejected in the next', async () => {
+    const { ask } = scriptedJev([type, submit, submit, submit]);
+    const { asTab, acted } = fakeTab([formPage('a', BEFORE), formPage('b', BEFORE), formPage('b2', BEFORE), formPage('c', REJECTED)]);
+    const task = new BrowserTask(asTab, ask, options);
+    const first = await task.run();
+    expect(first.status).toBe('needs_confirmation');
+    task.update({ confirmIrreversible: true });
+    const second = await task.run();
+    expect(second.status).toBe('blocked');
+    expect(second.reason).toContain(`the page then said: "${BANNER}"`);
+    expect(acted.map((a) => a.label)).toEqual(['Repository name', 'Create repository']);
+  });
+
+  it('leaves a repeated risky label alone when no field was typed before it (a list of Delete buttons)', async () => {
+    const list = (fingerprint: string, text: string) =>
+      page({ url: 'http://fixture/items', fingerprint, text, actions: [control('Delete', 1)] });
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1', commit_risk: 0.8 }]);
+    const { asTab } = fakeTab([list('a', '2 items\nDelete'), list('b', '1 item\nItem deleted\nDelete')]);
+    const task = new BrowserTask(asTab, ask, options);
+    task.update({ confirmIrreversible: true });
+    const summary = await task.run();
+    expect(summary.status).toBe('needs_confirmation');
+    expect(summary.reason).toContain('"Delete" on "Staylist" looks irreversible');
+  });
+});
