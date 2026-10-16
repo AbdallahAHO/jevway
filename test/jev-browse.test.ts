@@ -813,6 +813,29 @@ describe('loop gotchas', () => {
     expect(summary.steps).toHaveLength(6);
   });
 
+  it('does not count an unsure WAIT or Escape toward the 6 unsure actions', async () => {
+    const unsureClick = { operation: 'CLICK', click_target: '1', confidence: 0.35 };
+    const { ask } = scriptedJev([
+      unsureClick,
+      unsureClick,
+      { operation: 'WAIT', confidence: 0.29 },
+      unsureClick,
+      unsureClick,
+      { operation: 'PRESS_ESCAPE', confidence: 0.29 },
+      unsureClick,
+      unsureClick,
+    ]);
+    // Escape is offered only on a page with something expanded: the one seen at the sixth decision.
+    const pages = Array.from({ length: 12 }, (_, i) => page({ ...(i === 5 ? withExpanded : {}), fingerprint: String(i) }));
+    const { asTab } = fakeTab(pages);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Find it', changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('uncertain');
+    expect(summary.reason).toContain('unsure for 6 actions');
+    // Six unsure clicks tripped it, with the WAIT and the Escape between them.
+    expect(summary.steps.filter((step) => step.operation === 'CLICK')).toHaveLength(6);
+    expect(summary.steps).toHaveLength(8);
+  });
+
   it('stops the same click repeated 6 times in 7 actions even when the page changes each time', async () => {
     const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
     const pages = Array.from({ length: 12 }, (_, i) => page({ fingerprint: String(i) }));

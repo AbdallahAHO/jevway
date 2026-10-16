@@ -657,8 +657,11 @@ const stuckOn = (decision: Decision, page: PageState) => ({
   page_text: page.text.slice(0, 800),
 });
 
-const wandering = (history: { confidence: number; not_executed?: string }[]) => {
-  const executed = history.filter((step) => !step.not_executed).slice(-GUARDS.wanderSteps);
+// Waits and Escapes are fixed, reversible steps (exempt from the unsure hand-back too), so they don't fill the window.
+const wandering = (history: { operation: string; confidence: number; not_executed?: string }[]) => {
+  const executed = history
+    .filter((step) => !step.not_executed && !['WAIT', 'PRESS_ESCAPE'].includes(step.operation))
+    .slice(-GUARDS.wanderSteps);
   return executed.length === GUARDS.wanderSteps && executed.every((step) => step.confidence < GUARDS.wanderConfidence);
 };
 const repeating = (outcomes: { action: string }[]) => {
