@@ -1482,3 +1482,36 @@ describe('errors become hand-backs', () => {
     expect(summary.reason).toContain('Dropdown execution');
   });
 });
+
+describe("a summary carries the final page's text", () => {
+  const TEXT_CAP = 1500;
+
+  it('gives a done summary the final page text, so a caller can read what the page shows', async () => {
+    const { ask } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
+    const { asTab } = fakeTab([page({ text: 'ada\napp — Demo app\nscratch — Scratch repository' })]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'List the repositories', doneWhen: 'x', changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('done');
+    expect(summary.page_text).toBe('ada\napp — Demo app\nscratch — Scratch repository');
+  });
+
+  it(`caps the page text at ${TEXT_CAP} characters`, async () => {
+    const { ask } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
+    const text = 'line of page text\n'.repeat(200);
+    const { asTab } = fakeTab([page({ text })]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Read it', doneWhen: 'x', changeWaitMs: 0 }).run();
+    expect(summary.page_text).toHaveLength(TEXT_CAP);
+    expect(summary.page_text).toBe(text.slice(0, TEXT_CAP));
+  });
+
+  it('puts the page text on a blocked summary at the top level, not inside stuck', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
+    const { tab, asTab } = fakeTab([page({ text: 'Danger zone\nDelete this repository' })]);
+    tab.unreachable = 10;
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open' }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.page_text).toBe('Danger zone\nDelete this repository');
+    expect(summary.stuck).toMatchObject({ operation: 'CLICK', candidates: expect.any(Array) });
+    expect(summary.stuck).toHaveProperty('element');
+    expect(summary.stuck).not.toHaveProperty('page_text');
+  });
+});
