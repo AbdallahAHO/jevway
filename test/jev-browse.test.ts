@@ -1966,3 +1966,95 @@ describe('page dialogs', () => {
     });
   });
 });
+
+describe('DONE right after an unsaved edit', () => {
+  const NOT_ACCEPTED = 'not accepted: the last step changed a field and nothing was saved or submitted since';
+  // A settings form: a description, a search field (Grafana's alert-rules label), a wiki checkbox and Save. Every page differs, so no step looks like a no-op.
+  const settingsPages = () =>
+    ['a', 'b', 'c', 'd', 'e', 'f'].map((fingerprint) =>
+      page({
+        fingerprint,
+        actions: [
+          { id: 'e1', kind: 'fill', node: 1, role: 'textbox', label: 'Description', value: '' },
+          { id: 'e2', kind: 'click', node: 2, role: 'button', label: 'Save settings' },
+          { id: 'e3', kind: 'fill', node: 3, role: 'textbox', label: 'Search Search help', value: '' },
+          { id: 'wait', kind: 'wait', label: 'Wait for the page to update' },
+        ],
+      }),
+    );
+  // No text fields here, so BLOCKED is not needs_input.
+  const wikiPages = () =>
+    ['a', 'b', 'c', 'd', 'e', 'f'].map((fingerprint) =>
+      page({
+        fingerprint,
+        actions: [
+          { id: 'e1', kind: 'click', node: 1, role: 'checkbox', label: 'Enable repository wiki', checked: 'false' },
+          { id: 'e2', kind: 'click', node: 2, role: 'button', label: 'Save settings' },
+          { id: 'wait', kind: 'wait', label: 'Wait for the page to update' },
+        ],
+      }),
+    );
+  const options = { goal: 'Change the description', values: { description: 'A demo app', query: 'zod' }, doneWhen: 'The change is saved', changeWaitMs: 0 };
+  const notes = (steps: { not_executed?: string }[]) => steps.filter((step) => step.not_executed?.startsWith(NOT_ACCEPTED));
+  const type = (target: string, key: string) => ({ operation: 'TYPE_TEXT', type_text_target: target, [`value_for_${target}`]: key });
+
+  it('sends a DONE back once after a typed field was never saved, and accepts it once Save was clicked', async () => {
+    const { ask, requests } = scriptedJev([
+      type('1', 'description'),
+      { operation: 'DONE', done_check: 0.61 },
+      { operation: 'CLICK', click_target: '2', done_check: 0.61 },
+      { operation: 'DONE', done_check: 0.61 },
+    ]);
+    const { asTab, acted } = fakeTab(settingsPages());
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(summary).toMatchObject({ status: 'done', done_probability: 0.61 });
+    expect(requests).toHaveLength(4);
+    expect(acted.map((a) => a.label)).toEqual(['Description', 'Save settings']);
+    expect(notes(summary.steps)).toHaveLength(1);
+    expect(JSON.stringify(requests[2])).toContain(NOT_ACCEPTED);
+  });
+
+  it('sends a BLOCKED-as-done back after a ticked checkbox was never saved', async () => {
+    const { ask, requests } = scriptedJev([
+      { operation: 'CLICK', click_target: '1' },
+      { operation: 'BLOCKED', done_check: 0.6 },
+      { operation: 'CLICK', click_target: '2', done_check: 0.6 },
+      { operation: 'BLOCKED', done_check: 0.6 },
+    ]);
+    const { asTab, acted } = fakeTab(wikiPages());
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(summary).toMatchObject({ status: 'done', done_probability: 0.6 });
+    expect(requests).toHaveLength(4);
+    expect(acted.map((a) => a.label)).toEqual(['Enable repository wiki', 'Save settings']);
+    expect(notes(summary.steps)).toHaveLength(1);
+  });
+
+  it('accepts a DONE after an edit when the done check is at the bar', async () => {
+    const { ask, requests } = scriptedJev([type('1', 'description'), { operation: 'DONE', done_check: 0.8 }]);
+    const { asTab } = fakeTab(settingsPages());
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(summary).toMatchObject({ status: 'done', done_probability: 0.8 });
+    expect(requests).toHaveLength(2);
+    expect(notes(summary.steps)).toHaveLength(0);
+  });
+
+  it('takes typing into a search field as nothing to save', async () => {
+    const { ask, requests } = scriptedJev([type('3', 'query'), { operation: 'DONE', done_check: 0.6 }]);
+    const { asTab, acted } = fakeTab(settingsPages());
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(summary).toMatchObject({ status: 'done', done_probability: 0.6 });
+    expect(requests).toHaveLength(2);
+    expect(acted.map((a) => a.label)).toEqual(['Search Search help']);
+    expect(notes(summary.steps)).toHaveLength(0);
+  });
+
+  it('notes an edit only once, so the same DONE with no new action ends the run', async () => {
+    const { ask, requests } = scriptedJev([type('1', 'description'), { operation: 'DONE', done_check: 0.61 }]);
+    const { asTab, acted } = fakeTab(settingsPages());
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(summary).toMatchObject({ status: 'done', done_probability: 0.61 });
+    expect(requests).toHaveLength(3);
+    expect(acted.map((a) => a.label)).toEqual(['Description']);
+    expect(notes(summary.steps)).toHaveLength(1);
+  });
+});
