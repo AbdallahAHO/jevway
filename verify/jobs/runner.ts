@@ -12,7 +12,6 @@
  *   name: 'grafana',
  *   title: (count) => `Grafana play: ${count} jobs with jev-browse`,
  *   startUrl: 'https://play.grafana.org/',
- *   origin: 'https://play.grafana.org',
  *   browser: process.env.JEV_GRAFANA_BROWSER ?? 'launch-headless',
  *   jobs: JOBS,
  * });
@@ -62,8 +61,6 @@ export interface RunJobsOptions {
   /** The report heading, given how many jobs were selected. */
   title: (jobCount: number) => string;
   startUrl: string;
-  /** The app's origin. Storage is now cleared from inside each run's tab, so the runner no longer reads this. */
-  origin: string;
   browser: BrowserSource;
   jobs: Job[];
   /** Runs on each fresh tab before the task starts. A throw aborts the whole suite, not only that run. */

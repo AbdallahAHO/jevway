@@ -104,7 +104,6 @@ await runJobs({
   name: 'grafana',
   title: (jobCount) => `Grafana play: ${jobCount} jobs with jev-browse`,
   startUrl: `${ORIGIN}/`,
-  origin: ORIGIN,
   browser: process.env.JEV_GRAFANA_BROWSER ?? 'launch-headless',
   jobs: JOBS,
 });

@@ -214,7 +214,6 @@ await runJobs({
   name: 'langfuse',
   title: (jobCount) => `Langfuse demo: ${jobCount} jobs with jev-browse`,
   startUrl: PROJECT,
-  origin: new URL(PROJECT).origin,
   browser: process.env.JEV_LANGFUSE_BROWSER ?? 'http://127.0.0.1:9333',
   jobs: JOBS,
   before: async (tab) => {
