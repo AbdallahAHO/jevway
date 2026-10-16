@@ -600,8 +600,9 @@ export class BrowserTask {
     }
     const boxStop = this.#boxStop(decision);
     if (boxStop) return boxStop;
-    // Waiting can't hurt: an unsure WAIT just waits (the wander guard and step budget still bound it).
-    if (this.#lowConfidence(decision) && decision.operation !== 'WAIT') {
+    // Waiting can't hurt, and neither can closing an open menu with the fixed Escape key: an unsure WAIT or PRESS_ESCAPE
+    // just runs (the wander guard and step budget still bound both).
+    if (this.#lowConfidence(decision) && !['WAIT', 'PRESS_ESCAPE'].includes(decision.operation)) {
       const confidence = Math.min(decision.confidence, decision.targetConfidence ?? 1);
       return [
         'uncertain',

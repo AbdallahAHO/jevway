@@ -728,6 +728,14 @@ describe('loop gotchas', () => {
     expect(summary.status).toBe('done');
   });
 
+  it('presses an unsure Escape instead of handing back', async () => {
+    const { ask } = scriptedJev([{ operation: 'PRESS_ESCAPE', confidence: 0.29 }, { operation: 'DONE' }]);
+    const { asTab, acted } = fakeTab([withExpanded, page({ fingerprint: 'closed' })]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'x', changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('done');
+    expect(acted[0].label).toMatch(/^Press Escape/);
+  });
+
   it('stops an action that only toggles the page back and forth', async () => {
     const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
     const flips = ['x', 'a', 'b', 'a', 'b', 'a', 'b'].map((fingerprint) => page({ fingerprint }));
