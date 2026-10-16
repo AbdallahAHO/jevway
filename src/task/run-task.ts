@@ -1,4 +1,4 @@
-import { StalePage, TargetUnreachable, type PageAction, type PageState, type Tab } from '../browser/tab.ts';
+import { PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, type PageAction, type PageState, type Tab } from '../browser/tab.ts';
 import { buildActionSpace } from '../jev/action-space.ts';
 import { centerOf, contains } from '../jev/box.ts';
 import { decide, foldedFavourite, overflowFolds, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
@@ -179,6 +179,8 @@ export class BrowserTask {
   #unsavedEdit: { noted: boolean } | undefined;
   /** Consecutive misses on the same target node because it couldn't be reached on an unchanged page. */
   #unreachable = { node: undefined as number | undefined, count: 0 };
+  /** Consecutive refusals of wait, Escape, scroll or Enter because the page changed since the decision; any executed action resets it. */
+  #pageLevelStale = 0;
   /** Each executed action and the page fingerprint right after it, to spot one that toggles in place. */
   #outcomes: { action: string; print: string }[] = [];
   /** Nodes of collapsed controls already opened instead of handing back blocked: each is tried once. */
@@ -412,13 +414,17 @@ export class BrowserTask {
             const point = centerOf(decision.nextClick!.rect);
             element = `${await this.#tab.clickAt(point, page)} @ ${Math.round(point.x)},${Math.round(point.y)}`;
           } else {
-            await this.#tab.act(action, page, text);
+            // A page whose text never stops changing (a ticking clock) would refuse a page-level key forever, while one refusal is
+            // enough to wait out an animation: the third try runs even though the page changed.
+            const forced = PAGE_LEVEL_KINDS.includes(action.kind) && this.#pageLevelStale >= 2;
+            await this.#tab.act(action, page, text, forced ? { evenIfChanged: true } : undefined);
             element = action.label;
           }
         } catch (error) {
           if (!(error instanceof StalePage)) throw error;
           record(false);
           if (!(error instanceof TargetUnreachable)) {
+            if (PAGE_LEVEL_KINDS.includes(action.kind)) this.#pageLevelStale++;
             this.#recording?.discardLast();
             page = await this.#tab.observe();
             continue;
@@ -461,6 +467,7 @@ export class BrowserTask {
         executed++;
         if (decision.via === 'disclosure') this.#opened.add(action.node!);
         this.#unreachable = { node: undefined, count: 0 };
+        this.#pageLevelStale = 0;
         this.#lastTyped = decision.operation === 'TYPE_TEXT' && isSearchLike(action) ? action : undefined;
         // A confirmation covers exactly one risky click.
         if (isRiskyClick(decision)) this.#confirmedCommit = false;

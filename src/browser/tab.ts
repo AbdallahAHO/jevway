@@ -12,6 +12,8 @@ const OBSERVE_DEADLINE_MS = 2_000;
 const TIMED_OUT = /timed out after/;
 
 export type ActionKind = 'click' | 'fill' | 'select' | 'scroll' | 'wait' | 'enter' | 'escape';
+/** Actions that target no element and are reversible: the loop may run them on a page that changed since the decision. */
+export const PAGE_LEVEL_KINDS: ActionKind[] = ['wait', 'escape', 'scroll', 'enter'];
 
 export interface PageAction {
   id: string;
@@ -317,8 +319,10 @@ export class Tab {
     return isDeepStrictEqual(await this.#evaluate(MARKER).catch(() => null), page.marker);
   }
 
-  async act(action: PageAction, page: PageState, text?: string) {
-    if (!(await this.fresh(page, action))) throw new StalePage('Page changed since this decision');
+  async act(action: PageAction, page: PageState, text?: string, { evenIfChanged = false }: { evenIfChanged?: boolean } = {}) {
+    // Only a page-level action may skip the check, and only when the loop asks: Enter still needs its field focused (#pressEnter).
+    const skipCheck = evenIfChanged && PAGE_LEVEL_KINDS.includes(action.kind);
+    if (!skipCheck && !(await this.fresh(page, action))) throw new StalePage('Page changed since this decision');
     if (action.kind === 'wait') return sleep(100);
     if (action.kind === 'enter') return this.#pressEnter(action);
     if (action.kind === 'escape') return this.dismissPopup();

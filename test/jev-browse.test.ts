@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CdpError, type CdpConnection } from '../src/browser/cdp.ts';
 import * as chrome from '../src/browser/chrome.ts';
-import { jpegSize, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
+import { jpegSize, PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
 import { buildRequest, decide, NO_SUPPLIED_VALUE, overflowFolds, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
 import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
@@ -144,6 +144,10 @@ const fakeTab = (pages: PageState[] = [page()]) => {
   let observed = 0;
   const tab = {
     staleOnce: false,
+    /** A page whose text never stops changing: wait, Escape, scroll and Enter are refused as stale unless forced. */
+    busy: false,
+    /** Every call to act, refused or not, with whether the loop forced it. */
+    calls: [] as { kind: string; forced: boolean }[],
     /** Misses left before the target can be reached (covered by a popover). */
     unreachable: 0,
     screenshots: 0,
@@ -172,7 +176,11 @@ const fakeTab = (pages: PageState[] = [page()]) => {
     /** Dialogs the page opened and the tab answered, until the run takes them. */
     dialogs: [] as { type: string; message: string; accepted: boolean }[],
     takeDialogs: () => tab.dialogs.splice(0),
-    act: async (action: PageAction, _page: PageState, text?: string) => {
+    act: async (action: PageAction, _page: PageState, text?: string, options?: { evenIfChanged?: boolean }) => {
+      tab.calls.push({ kind: action.kind, forced: Boolean(options?.evenIfChanged) });
+      if (tab.busy && PAGE_LEVEL_KINDS.includes(action.kind) && !options?.evenIfChanged) {
+        throw new StalePage('Page changed since this decision');
+      }
       if (tab.staleOnce) {
         tab.staleOnce = false;
         throw new StalePage('moved');
@@ -1020,6 +1028,41 @@ describe('loop gotchas', () => {
     const summary = await new BrowserTask(asTab, ask, { goal: 'Open' }).run();
     expect(summary.status).toBe('done');
     expect(acted.map((a) => a.label)).toEqual(['dismissPopup', 'Open Full name']);
+  });
+
+  it('runs an Escape the page refused twice because it keeps changing on the third try', async () => {
+    const { ask } = scriptedJev([{ operation: 'PRESS_ESCAPE' }, { operation: 'PRESS_ESCAPE' }, { operation: 'PRESS_ESCAPE' }, { operation: 'DONE' }]);
+    const pages = ['a', 'b', 'c', 'd', 'e'].map((fingerprint) => page({ actions: withExpanded.actions, fingerprint }));
+    const { tab, asTab, acted } = fakeTab(pages);
+    tab.busy = true;
+    const task = new BrowserTask(asTab, ask, { goal: 'x', changeWaitMs: 0 });
+    const summary = await task.run();
+    expect(summary.status).toBe('done');
+    expect(tab.calls).toEqual([
+      { kind: 'escape', forced: false },
+      { kind: 'escape', forced: false },
+      { kind: 'escape', forced: true },
+    ]);
+    expect(task.trace.filter((entry) => entry.decision.operation === 'PRESS_ESCAPE').map((entry) => entry.executed)).toEqual([false, false, true]);
+    expect(acted).toHaveLength(1);
+  });
+
+  it('starts counting refusals again after any executed action', async () => {
+    const scrolling = (fingerprint: string) =>
+      page({ actions: [...bookingActions, { id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: 560 }], fingerprint });
+    const scroll = { operation: 'SCROLL_DOWN' };
+    const { ask } = scriptedJev([scroll, scroll, { operation: 'CLICK', click_target: '1' }, scroll, { operation: 'DONE' }]);
+    const { tab, asTab } = fakeTab(['a', 'b', 'c', 'd', 'e', 'f', 'g'].map(scrolling));
+    tab.busy = true;
+    const summary = await new BrowserTask(asTab, ask, { goal: 'x', changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('done');
+    // Two refusals would force the next scroll, but the executed click in between started the count over.
+    expect(tab.calls).toEqual([
+      { kind: 'scroll', forced: false },
+      { kind: 'scroll', forced: false },
+      { kind: 'click', forced: false },
+      { kind: 'scroll', forced: false },
+    ]);
   });
 
   it('waits on an unsure WAIT instead of handing back', async () => {
