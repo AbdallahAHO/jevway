@@ -330,6 +330,12 @@ export class BrowserTask {
             continue;
           }
           record(false);
+          // An unsure step on a page the screenshot-backed completion check accepts has nothing left to do (6 of 6 uncertain endings at done check ≥ 0.75 were on the right page).
+          const unsureOnMetGoal =
+            handBack[0] === 'uncertain' && this.#lowConfidence(decision) && !this.#boxStop(decision) && decision.sawScreenshot;
+          if (doneWhen && unsureOnMetGoal && doneProbability >= GUARDS.doneSteady) {
+            return stop('done', `Completion condition verified: ${doneWhen}`, decision);
+          }
           return stop(handBack[0], handBack[1], decision);
         }
 

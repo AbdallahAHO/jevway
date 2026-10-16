@@ -926,6 +926,46 @@ describe('loop gotchas', () => {
     });
   });
 
+  describe('an unsure step on a page whose completion check passes', () => {
+    const options = { goal: 'x', doneWhen: 'It is done', changeWaitMs: 0, screenshots: 'fallback' as const };
+    // The text-only look is unsure and sees no goal; the screenshot second look is unsure too, with the given done check.
+    const unsureClick = (doneCheck: number) => [
+      { operation: 'CLICK', click_target: '1', confidence: 0.2, done_check: 0.1 },
+      { operation: 'CLICK', click_target: '1', confidence: 0.2, done_check: doneCheck },
+    ];
+
+    it('ends as done when the screenshot look is unsure but its completion check is steady-high', async () => {
+      const { ask, requests } = scriptedJev(unsureClick(0.8));
+      const { tab, asTab, acted } = fakeTab();
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary).toMatchObject({ status: 'done', reason: 'Completion condition verified: It is done' });
+      expect(requests).toHaveLength(2);
+      expect(tab.screenshots).toBe(1);
+      expect(acted).toEqual([]);
+    });
+
+    it('stays uncertain below the steady-evidence bar', async () => {
+      const { ask } = scriptedJev(unsureClick(0.6));
+      const { asTab, acted } = fakeTab();
+      expect((await new BrowserTask(asTab, ask, options).run()).status).toBe('uncertain');
+      expect(acted).toEqual([]);
+    });
+
+    it('stays uncertain when no screenshot backed the decision', async () => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1', confidence: 0.2, done_check: 0.8 }]);
+      const { tab, asTab } = fakeTab();
+      const summary = await new BrowserTask(asTab, ask, { ...options, screenshots: 'off' }).run();
+      expect(summary.status).toBe('uncertain');
+      expect(tab.screenshots).toBe(0);
+    });
+
+    it('stays uncertain without a completion condition', async () => {
+      const { ask } = scriptedJev(unsureClick(0.8));
+      const summary = await new BrowserTask(fakeTab().asTab, ask, { goal: 'x', changeWaitMs: 0, screenshots: 'fallback' }).run();
+      expect(summary.status).toBe('uncertain');
+    });
+  });
+
   describe('BLOCKED while the click head favours a collapsed control', () => {
     const options = { goal: 'Find the prompt', elementRisk: true, changeWaitMs: 0 };
     const more = clickTargetOf(foldedPage('a', 'false'), 'Show more details');
