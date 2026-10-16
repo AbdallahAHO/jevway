@@ -10,6 +10,24 @@ const MARKER = `(() => { const state=${READ_STATE}; return state?.marker ?? null
 // How long observe() keeps retrying a page that is still changing, and what a call that got no reply at all looks like.
 const OBSERVE_DEADLINE_MS = 2_000;
 const TIMED_OUT = /timed out after/;
+// jev-browse: a page drawn as pulsing placeholders has not loaded what the user came for, so reading it now invites a click on
+// whatever chrome is listed. The wait is capped, and a page that keeps pulsing is named as loading.
+const PLACEHOLDERS_MIN = 3;
+const PLACEHOLDERS_WAIT_MS = 1_500;
+const PLACEHOLDERS_POLL_MS = 100;
+// On-screen elements with no text of their own that run an endless animation: skeleton blocks and spinners, 0 once loaded.
+const COUNT_PLACEHOLDERS = `(() => {
+  const targets = new Set(document.getAnimations()
+    .filter((a) => a.playState === 'running' && a.effect?.getComputedTiming().endTime === Infinity)
+    .map((a) => a.effect?.target));
+  let count = 0;
+  for (const el of targets) {
+    if (!el?.getBoundingClientRect || (el.textContent || '').trim()) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth) count++;
+  }
+  return count;
+})()`;
 
 export type ActionKind = 'click' | 'fill' | 'select' | 'scroll' | 'wait' | 'enter' | 'escape';
 /** Actions that target no element and are reversible: the loop may run them on a page that changed since the decision. */
@@ -293,18 +311,45 @@ export class Tab {
   }
 
   async observe(): Promise<PageState> {
+    const begun = Date.now();
     await this.#settleAfterInput();
+    const placeholders = await this.#waitOutPlaceholders(begun);
     const started = Date.now();
     for (let attempt = 0; attempt < 25 && Date.now() - started < OBSERVE_DEADLINE_MS; attempt++) {
       try {
         const state = await this.#evaluate(`window.__jevWanted=${JSON.stringify(this.#wanted)};${READ_STATE}`);
-        if (state) return { ...state, fingerprint: fingerprint(state) };
+        if (state) {
+          const named = placeholders ? { ...state, text: `Loading: ${placeholders} placeholder blocks on screen\n${state.text}` } : state;
+          return { ...named, fingerprint: fingerprint(named) };
+        }
       } catch (error) {
         if (!(error instanceof StalePage)) throw error;
       }
       await sleep(40);
     }
     throw new StalePage(`Page did not settle within ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  }
+
+  // Polls the placeholder count from `since` until fewer than PLACEHOLDERS_MIN pulse (returns 0) or the cap runs out
+  // (returns how many still do, for the loading line).
+  async #waitOutPlaceholders(since: number): Promise<number> {
+    for (;;) {
+      const count = await this.#countPlaceholders();
+      if (count < PLACEHOLDERS_MIN) return 0;
+      const left = PLACEHOLDERS_WAIT_MS - (Date.now() - since);
+      if (left <= 0) return count;
+      await sleep(Math.min(PLACEHOLDERS_POLL_MS, left));
+    }
+  }
+
+  async #countPlaceholders(): Promise<number> {
+    try {
+      return Number(await this.#evaluate(COUNT_PLACEHOLDERS)) || 0;
+    } catch (error) {
+      // A page mid-navigation is read by the retry loop; a call that timed out stays a browser error.
+      if (error instanceof StalePage) return 0;
+      throw error;
+    }
   }
 
   /** Clicks/selects compare the target's own guard; everything else compares the whole-page marker. */
