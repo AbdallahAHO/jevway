@@ -18,10 +18,10 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 
 ## Call it well
 
-1. Start with `url` (new background tab) or `tab` (part of an open tab's URL).
+1. Start with `url` (new background tab) or `tab` (part of an open tab's URL). Start on the page where the change is made, with a URL built from the site's own pattern (`/owner/repo/milestones/new`, `/owner/repo/settings`), not a parent page: Jev follows the links it sees, and a same-named global link ("Milestones" in the top bar) can win. After a hand-back on the wrong page, fix `url`; don't re-describe the route in words.
 2. Write `goal` as the full outcome, including every filter and choice.
 3. Put every text value the goal needs into `values` with descriptive keys (`{"destination":"Lisbon","email":"ada@example.com"}`). Jev only types supplied values.
-4. Always pass `done_when`: visible evidence of success ("Search results for Lisbon are listed"). DONE is accepted only after this check passes. Describe only what the final page itself shows: "the user from the costliest session is open" can't be judged on a user page, "a user's detail page is open" can.
+4. Always pass `done_when`: visible evidence of success ("Search results for Lisbon are listed"). DONE is accepted only after this check passes. Describe only what the final page itself shows: "the user from the costliest session is open" can't be judged on a user page, "a user's detail page is open" can. Keep it to the page the call ends on. To check another page (the repository's tabs after a settings change), end this call at the save and check in a second call.
 5. Jev picks elements; it doesn't compare numbers. For "the most expensive", "the one with errors" and the like, call once to reach the list, read it yourself (chrome-devtools or the summary's `page_text`), then continue the same `session` with the chosen value in `values`.
 6. Text Jev needs to type, even a filter word like `ERROR`, must be in `values`.
 7. Passwords: jev-browse never sees or types password fields. Type them yourself (chrome-devtools `fill`), then say so in the goal: "I typed the password; sign in." A typed field jev-browse can't see only counts once you mention it.

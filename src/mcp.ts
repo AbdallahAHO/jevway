@@ -25,8 +25,9 @@ server.registerTool(
 Jev picks each click/type/select in ~200ms per step and returns ONE short summary, instead of you deciding every step.
 Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards (same Chrome, the tab stays open; select it by url).
 
+- Start \`url\` on the page where the change is made (e.g. /owner/repo/milestones/new), not a parent page: Jev follows the links it sees, and a same-named global link can win. After a hand-back on the wrong page, fix \`url\`.
 - Pass every text value the goal needs in \`values\` (e.g. {"city":"Lisbon","email":"a@b.co"}). Jev only types supplied values.
-- Pass \`done_when\`: visible evidence of success. It is checked independently before status "done".
+- Pass \`done_when\`: visible evidence of success on the page the call ends on; check another page in a second call. It is checked independently before status "done".
 - Statuses that hand control back — continue with the same \`session\`:
   needs_input → add the missing value to \`values\`;
   needs_confirmation → the next click looks irreversible (delete, pay, send). Set \`confirm_irreversible: true\` only when the user's own request names this action and its target (e.g. "delete the repository X" → the clicks that delete X); for anything else, stop and ask the user. A kind of thing ("anything unused", "old branches", "all drafts") does not name a target: list what you would delete or send and ask the user first. Each confirmation covers one click. It counts only on the call that answers a needs_confirmation (or a new session's first call); anywhere else it is ignored. Pass \`confirm_target\` with the user's words that name the target; jev-browse checks the page shows them (the control's own words, like "delete", do not count) and refuses otherwise.
@@ -41,7 +42,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
         .optional()
         .describe('Instead of url: drive an open tab whose URL contains this text (new session).'),
       values: z.record(z.string(), z.string()).optional().describe('Named text values Jev may type.'),
-      done_when: z.string().optional().describe('Visible evidence that the goal is complete.'),
+      done_when: z.string().optional().describe('Visible evidence, on the page the call ends on, that the goal is complete.'),
       session: z.string().optional().describe('Continue a previous session (same tab, history kept).'),
       confirm_irreversible: z
         .boolean()
