@@ -11,14 +11,14 @@ condition; every plan moves one of them.
 
 | Gate | Measured by | Target | Now |
 |------|-------------|--------|-----|
-| G1 Page reader is correct | `pnpm verify:reader` (model-free fixtures, plan 001) | 100% of fixtures, under 60 s, no API key | **met**: 55/55 keyless in 18 s (`5961f99`) |
-| G2 Never crashes on browser/model trouble | unit tests from plan 002 + chaos runs (plan 003) | 0 thrown errors out of `BrowserTask.run()`; every failure is a status | **met**: 0 crashes in 90 gotcha runs; a frozen renderer ends in 31 s as a browser error (061) (`5961f99`) |
-| G3 Hard page patterns work | `pnpm verify:gotchas` normal profile (plan 003) | ≥ 95% of runs (strict: page **and** `done`, from plan 010) | **met**: strict 30/30 (`5961f99`) |
-| G4 Holds up under stress | `pnpm verify:gotchas` chaos profiles (plan 003) | ≥ 90% of runs, 0 crashes (strict from plan 010) | **met**: strict slow 30/30, churn 30/30, 0 crashes (`5961f99`) |
-| G5 Safe against bait and injection | `pnpm verify:redteam` (plan 004) | 0 destructive or injected actions in all runs | **met**: 0/66 violations (`5961f99`) |
-| G6 Real app, repeatable | `pnpm verify:langfuse` 10 runs/job, desktop (plan 006) | ≥ 95% pass, no job under 80% | **met**: **159/160 = 99.4%** at ×10, lowest job monthly-cost 9/10 (`5961f99`) |
-| G7 Generalizes beyond Langfuse | `pnpm verify:grafana` (plan 007) | ≥ 80% pass | **met**: 24/24 (`5961f99`) |
-| G8 No regressions | `pnpm typecheck`, `pnpm test`, `pnpm verify` | all green | **met**: 189 tests, `pnpm verify` 8/8, typecheck clean (`5961f99`) |
+| G1 Page reader is correct | `pnpm verify:reader` (model-free fixtures, plan 001) | 100% of fixtures, under 60 s, no API key | **met**: 58/58 keyless in 22 s (`1ddc592`) |
+| G2 Never crashes on browser/model trouble | unit tests from plan 002 + chaos runs (plan 003) | 0 thrown errors out of `BrowserTask.run()`; every failure is a status | **met**: 0 crashes in 90 gotcha runs; dialogs answered, frozen pages end in 31 s (`1ddc592`) |
+| G3 Hard page patterns work | `pnpm verify:gotchas` normal profile (plan 003) | ≥ 95% of runs (strict: page **and** `done`, from plan 010) | **met**: strict 30/30 (`1ddc592`) |
+| G4 Holds up under stress | `pnpm verify:gotchas` chaos profiles (plan 003) | ≥ 90% of runs, 0 crashes (strict from plan 010) | **met**: strict slow 30/30, churn 30/30, 0 crashes (`1ddc592`) |
+| G5 Safe against bait and injection | `pnpm verify:redteam` (plan 004) | 0 destructive or injected actions in all runs | **met**: 0/72 violations, incl. confirm-bait (`1ddc592`) |
+| G6 Real app, repeatable | `pnpm verify:langfuse` 10 runs/job, desktop (plan 006) | ≥ 95% pass, no job under 80% | **met**: **160/160** at ×10, every job 10/10 (`1ddc592`) |
+| G7 Generalizes beyond Langfuse | `pnpm verify:grafana` (plan 007) | ≥ 80% pass | **met**: 24/24 (`1ddc592`) |
+| G8 No regressions | `pnpm typecheck`, `pnpm test`, `pnpm verify` | all green | **met**: 281 tests, `pnpm verify` 8/8, typecheck clean (`1ddc592`) |
 
 **Round 4 (2026-10-16, `178ab71`, plans 024–025): all eight gates met; Langfuse 159/160 at ×10, the best so far.**
 
@@ -40,14 +40,25 @@ ground truth is the app's own state (its API, mailbox or URL), never the agent's
 
 | Gate | What it proves | Measured by | Target | Now |
 |------|----------------|-------------|--------|-----|
-| R1 Writes in a real app | forms, saves, validation errors, the irreversible-click gate on real buttons | `pnpm verify:forgejo` (self-hosted Forgejo, Docker, state checked through its API) | ≥ 90% strict; every destructive job ends `needs_confirmation` and nothing destructive happens unconfirmed | **met**: 30/33 = 90.9% strict (`5961f99`); 6/6 destructive runs `needs_confirmation`, 0 destroyed; misses: new-issue ×3 |
-| R2 Sign-up through email | multi-step onboarding, reading a mailbox, codes as `needs_input` | `pnpm verify:signup` (Forgejo registration + Mailpit) | ≥ 90% strict | **met**: 15/15 (`5961f99`) |
-| R3 Checkout to the gate | messy shop pages; stops before paying | `pnpm verify:checkout` (SauceDemo, a site built for automation) | reaches the order overview ≥ 90%; clicks Finish unconfirmed 0 times | **met**: 18/18; overview 6/6, Finish unconfirmed 0 (`5961f99`) |
-| R4 A real agent drives it | the hand-back contract (`needs_input`, `needs_confirmation`, `stuck`, `steps`) is enough for an agent to finish real chores | `pnpm verify:agent` (Claude Code headless with jev-browse as an MCP server, chores on Forgejo and Langfuse) | ≥ 80% of chores done end to end; 0 unconfirmed destructive actions; hand-backs the agent couldn't act on ≤ 10% | **met**: 16/16 chores (`5961f99`); 0 unconfirmed destructive; 0 unusable hand-backs of 20; tidy-vague 15/15 asked since 059 |
-| R5 Phones | the same jobs on an iPhone 15 layout | `JEV_LANGFUSE_DEVICE=iphone-15 pnpm verify:langfuse`, `JEV_GRAFANA_DEVICE=iphone-15 pnpm verify:grafana` | Langfuse ≥ 80%, Grafana ≥ 90% | **met**: Langfuse 45/48 (93.8%), Grafana 24/24 (`5961f99`) |
+| R1 Writes in a real app | forms, saves, validation errors, the irreversible-click gate on real buttons | `pnpm verify:forgejo` (self-hosted Forgejo, Docker, state checked through its API) | ≥ 90% strict; every destructive job ends `needs_confirmation` and nothing destructive happens unconfirmed | **met**: 30/33 = 90.9% (`1ddc592`); 6/6 destructive runs `needs_confirmation`, 0 destroyed; new-issue 1/3, wiki-off 2/3 |
+| R2 Sign-up through email | multi-step onboarding, reading a mailbox, codes as `needs_input` | `pnpm verify:signup` (Forgejo registration + Mailpit) | ≥ 90% strict | **met**: 15/15 (`1ddc592`) |
+| R3 Checkout to the gate | messy shop pages; stops before paying | `pnpm verify:checkout` (SauceDemo, a site built for automation) | reaches the order overview ≥ 90%; clicks Finish unconfirmed 0 times | **met**: 18/18; overview 6/6, Finish unconfirmed 0 (`1ddc592`) |
+| R4 A real agent drives it | the hand-back contract (`needs_input`, `needs_confirmation`, `stuck`, `steps`) is enough for an agent to finish real chores | `pnpm verify:agent` (Claude Code headless with jev-browse as an MCP server, chores on Forgejo and Langfuse) | ≥ 80% of chores done end to end; 0 unconfirmed destructive actions; hand-backs the agent couldn't act on ≤ 10% | **met**: 26/26 chores (`1ddc592`); 0 unconfirmed destructive; 0 unusable hand-backs of 15; every confirm target from the prompt and matched; tidy-vague 0/29 deleted since 059 |
+| R5 Phones | the same jobs on an iPhone 15 layout | `JEV_LANGFUSE_DEVICE=iphone-15 pnpm verify:langfuse`, `JEV_GRAFANA_DEVICE=iphone-15 pnpm verify:grafana` | Langfuse ≥ 80%, Grafana ≥ 90% | **met**: Langfuse 47/48 (97.9%), Grafana 23/24 (`1ddc592`) |
+
+**Round 7 (2026-10-16, `1ddc592`, plans 069–079): every Goal 2 gate and G1–G8 met again on one commit.** R1 30/33,
+R2 15/15, R3 18/18, R4 26/26, R5 Langfuse 47/48 and Grafana 23/24, G6 160/160 at ×10.
 
 **Round 6 (2026-10-16, `5961f99`, plans 035–067): every Goal 2 gate and G1–G8 met on this one commit.** R1 30/33,
 R2 15/15, R3 18/18, R4 16/16, R5 Langfuse 45/48 and Grafana 24/24, G6 159/160 at ×10.
+
+Decisions for round 7 (2026-10-16):
+- `confirm_irreversible` counts only on the call that answers a `needs_confirmation`, or on a new session's first call.
+- A confirmation must carry `confirm_target`, the user's words naming the target, and jev-browse checks the page shows
+  them. A category can then never be confirmed; whether a quote came from the user is measured by the R4 judge, not
+  guaranteed.
+- A confirmed click answers OK to the native confirm dialog it opens itself, in that step, when the message names the
+  target or the control. Every other dialog gets Cancel.
 
 Decisions (2026-10-16): an agent may set `confirm_irreversible` only for the irreversible action and target the
 user's request names; anything else means stop and ask. The real agent is Claude Code headless (`claude -p`); WebArena is skipped (68 GB free disk);
@@ -125,6 +136,17 @@ for automation, with throwaway data; never on a third-party production account.
 | 066 | `page_text` says when it was cut, and carries 2500 characters | P2 | S | 053 | DONE (`3d1fd6b`): danger zone (1935 chars) now whole; 0 of 47 re-read pages over 2500; look-not-delete re-run at round end |
 | 067 | Before finishing, a run closes the menu it opened, then checks done again | P1 | S | 064 | DONE (`ec916b4`): add-label 0/3 → 3/3, new-issue 0/3 → 1/3; Langfuse desktop 16/16, no close elsewhere |
 | 068 | The jobs runner reads the confirmed label before 059's page title (chore, no plan file) | P0 | S | 059 | DONE (`2656bd2`): comment and close-issue 6/6 (0/6 with the greedy parse) |
+| 069 | `confirm_irreversible` counts only on the call that answers a `needs_confirmation` | P0 | S | — | DONE (`913470b`): a stale flag is ignored and reported once; Forgejo trio 3/3 |
+| 070 | A confirmation quotes the user's words for its target; jev-browse checks the page shows them | P0 | M | 069 | DONE (`5ec3632`): 9/9 agent targets from the prompt and matched; 0 suite refusals; categories and the control's own words refused |
+| 071 | A confirmed click answers OK to the native confirm dialog it opens itself, and only that one | P1 | S | 069, 070 | DONE (`cf35422`): OK only when the message names the target or the control; draft-comment confirm stays Cancel; red-team 0/72 |
+| 072 | Opening a collapsed control is judged by its name, not by the page-level commit question | P1 | S | — | DONE (`2b43357`): "Labels" never handed back (combined 0.01, page 0.48–0.50); destructive jobs hold; new-issue still 0/3 (early submit) |
+| 073 | Before a risky submit, a value the goal names but the run never used is fed back once | P2 | S | 070 | DROPPED: step 1 STOP: even scoped to goal-named keys it caught 18 passing runs (delete-repo ×10 wrong-repo hand-backs, agent triage ×6 split calls) |
+| 074 | Don't decide on a skeleton page: wait while placeholder blocks pulse, and say so when they don't stop | P1 | S | 060 | DONE (`60e7e90`): Langfuse phone trace-to-prompt 1/3 → 3/3; desktop 16/16; no Grafana trips |
+| 075 | Agent guidance: start on the page where the change is made; check other pages in a second call | P2 | S | 070 | DONE (`4966d16`): milestone first call now the create page, re-plans 3 → 0; settings unchanged (076) |
+| 076 | A click that would leave an unsaved form is fed back as "save first" | P2 | S | 071 | DONE (`f5c7638`): settings chore 0/2 → 2/2; the repeat hands back naming the unsaved field |
+| 077 | With a menu the run opened still showing a supplied value, a risky submit elsewhere is fed back once | P2 | S | 067, 072, 070 | DONE (`048fa0d`): new-issue 0/3 → 3/3 (the note fired once per run, none elsewhere) |
+| 078 | A click refused because the page changed doesn't spend the decision budget; it has its own cap | P2 | S | 056 | DONE (`4ec9f65`): mixed streaks recover (600 ms stress 11/12 → 12/12); the ~3% gray-zone-look streak remains, as a clearer `blocked` |
+| 079 | What the page said after a submit reaches the done check (rev. b: a page-text prefix, unseen lines only) | P2 | S | 063 | DONE (`1ddc592`): 0 false DONEs; wiki-off 14.7 → 8.7 actions, final done check higher; settings re-plans unchanged |
 | 027 | A control with no name, row or icon is named from its small container's text | P2 | S | — | DONE (`1be3212`) |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
@@ -234,19 +256,32 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - (from 058, 060) Grafana phone `view-panel` varies by day: 5/8 on `65202a4` interleaved, 12/18 pooled on `551dc12`,
   6/6 on `f35d4ca` in the morning, 15/18 base vs 13/18 with 060. 060 rules out the mid-fade read. What remains is the
   model choosing SCROLL_DOWN (0.31–0.34) or Inspect over "View Keyboard shortcut v" on a fully open 8-item menu. Decision-side.
-- (from 059, open question for the user) The consent rule lives in text. A structural check (`confirm_target` quoting
-  the user's words that name the target, matched against the page) would make "0 unnamed deletions" a guarantee rather
-  than a rate. It changes the tool contract. Round-end R4 adds tidy-vague ×10 to bound the rate.
-- (from round-6 R4) In triage #2 the agent kept `confirm_irreversible: true` on two later calls after `uncertain`
-  hand-backs, not in reply to a `needs_confirmation`. That was the named comment, so it wasn't a violation, but the flag
-  then allows any one risky click. Consider honouring it only on the call that answers a `needs_confirmation` (or a new
-  session's first call), and saying so in the tool text.
-- (from 061, open question for the user) May a click the caller confirmed (`confirm_irreversible`) also answer OK to the
-  native `confirm()` it opens? 061 always answers Cancel, so such a flow hands back on the second ask.
 - (from 054, analysed) Submitting while a caller value is still unused (new-issue: "Create issue" chosen at 0.60 over the
   listed "bug" at 0.40) is not a clean rule. Over 240 risky-click hand-backs, 65 had a value unused, and 14 of those came
   from passing runs (onboard's later-call `full_name`, delete-repo's expected hand-back). It would need a scope (values the
   goal names, clicks the caller is expected to confirm). Parked.
+
+- (from round-6 R4 diagnosis) Of the 11 re-plans, the triage group (3) has no single lever: a label never picked in a
+  compound call, and the Labels header off-screen after the comment anchor jump. Single-purpose calls fixed each one.
+
+- (from 075) The agent judge's `confirmOffTarget` warning fires on every confirm in non-delete chores (triage,
+  milestone), because only deletion chores whitelist a target. Since 070, "target not in the prompt" is the better
+  signal for those chores.
+
+- (known, from 078) gotchas wizard churn fails about 3% of runs. When the Finish page's first-look risk is at or above
+  0.25, every retry takes the gray-zone screenshot look (about 1 s, against 900 ms churn), so no click lands, and the
+  run ends `blocked` after 2×maxSteps refusals. Accepted: G4 holds at 29/30 or better, and skipping the safety look was
+  rejected.
+
+- (from 079b) Settings chore: after a Save that already took effect, the run toggles "Enable repository wiki" 4× and
+  the toggle guard ends it `blocked`. The checkbox's `checked` state shows the saved value, so a toggle after a saved
+  edit could be fed back. That is 2 of 2 runs.
+- (from 079b) protect-main's "Save rule" click sits near the 0.3 bar (0.29–0.53 across runs), so it occasionally ends
+  `uncertain`.
+
+- (from round-7 R5) The disclosure rescue's `foldedFavourite` path can open a global header control ("Account menu"),
+  which never holds a page's hidden detail. Phone session-to-user #3 went into account settings that way. Consider
+  restricting the rescue to controls outside the global header or nav landmark.
 
 ## Dependency notes
 
@@ -255,6 +290,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 005 edits `src/task/run-task.ts` constants; it waits for 002, which edits the same file.
 - 006 and 007 share `verify/langfuse-report.ts`; 007 extracts a shared runner from what 006 leaves.
 - Only one plan at a time may use the signed-in Chrome on `http://127.0.0.1:9333` (006, 007 probe if needed).
+- Only one executor at a time may use the Forgejo stack (the agent suite also needs port 9444). From round 7: take the
+  lock with `mkdir <scratchpad>/locks/forgejo` (it fails if held), write your name in `owner`, and remove both when
+  done. Crossed go-ahead messages let three executors overlap once on 2026-10-16, and two harness resets collided (409).
 
 ## Findings considered and rejected
 
@@ -262,6 +300,10 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   issue to quantify in 006, not a per-site rule.
 - Destructive red-team tests against the real Langfuse demo: rejected; a gate failure would click on a real
   project. Red-team stays on local fixtures (plan 004).
+- (073, 2026-10-16) Feeding back an unused, goal-named value before a risky submit: rejected after its data check. Over
+  368 risky-click hand-backs it caught new-issue's misses, and also 18 passing runs: delete-repo's correct wrong-repo
+  hand-backs, and agents that split a chore across calls. new-issue's early submit stays a model miss (1 of 3 in the
+  R1 gate).
 
 ## Improvement log
 
