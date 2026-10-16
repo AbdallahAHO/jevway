@@ -423,6 +423,36 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'a menu that fades in is listed once it has opened',
+    file: 'menu-fades-in.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const trigger = find(page.actions, 'button', /^Panel menu$/);
+      assert.ok(trigger, `trigger not listed: ${labelsOf(page.actions)}`);
+      await tab.act(trigger, page);
+      const opened = await tab.observe();
+      const view = find(opened.actions, 'menuitem', /^View/);
+      assert.ok(view, `View not listed after opening the menu: ${labelsOf(opened.actions)}`);
+      assert.ok(!view.hover && !/appears on hover/.test(view.label), `View is listed as hover-only while the menu fades in: ${view.label}`);
+      await tab.act(view, opened);
+      assert.equal((await fixtureState(tab)).viewed, true);
+    },
+  },
+  {
+    name: 'an endless animation does not hold up listing',
+    file: 'menu-fades-in.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const trigger = find(page.actions, 'button', /^Panel menu$/);
+      assert.ok(trigger, `trigger not listed: ${labelsOf(page.actions)}`);
+      const started = performance.now();
+      await tab.act(trigger, page);
+      await tab.observe();
+      const took = performance.now() - started;
+      assert.ok(took < 700, `the click and the next listing took ${Math.round(took)} ms`);
+    },
+  },
+  {
     name: 'a row action with opacity 0 until its row is hovered is listed as appearing on hover',
     file: 'hover-row-actions.html',
     run: async (tab) => {
