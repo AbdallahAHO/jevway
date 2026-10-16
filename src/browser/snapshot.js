@@ -435,18 +435,20 @@
     }
   }
   // jev-browse: a person sees whether a password field has dots in it; the model gets only that fact, never the value.
-  // The lines come before the walked text so its cap never cuts them. The value is only compared with '' and never kept.
-  const passwordLines = queried
+  // It goes out as data (`passwordFields`) and as lines before the walked text, so the text cap never cuts them. The value
+  // is only compared with '' and never kept.
+  const passwordFields = queried
     .filter((e) => e.tagName === 'INPUT' && e.type === 'password' && visible(e))
     .slice(0, 5)
-    .map(
-      (e, i) =>
-        'Password field "' +
-        (cap(name(e).replace(/\s+/g, ' ').trim(), 60) || 'unnamed') +
-        '": ' +
-        (e.value !== '' ? 'filled' : 'empty') +
-        (i === 0 ? ' (passwords are typed by the user, not by you)' : ''),
-    );
+    .map((e) => ({ name: cap(name(e).replace(/\s+/g, ' ').trim(), 60) || 'unnamed', filled: e.value !== '' }));
+  const passwordLines = passwordFields.map(
+    (field, i) =>
+      'Password field "' +
+      field.name +
+      '": ' +
+      (field.filled ? 'filled' : 'empty') +
+      (i === 0 ? ' (passwords are typed by the user, not by you)' : ''),
+  );
   const words = [];
   const range = document.createRange();
   let node,
@@ -497,6 +499,7 @@
     w: innerWidth,
     h: innerHeight,
     text,
+    passwordFields,
     scroll: { y: scrollY, height },
     actions,
     marker,

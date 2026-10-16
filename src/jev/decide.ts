@@ -248,6 +248,8 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
 
   const state = {
     page: pick(input.page, ['url', 'title', 'text']),
+    // Password fields are never in `elements`; this says only whether each visible one is filled, never its value.
+    ...(input.page.passwordFields?.length && { password_fields: input.page.passwordFields }),
     elements,
     supplied_values: input.values,
     recent_actions: input.history.slice(-10),
