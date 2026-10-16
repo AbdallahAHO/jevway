@@ -239,7 +239,7 @@ video{width:100%;border-radius:8px;background:#000;display:block;margin:0 0 16px
 @media (max-width:640px){dl{grid-template-columns:1fr}.steps li{grid-template-columns:1fr}section{padding:16px}}
 </style></head><body><main>
 <h1>${escape(title)}</h1>
-<p class="sub">Each job starts on the app's start page and is read-only. ✔ means the final page passed its check <em>and</em> Jev reported done; ◐ means the page was right but Jev reported something else. ${escape(model)} · screenshots ${escape(screenshots)} · device ${escape(device)} · phrasing ${escape(phrasing)} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</p>
+<p class="sub">Each job starts on the app's start page. ✔ means the ground-truth check held <em>and</em> the run ended with an expected status (done, unless the job expects a hand-back); ◐ means the check held but the run ended with another status. ${escape(model)} · screenshots ${escape(screenshots)} · device ${escape(device)} · phrasing ${escape(phrasing)} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</p>
 <div class="totals">
   <div class="total"><b class="${passed === runs.length ? 'pass' : 'some'}">${passed}/${runs.length}</b><span>runs passed · ${interval(passed, runs.length)}</span></div>
   <div class="total"><b class="${flaky ? 'some' : 'pass'}">${flaky}</b><span>flaky jobs (of ${results.length})</span></div>
