@@ -336,7 +336,8 @@ export class Tab {
   }
 
   // A control that appears only on hover: move the pointer onto where it sits, then wait for it to show. Pointer move
-  // only (no click, no focus), so a touch screen, which has no hover, skips it.
+  // only (no click, no focus), so a touch screen takes it too: touch emulation applies :hover, and a tap could activate the
+  // container.
   async #revealByHover(action: PageAction) {
     const node = `window.__jevFast?.nodes.get(${Number(action.node)})`;
     const centre = await this.#evaluate(`(() => {
@@ -356,7 +357,7 @@ export class Tab {
   }
 
   async #input(action: PageAction, text?: string) {
-    if (action.hover && !this.#touch) await this.#revealByHover(action);
+    if (action.hover) await this.#revealByHover(action);
     const target = await this.#evaluate(`(${RESOLVE_TARGET})(${JSON.stringify(action)})`).catch((error) => {
       if (action.kind === 'select') throw new Error('Dropdown execution was interrupted; inspect before retrying.');
       throw error;

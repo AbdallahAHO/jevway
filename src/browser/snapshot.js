@@ -250,8 +250,8 @@
   };
   // jev-browse: a control shown only while its container is hovered (a panel's menu, a row's Delete) is in the DOM with
   // visibility:hidden or opacity:0. It is listed as "appears on hover", capped at 20, and the executor moves the pointer
-  // onto it before the click. display:none is not laid out and touch screens have no hover, so neither counts.
-  const canHover = !matchMedia('(hover: none)').matches;
+  // onto it before the click. Touch screens list them too: touch emulation still applies :hover to a pointer move, and a
+  // tap on the container could activate it. display:none is not laid out, so it does not count.
   const hoverSuffix = ' (appears on hover)';
   const standIns = new Set(labelOf.values());
   let hoverListed = 0;
@@ -262,7 +262,6 @@
     return false;
   };
   const revealedByHover = (e) =>
-    canHover &&
     hoverListed < 20 &&
     !standIns.has(e) &&
     safe(e) &&
