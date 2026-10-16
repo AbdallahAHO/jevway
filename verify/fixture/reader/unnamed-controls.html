@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Unnamed controls</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  section { margin-bottom: 16px; }
+  label { border: 1px solid #bbb; }
+  svg { vertical-align: middle; }
+</style>
+</head>
+<body>
+<!-- Grafana's dashboards view switch: hidden radios whose visible labels hold only an icon. -->
+<section>
+  <input data-testid="data-testid radio-button-option folders" id="view-folders" type="radio" checked name="view" style="position:absolute;opacity:0;width:0;height:0">
+  <label for="view-folders" style="cursor:pointer;display:inline-block;padding:6px"><svg data-testid="icon-folder" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="M1 3h5l2 2h7v8H1z"/></svg></label>
+  <input data-testid="data-testid radio-button-option list" id="view-list" type="radio" name="view" style="position:absolute;opacity:0;width:0;height:0">
+  <label for="view-list" style="cursor:pointer;display:inline-block;padding:6px"><svg data-testid="icon-list-ul" aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="M2 3h2v2H2zM6 3h8v2H6zM2 7h2v2H2zM6 7h8v2H6zM2 11h2v2H2zM6 11h8v2H6z"/></svg></label>
+</section>
+
+<!-- Grafana's label filter: the dropdown arrow is a bare svg role=button that toggles the combobox's menu. -->
+<section>
+  <input role="combobox" aria-controls="menu-1" placeholder="Select labels" type="text">
+  <svg id="arrow" role="button" tabindex="-1" aria-controls="menu-1" aria-expanded="false" data-testid="icon-angle-down" width="16" height="16" viewBox="0 0 16 16"><path d="M3 6l5 5 5-5z"/></svg>
+  <ul id="menu-1" hidden></ul>
+</section>
+
+<!-- An icon-only button, lucide style. -->
+<section>
+  <button type="button" id="settings"><svg class="lucide lucide-settings" width="16" height="16" aria-hidden="true" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5"/></svg></button>
+</section>
+
+<!-- Controls that already have a name and must keep it. -->
+<section>
+  <button type="button" aria-label="Close panel"><svg class="lucide lucide-x" width="16" height="16" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13"/></svg></button>
+  <button type="button">Save</button>
+</section>
+
+<script>
+  window.__fixture = { view: 'folders', toggled: false, settings: false };
+  document.getElementById('view-folders').addEventListener('change', () => { window.__fixture.view = 'folders'; });
+  document.getElementById('view-list').addEventListener('change', () => { window.__fixture.view = 'list'; });
+  document.getElementById('arrow').addEventListener('click', (event) => {
+    window.__fixture.toggled = true;
+    const arrow = event.currentTarget;
+    arrow.setAttribute('aria-expanded', String(arrow.getAttribute('aria-expanded') !== 'true'));
+  });
+  document.getElementById('settings').addEventListener('click', () => { window.__fixture.settings = true; });
+</script>
+</body>
+</html>

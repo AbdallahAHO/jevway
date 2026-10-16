@@ -359,6 +359,46 @@ const checks: Check[] = [
       assert.ok(actions.every((action) => !action.hover), labelsOf(actions));
     },
   },
+  {
+    name: 'icon-only radios are named from their icon, and clicking one selects it',
+    file: 'unnamed-controls.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const folder = find(page.actions, 'radio', /^folder icon$/);
+      const list = find(page.actions, 'radio', /^list ul icon$/);
+      assert.ok(folder && list, `icon radios not named: ${labelsOf(page.actions)}`);
+      await tab.act(list, page);
+      assert.equal((await fixtureState(tab)).view, 'list');
+    },
+  },
+  {
+    name: 'a dropdown arrow is named from the combobox it toggles',
+    file: 'unnamed-controls.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const arrow = find(page.actions, 'button', /^Toggle Select labels$/);
+      assert.ok(arrow, `dropdown arrow not named: ${labelsOf(page.actions)}`);
+      await tab.act(arrow, page);
+      assert.equal((await fixtureState(tab)).toggled, true);
+    },
+  },
+  {
+    name: 'an icon-only button is named from its icon; named controls keep their names',
+    file: 'unnamed-controls.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const settings = find(page.actions, 'button', /^settings icon$/);
+      assert.ok(settings, `icon button not named: ${labelsOf(page.actions)}`);
+      assert.ok(find(page.actions, 'button', /^Close panel$/), `Close panel renamed: ${labelsOf(page.actions)}`);
+      assert.ok(find(page.actions, 'button', /^Save$/), `Save renamed: ${labelsOf(page.actions)}`);
+      assert.ok(
+        controls(page.actions).every((action) => action.label !== action.role),
+        `a control is named by its bare role: ${labelsOf(page.actions)}`,
+      );
+      await tab.act(settings, page);
+      assert.equal((await fixtureState(tab)).settings, true);
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port.
