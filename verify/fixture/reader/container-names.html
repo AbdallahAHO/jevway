@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Container names</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  section { margin-bottom: 16px; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .pager { display: flex; align-items: center; gap: 6px; }
+</style>
+</head>
+<body>
+<!-- Langfuse's filter sidebar: Radix checkboxes with no text of their own; the value sits in a sibling div. -->
+<section>
+  <div class="row"><button type="button" role="checkbox" aria-checked="false" value="on" id="name-chat" style="width:16px;height:16px"></button><div class="label"><span>chat</span> <span>220</span></div></div>
+  <div class="row"><button type="button" role="checkbox" aria-checked="false" value="on" id="name-step" style="width:16px;height:16px"></button><div class="label"><span>step</span> <span>220</span></div></div>
+  <div class="row"><button type="button" role="checkbox" aria-checked="false" value="on" id="name-qa-chatbot" style="width:16px;height:16px"></button><div class="label"><span>qa-chatbot</span> <span>65</span></div></div>
+</section>
+
+<!-- Langfuse's pagination: a bare number input between two spans. -->
+<section>
+  <div class="pager"><span>Page</span><input type="number" value="1" style="width:48px"><span>of 30</span></div>
+</section>
+
+<!-- A container holding a whole paragraph names nothing: the button keeps its bare role. -->
+<section>
+  <div>
+    <p>This paragraph is deliberately long, well over eighty characters, so that the text around the button below is not a tight wrapper.</p>
+    <button type="button" style="width:16px;height:16px"></button>
+  </div>
+</section>
+
+<script>
+  window.__fixture = { facets: [], page: '1' };
+  for (const box of document.querySelectorAll('button[role="checkbox"]')) {
+    box.addEventListener('click', () => {
+      const value = box.parentElement.querySelector('.label').textContent.replace(/\s+/g, ' ').trim();
+      const on = box.getAttribute('aria-checked') !== 'true';
+      box.setAttribute('aria-checked', String(on));
+      const facets = window.__fixture.facets;
+      if (on) facets.push(value);
+      else facets.splice(facets.indexOf(value), 1);
+    });
+  }
+  document.querySelector('.pager input').addEventListener('input', (event) => {
+    window.__fixture.page = event.target.value;
+  });
+</script>
+</body>
+</html>

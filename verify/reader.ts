@@ -399,6 +399,43 @@ const checks: Check[] = [
       assert.equal((await fixtureState(tab)).settings, true);
     },
   },
+  {
+    name: 'unnamed filter toggles are named from the text beside them',
+    file: 'container-names.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const labels = page.actions.filter((action) => action.role === 'checkbox').map((action) => action.label);
+      assert.deepEqual(labels, ['Select: chat 220', 'Select: step 220', 'Select: qa-chatbot 65']);
+      const step = find(page.actions, 'checkbox', /^Select: step 220$/);
+      assert.ok(step, `step toggle not listed: ${labelsOf(page.actions)}`);
+      await tab.act(step, page);
+      assert.deepEqual((await fixtureState(tab)).facets, ['step 220']);
+    },
+  },
+  {
+    name: 'an unnamed page box is named from the text around it',
+    file: 'container-names.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const box = page.actions.find((action) => action.kind === 'fill' && action.label === 'Page of 30');
+      assert.ok(box, `page box not named: ${labelsOf(page.actions)}`);
+      assert.equal(box.role, 'spinbutton');
+      assert.ok(find(page.actions, 'spinbutton', /^Open Page of 30$/), `click entry not named: ${labelsOf(page.actions)}`);
+      await tab.act(box, page, '3');
+      assert.equal((await fixtureState(tab)).page, '3');
+    },
+  },
+  {
+    name: 'a long container does not name a control',
+    file: 'container-names.html',
+    run: async (tab) => {
+      const buttons = (await listed(tab)).filter((action) => action.role === 'button');
+      assert.deepEqual(
+        buttons.map((action) => action.label),
+        ['button'],
+      );
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port.
