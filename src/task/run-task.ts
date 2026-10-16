@@ -385,18 +385,28 @@ export class BrowserTask {
         if (isRiskyClick(decision)) this.#confirmedCommit = false;
 
         const before = page.fingerprint;
-        page = await this.#tab.observe();
-        // A slow click handler or a loading page hasn't reacted yet: a person waits a moment before trying again.
-        if (page.fingerprint === before) page = await this.#awaitChange(before, page);
-        const field = decision.operation === 'TYPE_TEXT' && page.actions.find((a) => a.kind === 'fill' && a.node === action.node);
-        this.#history.push({
+        const ran = {
           operation: decision.operation,
           element,
           ...(decision.valueKey && { value_key: decision.valueKey }),
+        };
+        const confidence = round(Math.min(decision.confidence, decision.targetConfidence ?? 1));
+        try {
+          page = await this.#tab.observe();
+          // A slow click handler or a loading page hasn't reacted yet: a person waits a moment before trying again.
+          if (page.fingerprint === before) page = await this.#awaitChange(before, page);
+        } catch (error) {
+          // An action that ran is reported even when the page can't be read afterwards, so the caller never repeats it blindly.
+          this.#history.push({ ...ran, confidence });
+          throw error;
+        }
+        const field = decision.operation === 'TYPE_TEXT' && page.actions.find((a) => a.kind === 'fill' && a.node === action.node);
+        this.#history.push({
+          ...ran,
           // A field that is gone (navigated, submitted) can't say; one still on the page must show what was typed.
           ...(field && { value_kept: field.value === text }),
           page_changed: page.fingerprint !== before,
-          confidence: round(Math.min(decision.confidence, decision.targetConfidence ?? 1)),
+          confidence,
         });
         if (repeatingWithoutEffect(this.#history)) {
           return stopAfterLastLook('blocked', 'The last 3 actions did not change the page', decision);

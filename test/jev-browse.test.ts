@@ -1005,7 +1005,7 @@ describe('errors become hand-backs', () => {
     expect(requests).toHaveLength(0);
   });
 
-  it('ends as blocked when the page never settles after an action', async () => {
+  it('ends as blocked, still reporting the executed action, when the page never settles after it', async () => {
     const { ask } = scriptedJev([click]);
     const { tab, asTab, acted } = fakeTab();
     let observed = 0;
@@ -1016,8 +1016,27 @@ describe('errors become hand-backs', () => {
     const summary = await new BrowserTask(asTab, ask, { goal: 'Open' }).run();
     expect(summary.status).toBe('blocked');
     expect(summary.reason).toContain('did not settle');
-    expect(summary.steps.length).toBeLessThanOrEqual(1);
     expect(acted).toHaveLength(1);
+    expect(summary.steps).toHaveLength(1);
+    expect(summary.steps[0]).toMatchObject({ operation: 'CLICK', element: acted[0].label });
+    expect(summary.steps[0]).not.toHaveProperty('page_changed');
+  });
+
+  it('still reports a typed value when the page never settles after typing it', async () => {
+    const { ask } = scriptedJev([{ operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: 'email' }]);
+    const { tab, asTab, acted } = fakeTab();
+    let observed = 0;
+    tab.observe = async () => {
+      if (observed++) throw new StalePage(SETTLE_TIMEOUT);
+      return page();
+    };
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Enter email', values: { email: 'ada@example.com' } }).run();
+    expect(summary.status).toBe('blocked');
+    expect(acted).toEqual([{ label: 'Email address', text: 'ada@example.com' }]);
+    expect(summary.steps).toHaveLength(1);
+    expect(summary.steps[0]).toMatchObject({ operation: 'TYPE_TEXT', element: 'Email address', value_key: 'email' });
+    expect(summary.steps[0]).not.toHaveProperty('page_changed');
+    expect(summary.steps[0]).not.toHaveProperty('value_kept');
   });
 
   it('ends as blocked on a model 400 without retrying it', async () => {
