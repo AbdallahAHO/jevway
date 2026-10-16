@@ -33,9 +33,16 @@
     }
     return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
   };
+  // jev-browse: display:contents has no box of its own (checkVisibility is false), yet its children render with the parent.
+  const renders = (n) =>
+    n.checkVisibility({ checkVisibilityCSS: true }) ||
+    (getComputedStyle(n).display === 'contents' && Boolean(n.parentElement) && renders(n.parentElement));
   const name = (e, seen = new Set()) => {
     if (!e || seen.has(e)) return '';
     seen.add(e);
+    // jev-browse: accessible names leave out hidden descendants, so a dropdown reads as "Labels", not as its closed menu.
+    // An element that is itself hidden (one an aria-labelledby points at) keeps all of its text.
+    const shown = renders(e);
     const referenced = (e.getAttribute('aria-labelledby') || '')
       .split(/\s+/)
       .map((id) => name(document.getElementById(id), seen))
@@ -56,7 +63,10 @@
             .map((n) =>
               n.nodeType === 3
                 ? n.textContent
-                : n.nodeType === 1 && n.getAttribute('aria-hidden') !== 'true'
+                : n.nodeType === 1 &&
+                    n.getAttribute('aria-hidden') !== 'true' &&
+                    // An SVG <title> is never rendered, yet it is the svg's accessible name.
+                    (!shown || n.tagName === 'title' || renders(n))
                   ? name(n, seen)
                   : '',
             )

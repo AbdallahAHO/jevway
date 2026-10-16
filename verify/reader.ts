@@ -404,6 +404,8 @@ const checks: Check[] = [
       assert.ok(find(actions, 'button', /^Labels$/), `the picker is not named "Labels": ${labelsOf(actions)}`);
       assert.ok(find(actions, 'button', /^Save$/), `the button is not named "Save": ${labelsOf(actions)}`);
       assert.ok(find(actions, 'button', /^Hidden name$/), `the aria-labelledby control lost its name: ${labelsOf(actions)}`);
+      assert.ok(find(actions, 'button', /^Close$/), `the icon button lost its svg title as its name: ${labelsOf(actions)}`);
+      assert.ok(find(actions, 'button', /^Archive$/), `a label inside a display:contents wrapper lost its text: ${labelsOf(actions)}`);
     },
   },
   {

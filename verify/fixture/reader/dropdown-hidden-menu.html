@@ -22,7 +22,11 @@
 <!-- A hidden status span is not part of what a person reads on the button. -->
 <button type="button">Save <span style="visibility:hidden">(unsaved)</span></button>
 <!-- aria-labelledby may point at a hidden element: the reference wins over the hiding. -->
-<span id="hidden-name" style="display:none">Hidden name</span>
+<span id="hidden-name" style="display:none"><b>Hidden</b> name</span>
 <button type="button" aria-labelledby="hidden-name">x</button>
+<!-- A label wrapped in display:contents (some component libraries do): the wrapper has no box, but its text renders. -->
+<button type="button"><span style="display:contents">Archive <i style="display:none">(hidden)</i></span></button>
+<!-- An icon button named only by its svg <title>: the title is never rendered, yet it is the name. -->
+<button type="button"><svg width="16" height="16" viewBox="0 0 16 16"><title>Close</title><path d="M2 2l12 12M14 2L2 14" stroke="black"/></svg></button>
 </body>
 </html>
