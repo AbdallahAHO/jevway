@@ -127,6 +127,18 @@ const scriptedJev = (steps: Record<string, any>[]) => {
   return { ask, requests };
 };
 
+/** Gives the click head a spread of probabilities instead of one sure pick, as the real one does when nothing fits; leaves a request over other targets alone. */
+const withClickHead =
+  (ask: Ask, probabilities: Record<string, number>): Ask =>
+  async (request) => {
+    const response = await ask(request);
+    const head = response.answers.click_target;
+    if (!head || Object.keys(head.probabilities).length !== Object.keys(probabilities).length) return response;
+    const [choice] = Object.entries(probabilities).sort(([, a], [, b]) => b - a)[0];
+    const click_target = { ...head, choice, confidence: probabilities[choice], probabilities };
+    return { ...response, answers: { ...response.answers, click_target } };
+  };
+
 const fakeTab = (pages: PageState[] = [page()]) => {
   const acted: { label: string; text?: string }[] = [];
   let observed = 0;
@@ -245,6 +257,15 @@ describe('Jev request', () => {
     const labels = ['+1', 'Show 2 more tags', 'More', 'more options', '…', '⋯', '⋮', '...', 'ellipsis icon', 'Filters', 'Show more details', 'More details', 'Moreover'];
     expect(labels.filter((label) => foldsOn(overflowChip(32, label)))).toEqual(labels.slice(0, 9));
     expect(foldsOn(overflowChip(32, 'More', 'true'))).toBe(0);
+  });
+
+  it('ranks count chips ahead of the other overflow controls, the click head breaking ties, and keeps three', () => {
+    const chips = [overflowChip(32, 'More actions'), overflowChip(33, '⋯'), overflowChip(34, '+2'), overflowChip(35, 'Show 3 more tags')];
+    const clicks = buildActionSpace(overflowPage('a', chips).actions).targets.CLICK!;
+    // Elements 1 and 2 are the header menus; 3 to 6 are the chips in the order above.
+    const probabilities = { '1': 0.3, '2': 0.3, '3': 0.2, '4': 0.15, '5': 0.01, '6': 0.04 };
+    const head = { type: 'choice', choice: '1', confidence: 0.3, probabilities };
+    expect(overflowFolds({ click_target: head }, clicks).map((fold) => fold.action.label)).toEqual(['Show 3 more tags', '+2', 'More actions']);
   });
 
   it('counts a hover-only overflow control, whose label carries the hover suffix', () => {
@@ -647,6 +668,20 @@ describe('per-element commit risk', () => {
     const judged = ['Show 3 more tags', '⋯'].map((label) => clickTargetOf(state, label));
     expect(Object.keys(requests[1].questions)).toEqual(judged.map((index) => `risk_${index}`));
     expect(Object.keys(decision.elementRisks!)).toEqual(judged);
+  });
+
+  it('judges the overflow controls for an unsure step once the bar is passed, and for a confident one never', async () => {
+    const state = overflowPage('a', [overflowChip(32, 'Show 1 more session details'), overflowChip(33, 'More actions')]);
+    const menu = clickTargetOf(state, 'Open menu');
+    const chips = ['Show 1 more session details', 'More actions'].map((label) => clickTargetOf(state, label));
+    const judged = async (confidence: number, unsureBelow?: number) => {
+      const { ask, requests } = scriptedJev([{ operation: 'CLICK', confidence, click_target: menu }]);
+      await decide(ask, { ...input, page: state, elementRisk: 'chosen', unsureBelow });
+      return Object.keys(requests[1].questions);
+    };
+    expect(await judged(0.22, 0.3)).toEqual([menu, ...chips].map((index) => `risk_${index}`));
+    expect(await judged(0.95, 0.3)).toEqual([`risk_${menu}`]);
+    expect(await judged(0.22)).toEqual([`risk_${menu}`]);
   });
 
   describe('with a collapsed "More actions" on each of five rows', () => {
@@ -1257,6 +1292,79 @@ describe('loop gotchas', () => {
       const summary = await new BrowserTask(asTab, ask, options).run();
       expect(summary).toMatchObject({ status: 'needs_confirmation' });
       expect(summary.reason).toContain('More actions');
+      expect(acted).toEqual([]);
+    });
+  });
+
+  describe('an unsure step with the target behind a collapsed overflow control', () => {
+    const options = { goal: 'Open the source observation', elementRisk: true, changeWaitMs: 0 };
+    const COUNT = 'Show 1 more session details';
+    const closed = (fingerprint = 'a') => overflowPage(fingerprint, [overflowChip(32, COUNT), overflowChip(33, 'More actions')]);
+    const opened = overflowPage('b', [overflowChip(32, COUNT, 'true'), overflowChip(33, 'More actions'), SOURCE_LINK]);
+    const countTarget = clickTargetOf(closed(), COUNT);
+    const moreTarget = clickTargetOf(closed(), 'More actions');
+    const risks = (risk: number) => ({ [`risk_${countTarget}`]: risk, [`risk_${moreTarget}`]: risk });
+    // A click at 0.22 on a generic menu: under the 0.3 bar, so it would be handed back as uncertain.
+    const unsure = { operation: 'CLICK', confidence: 0.22, click_target: clickTargetOf(closed(), 'Open menu') };
+
+    it('opens the count chip instead of handing back uncertain, judged by name', async () => {
+      const link = clickTargetOf(opened, 'View source observation');
+      const { ask, requests } = scriptedJev([
+        { ...unsure, ...risks(0.02) },
+        risks(0.02),
+        { operation: 'CLICK', click_target: link },
+        { [`risk_${link}`]: 0.02 },
+        { operation: 'DONE' },
+      ]);
+      const { asTab, acted } = fakeTab([closed(), opened, overflowPage('c', [])]);
+      const task = new BrowserTask(asTab, ask, options);
+      const summary = await task.run();
+      expect(acted).toEqual([{ label: COUNT }, { label: 'View source observation' }]);
+      expect(summary.status).toBe('done');
+      expect(task.trace[0]).toMatchObject({ executed: true, decision: { via: 'disclosure', action: COUNT } });
+      expect(Object.keys(requests[1].questions)).toContain(`risk_${countTarget}`);
+    });
+
+    it('opens the count chip first when the click head ranks "More actions" above it', async () => {
+      const page = overflowPage('a', [overflowChip(32, 'More actions'), overflowChip(33, COUNT)]);
+      const [more, count] = ['More actions', COUNT].map((label) => clickTargetOf(page, label));
+      const head = { '1': 0.5, '2': 0.45, [more]: 0.04, [count]: 0.01 };
+      const link = clickTargetOf(opened, 'View source observation');
+      const script = scriptedJev([
+        { operation: 'BLOCKED', [`risk_${more}`]: 0.02, [`risk_${count}`]: 0.02 },
+        { [`risk_${more}`]: 0.02, [`risk_${count}`]: 0.02 },
+        { operation: 'CLICK', click_target: link },
+        { operation: 'DONE' },
+      ]);
+      const { asTab, acted } = fakeTab([page, opened, overflowPage('c', [])]);
+      const summary = await new BrowserTask(asTab, withClickHead(script.ask, head), options).run();
+      expect(acted).toEqual([{ label: COUNT }, { label: 'View source observation' }]);
+      expect(summary.status).toBe('done');
+    });
+
+    it('still hands back uncertain once every overflow control has been opened', async () => {
+      const lone = (fingerprint: string) => overflowPage(fingerprint, [overflowChip(32, COUNT)]);
+      const { ask } = scriptedJev([{ ...unsure, [`risk_${clickTargetOf(lone('a'), COUNT)}`]: 0.02 }]);
+      const { asTab, acted } = fakeTab([lone('a'), lone('b')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted).toEqual([{ label: COUNT }]);
+      expect(summary).toMatchObject({ status: 'uncertain', reason: expect.stringContaining('Open menu') });
+    });
+
+    it('still hands back uncertain when the page has no overflow control', async () => {
+      const { ask } = scriptedJev([unsure]);
+      const { asTab, acted } = fakeTab([overflowPage('a', [overflowChip(32, 'Filters')])]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted).toEqual([]);
+      expect(summary.status).toBe('uncertain');
+    });
+
+    it('asks for confirmation instead of opening a count chip judged risky by name', async () => {
+      const { ask } = scriptedJev([{ ...unsure, ...risks(0.9) }]);
+      const { asTab, acted } = fakeTab([closed(), closed('b')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary).toMatchObject({ status: 'needs_confirmation' });
+      expect(summary.reason).toContain(COUNT);
       expect(acted).toEqual([]);
     });
   });
