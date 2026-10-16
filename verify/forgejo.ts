@@ -165,6 +165,7 @@ const JOBS: Job[] = [
     goal: 'Create a new repository named with the text in name.',
     values: { name: INVALID_REPO_NAME },
     doneWhen: 'A new repository with that name exists.',
+    confirms: /create repository/i,
     expect: ['blocked', 'uncertain', 'needs_input'],
     check: 'The run ends blocked, uncertain or needs_input, and ada owns only app and scratch',
     passes: async () => (await reposOfAda()).sort().join() === 'app,scratch',
