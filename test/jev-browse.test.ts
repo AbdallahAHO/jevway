@@ -3147,3 +3147,172 @@ describe('a risky submit chosen again after the page answered it', () => {
     expect(summary.reason).toContain('"Delete" on "Staylist" looks irreversible');
   });
 });
+
+describe('what the page said after a submit stays in front of Jev while the run stays on the page', () => {
+  const FORM_URL = 'http://fixture/ada/app/settings';
+  const CHROME = 'Issues\nPull requests\nSettings';
+  const BEFORE = `${CHROME}\nDescription\nSave settings`;
+  const FLASH = 'Your settings have been updated.';
+  const control = (label: string, node: number, role = 'button'): PageAction => ({ id: `e${node}`, kind: 'click', node, role, label });
+  const SCROLL: PageAction = { id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: 600 };
+  // A settings page; every page differs by fingerprint so no step looks like a no-op.
+  const settingsPage = (fingerprint: string, text: string, url = FORM_URL) =>
+    page({ url, fingerprint, text, actions: [control('Save settings', 1), control('Billing', 2, 'link'), SCROLL] });
+  const save = { operation: 'CLICK', click_target: '1', commit_risk: 0.8 };
+  const billing = { operation: 'CLICK', click_target: '2', commit_risk: 0 };
+  const scroll = { operation: 'SCROLL_DOWN' };
+  const done = { operation: 'DONE', done_check: 0.9 };
+  const options = { goal: 'Save the settings', doneWhen: 'The settings are saved', changeWaitMs: 0 };
+  const said = (text: string) => `[Page message after "Save settings"] ${text}`;
+  const textOf = (request: any): string => request.state.page.text;
+  const confirmed = (task: BrowserTask) => task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+
+  it('puts the new text the page showed after a risky click on top of the page text of the next request', async () => {
+    const { ask, requests } = scriptedJev([save, done]);
+    const { asTab } = fakeTab([settingsPage('a', BEFORE), settingsPage('b', `${BEFORE}\n${FLASH}`)]);
+    const task = new BrowserTask(asTab, ask, options);
+    confirmed(task);
+    const summary = await task.run();
+    expect(summary.status).toBe('done');
+    expect(textOf(requests[1])).toBe(`${said(FLASH)}\n${BEFORE}\n${FLASH}`);
+    // The caller's view is untouched: neither the page text nor the step carries the line.
+    expect(summary.page_text).toBe(`${BEFORE}\n${FLASH}`);
+    expect(summary.steps[0].element).toBe('Save settings');
+  });
+
+  it('keeps it after the run scrolled the new text off the page', async () => {
+    const { ask, requests } = scriptedJev([save, scroll, scroll, done]);
+    const { asTab } = fakeTab([
+      settingsPage('a', BEFORE),
+      settingsPage('b', `${BEFORE}\n${FLASH}`),
+      settingsPage('c', 'Wiki\nEnable repository wiki'),
+      settingsPage('d', 'Danger zone\nDelete repository'),
+    ]);
+    const task = new BrowserTask(asTab, ask, options);
+    confirmed(task);
+    await task.run();
+    expect(textOf(requests.at(-1))).toBe(`${said(FLASH)}\nDanger zone\nDelete repository`);
+  });
+
+  it('quotes only lines the run never saw on that path, so the chrome of a reloaded page drops out', async () => {
+    const { ask, requests } = scriptedJev([scroll, save, done]);
+    const { asTab } = fakeTab([
+      settingsPage('a', BEFORE),
+      settingsPage('b', 'Wiki\nEnable repository wiki\nSave settings'),
+      settingsPage('c', `${CHROME}\n${FLASH}\nDescription\nSave settings`),
+    ]);
+    const task = new BrowserTask(asTab, ask, options);
+    confirmed(task);
+    await task.run();
+    expect(textOf(requests.at(-1)).split('\n')[0]).toBe(said(FLASH));
+  });
+
+  it('drops it when the run moves to another path', async () => {
+    const { ask, requests } = scriptedJev([save, billing, done]);
+    const { asTab } = fakeTab([
+      settingsPage('a', BEFORE),
+      settingsPage('b', `${BEFORE}\n${FLASH}`),
+      settingsPage('c', 'Billing\nYour plan', 'http://fixture/ada/app/billing'),
+    ]);
+    const task = new BrowserTask(asTab, ask, options);
+    confirmed(task);
+    await task.run();
+    expect(textOf(requests[1])).toContain(said(FLASH));
+    expect(textOf(requests[2])).toBe('Billing\nYour plan');
+  });
+
+  it('adds nothing when the page showed nothing new', async () => {
+    const { ask, requests } = scriptedJev([save, done]);
+    const { asTab } = fakeTab([settingsPage('a', BEFORE), settingsPage('b', BEFORE)]);
+    const task = new BrowserTask(asTab, ask, options);
+    confirmed(task);
+    await task.run();
+    expect(textOf(requests[1])).toBe(BEFORE);
+  });
+
+  it('keeps the quote at 300 characters', async () => {
+    const { ask, requests } = scriptedJev([save, done]);
+    const long = 'The settings were updated. '.repeat(40).trim();
+    const { asTab } = fakeTab([settingsPage('a', BEFORE), settingsPage('b', `${BEFORE}\n${long}`)]);
+    const task = new BrowserTask(asTab, ask, options);
+    confirmed(task);
+    await task.run();
+    const quote = textOf(requests[1]).split('\n')[0].match(/^\[Page message after "Save settings"\] (.*)$/)?.[1];
+    expect(quote).toBeDefined();
+    expect(quote!.length).toBeLessThanOrEqual(300);
+  });
+
+  describe('a save that was not judged risky', () => {
+    const wikiPage = (fingerprint: string, text: string) =>
+      page({
+        url: FORM_URL,
+        fingerprint,
+        text,
+        actions: [{ ...control('Enable repository wiki', 1, 'checkbox'), checked: 'true' }, control('Save settings', 2), control('Billing', 3, 'link'), SCROLL],
+      });
+    const tick = { operation: 'CLICK', click_target: '1', commit_risk: 0 };
+    const saveQuietly = { operation: 'CLICK', click_target: '2', commit_risk: 0.1 };
+
+    it('is quoted when it saves a pending edit, and the quote survives scrolling', async () => {
+      const { ask, requests } = scriptedJev([tick, saveQuietly, scroll, scroll, done]);
+      const { asTab } = fakeTab([
+        wikiPage('a', BEFORE),
+        wikiPage('b', BEFORE),
+        wikiPage('c', `${BEFORE}\n${FLASH}`),
+        wikiPage('d', 'Wiki\nEnable repository wiki'),
+        wikiPage('e', 'Danger zone\nDelete repository'),
+      ]);
+      await new BrowserTask(asTab, ask, options).run();
+      expect(textOf(requests.at(-1))).toBe(`${said(FLASH)}\nDanger zone\nDelete repository`);
+    });
+
+    it('quotes a repeated message again after a second save', async () => {
+      const { ask, requests } = scriptedJev([tick, saveQuietly, tick, saveQuietly, done]);
+      const { asTab } = fakeTab([
+        wikiPage('a', BEFORE),
+        wikiPage('b', BEFORE),
+        wikiPage('c', `${BEFORE}\n${FLASH}`),
+        wikiPage('d', `${BEFORE}\n${FLASH}`),
+        wikiPage('e', `${BEFORE}\n${FLASH}`),
+      ]);
+      await new BrowserTask(asTab, ask, options).run();
+      expect(textOf(requests[2]).split('\n')[0]).toBe(said(FLASH));
+      expect(textOf(requests[4]).split('\n')[0]).toBe(said(FLASH));
+    });
+
+    it('drops it at the next save when that one showed nothing new', async () => {
+      const { ask, requests } = scriptedJev([tick, saveQuietly, tick, saveQuietly, done]);
+      const { asTab } = fakeTab([
+        wikiPage('a', BEFORE),
+        wikiPage('b', BEFORE),
+        wikiPage('c', `${BEFORE}\n${FLASH}`),
+        wikiPage('d', BEFORE),
+        wikiPage('e', BEFORE),
+      ]);
+      await new BrowserTask(asTab, ask, options).run();
+      expect(textOf(requests[3]).split('\n')[0]).toBe(said(FLASH));
+      expect(textOf(requests[4])).toBe(BEFORE);
+    });
+
+    it('is not added for the edit itself, even when it changes the text', async () => {
+      const { ask, requests } = scriptedJev([tick, done]);
+      const { asTab } = fakeTab([wikiPage('a', BEFORE), wikiPage('b', `${BEFORE}\nWiki is on`)]);
+      await new BrowserTask(asTab, ask, options).run();
+      expect(textOf(requests[1])).toBe(`${BEFORE}\nWiki is on`);
+    });
+
+    it('is not added for a navigation link when nothing is unsaved', async () => {
+      const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '3', commit_risk: 0 }, done]);
+      const { asTab } = fakeTab([wikiPage('a', BEFORE), wikiPage('b', `${BEFORE}\nYour plan was updated yesterday.`)]);
+      await new BrowserTask(asTab, ask, options).run();
+      expect(textOf(requests[1])).toBe(`${BEFORE}\nYour plan was updated yesterday.`);
+    });
+
+    it('is not added for a Save with nothing edited before it', async () => {
+      const { ask, requests } = scriptedJev([saveQuietly, done]);
+      const { asTab } = fakeTab([wikiPage('a', BEFORE), wikiPage('b', `${BEFORE}\n${FLASH}`)]);
+      await new BrowserTask(asTab, ask, options).run();
+      expect(textOf(requests[1])).toBe(`${BEFORE}\n${FLASH}`);
+    });
+  });
+});
