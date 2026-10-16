@@ -1,6 +1,6 @@
 // The jobs report: one self-contained page next to the run folders it links to.
 import { escapeHtml as escape, type RecordedStep } from '../../src/task/recording.ts';
-import type { TaskSummary } from '../../src/task/run-task.ts';
+import type { TaskStatus, TaskSummary } from '../../src/task/run-task.ts';
 
 export interface Job {
   id: string;
@@ -16,8 +16,10 @@ export interface Job {
   firstDoneWhen?: string;
   /** How a pass is judged, for readers of the report. */
   check: string;
-  /** Ground truth from the final page, never the task's own status. */
-  passes: (url: URL, text: string) => boolean;
+  /** Ground truth from the final page or the app's own state (e.g. its API), never the task's own status. */
+  passes: (url: URL, text: string) => boolean | Promise<boolean>;
+  /** The statuses that count as success (default `['done']`). A destructive job expects `needs_confirmation`; a deliberately invalid request expects a hand-back. */
+  expect?: TaskStatus[];
   /** Two-call jobs: what the calling agent asks next, from the table it read after the first call. */
   followUp?: (rows: Record<string, string>[]) => { goal: string; values: Record<string, string> } | undefined;
 }
@@ -31,7 +33,7 @@ export interface RunResult {
   run: number;
   /** The run's recording folder, relative to the report. */
   dir: string;
-  /** Reached the right page and Jev reported done. */
+  /** The ground-truth check held and the run ended with an expected status. */
   passed: boolean;
   /** The ground-truth check alone. */
   reached: boolean;
@@ -149,7 +151,7 @@ const jobSection = (
   ${job.values ? `<dt>Values</dt><dd><code>${escape(JSON.stringify(job.values))}</code></dd>` : ''}
   <dt>Done when</dt><dd>${escape(job.doneWhen)}</dd>
   ${job.followUp ? `<dt>Second call</dt><dd>The calling agent reads the table after the first call and continues the same session${followUp ? ` with <code>${escape(JSON.stringify(followUp))}</code>` : ''}.</dd>` : ''}
-  <dt>Checked by</dt><dd>${escape(job.check)}</dd>
+  <dt>Checked by</dt><dd>${job.expect ? `Pass: ends ${escape(job.expect.join(' or '))}, and the check holds: ` : ''}${escape(job.check)}</dd>
 </dl>
 <div class="chips">${runs.map(runChip).join('')}</div>
 ${failures ? `<ul class="failures">${failures}</ul>` : ''}

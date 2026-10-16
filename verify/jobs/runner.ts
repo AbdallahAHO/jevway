@@ -4,6 +4,10 @@
  * under `verify/out/<name>-<timestamp>/` and opens the report on macOS. If the browser connection drops it reconnects
  * for the next run; a suite that has to stop early still writes both, with the runs it never got to marked as not run.
  *
+ * Write suites (jobs that change the app's state) pass `reset` to put the app back in its seeded state before every
+ * run, give a job an async `passes` that reads the app's own state (e.g. its API), and set `expect` on jobs that must
+ * end in a hand-back (a destructive job expects `needs_confirmation`) instead of `done`.
+ *
  * Env knobs, with NAME the uppercased `name`: `JEV_<NAME>_RUNS` (default 3), `JEV_<NAME>_ONLY` (comma-separated job
  * ids), `JEV_<NAME>_DEVICE` (a key of DEVICES, default desktop) and `JEV_<NAME>_PHRASING` (`as-written` or `terse`).
  *
@@ -71,9 +75,11 @@ export interface RunJobsOptions {
   jobs: Job[];
   /** Runs on each fresh tab before the task starts. A throw aborts the whole suite, not only that run. */
   before?: (tab: Tab) => Promise<void>;
+  /** Puts the app back in its seeded state before each run (write suites). A throw aborts the whole suite, like `before`. */
+  reset?: (job: Job, run: number) => Promise<void>;
 }
 
-export const runJobs = async ({ name, title, startUrl, browser, jobs, before }: RunJobsOptions) => {
+export const runJobs = async ({ name, title, startUrl, browser, jobs, before, reset }: RunJobsOptions) => {
   const knob = (suffix: string) => `JEV_${name.toUpperCase()}_${suffix}`;
   const { profile, screenshots } = resolveModel();
   const ask = createAsk(profile);
@@ -127,6 +133,9 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before }: 
         let tab: Tab | undefined;
         let ready = false;
         try {
+          await reset?.(job, run).catch((error: Error) => {
+            throw new Error(`reset failed: ${error.message}`);
+          });
           tab = await Tab.open(chrome.cdp, startUrl, { device });
           // Each run starts clean: apps remember date ranges and views in storage, which leaked one run's choices into
           // the next. Cleared from inside the page because the browser-level Storage.clearDataForOrigin fails with
@@ -157,9 +166,9 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before }: 
           // Ground truth comes from a separate read of the page, not from the task's summary.
           const url = new URL(String(await tab.evaluate('location.href')));
           const text = String(await tab.evaluate('document.body?.innerText ?? ""'));
-          const reached = job.passes(url, text);
-          // A pass needs both: the page is right and Jev said so. Right page with another status is only "reached".
-          const passed = reached && summary.status === 'done';
+          const reached = await job.passes(url, text);
+          // A pass needs both: the check holds and the run ended with an expected status (default done). Holding with another status is only "reached".
+          const passed = reached && (job.expect ?? ['done']).includes(summary.status);
           writeFileSync(new URL(`${dir}trace.json`, outDir), JSON.stringify(task.trace, null, 1));
           result.runs.push({ run, dir, passed, reached, url: url.href, summaries, ...(next && { followUp: next.values }), ...(followUpMissing && { followUpMissing, rowsRead: sampleRows(rows ?? []) }) });
           const whyNot = followUpMissing ? `no matching row for the second call (read ${rows?.length} rows)` : summary.reason;
