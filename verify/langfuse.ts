@@ -139,8 +139,13 @@ const JOBS: Job[] = [
     job: 'After shipping a prompt change, I want to open a real generation that used the prompt, so I can check its inputs, output and cost.',
     goal: `Go to Prompts, open the list of observations (generations) that used the langfuse-docs-assistant-chat prompt, and open the most recent one. ${READ_ONLY}`,
     doneWhen: 'A single generation that used the langfuse-docs-assistant-chat prompt is open, showing its input and output.',
-    check: 'An /observations page filtered by promptName with one observation open (peek/observation in the URL)',
-    passes: (url) => url.pathname.endsWith('/observations') && /promptName/.test(url.search) && /peek=|observation=/.test(url.search),
+    check: "One observation open (peek/observation in the URL) on an /observations page filtered by promptName, or on the prompt page's Linked Generations tab (the phone layout has no observations link)",
+    passes: (url) => {
+      const observationOpen = /peek=|observation=/.test(url.search);
+      const observationsRoute = url.pathname.endsWith('/observations') && /promptName/.test(url.search);
+      const linkedGenerationsRoute = url.pathname.endsWith('/prompts/langfuse-docs-assistant-chat') && url.searchParams.get('tab') === 'linked-generations';
+      return observationOpen && (observationsRoute || linkedGenerationsRoute);
+    },
   },
   {
     id: 'trace-to-prompt',
