@@ -389,16 +389,43 @@ export const foldedFavourite = (answers: Record<string, any>, clicks: Record<str
   }
 };
 
+// "+1", "Show 2 more tags", "More actions", "⋯": the generic names of a chip that folds details away on a narrow screen.
+const OVERFLOW_LABEL = /^(\+\d+|show \d+ more\b.*|more( actions| options| items)?|…|⋯|⋮|\.\.\.)$/i;
+
+/**
+ * While the model says BLOCKED: every collapsed overflow control ("+1", "More actions", an ellipsis icon), the click head's
+ * higher-ranked ones first. Their labels say nothing about the goal, so the head scores them near 0 even when the target
+ * sits behind one; the caller opens the first one not yet tried.
+ */
+export const overflowFolds = (answers: Record<string, any>, clicks: Record<string, PageAction>) => {
+  const ids = Object.keys(clicks);
+  if (ids.length < 2) return [];
+  try {
+    const { probabilities } = validChoice(answers.click_target, ids);
+    return ids
+      .filter((id) => clicks[id].expanded === 'false' && isOverflowLabel(clicks[id].label))
+      .sort((a, b) => probabilities[b] - probabilities[a])
+      .map((id) => ({ id, probability: probabilities[id], action: clicks[id] }));
+  } catch {
+    return [];
+  }
+};
+
+const isOverflowLabel = (label: string) => OVERFLOW_LABEL.test(label.trim()) || /ellipsis/i.test(label);
+
 // The chosen click and the element under the screenshot box first (a box rescue clicks it, so it is judged by name too),
-// then a collapsed control a BLOCKED step favours (opening it is a click too), then (for the autopilot) the remaining
+// then the collapsed controls a BLOCKED step may open (opening one is a click too), then (for the autopilot) the remaining
 // taps by the target head's ranking.
 const elementRiskTargets = (input: DecisionInput, space: ActionSpace, decision: Pick<Decision, 'operation' | 'action' | 'answers' | 'nextClick'>) => {
   const clicks = space.targets.CLICK;
   if (!input.elementRisk || !input.checkCommitRisk || !clicks) return [];
   const chosen = decision.operation === 'CLICK' ? [targetIndexOf(space, 'CLICK', decision.action!)] : [];
   const boxed = decision.nextClick?.match ? [decision.nextClick.match] : [];
-  const folded = decision.operation === 'BLOCKED' ? foldedFavourite(decision.answers, clicks) : undefined;
-  const judged = [...new Set([...chosen, ...boxed, ...(folded ? [folded.id] : [])])];
+  const folded =
+    decision.operation === 'BLOCKED'
+      ? [foldedFavourite(decision.answers, clicks), ...overflowFolds(decision.answers, clicks)].flatMap((fold) => (fold ? [fold.id] : []))
+      : [];
+  const judged = [...new Set([...chosen, ...boxed, ...folded])];
   if (input.elementRisk === 'chosen') return judged;
   const probabilities: Record<string, number> = decision.answers.click_target?.probabilities ?? {};
   const ranked = Object.keys(clicks).sort((a, b) => (probabilities[b] ?? 0) - (probabilities[a] ?? 0));

@@ -1,7 +1,7 @@
 import { StalePage, TargetUnreachable, type PageAction, type PageState, type Tab } from '../browser/tab.ts';
 import { buildActionSpace } from '../jev/action-space.ts';
 import { centerOf, contains } from '../jev/box.ts';
-import { decide, foldedFavourite, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
+import { decide, foldedFavourite, overflowFolds, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
 import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
 import { Recording } from './recording.ts';
 
@@ -602,9 +602,13 @@ export class BrowserTask {
   // toward a collapsed control. It then faces the same hand-back checks as any click, judged by name when that is on.
   #openDisclosure(decision: Decision, page: PageState): Decision {
     if (decision.operation !== 'BLOCKED' || decision.fieldsWithoutValue.length) return decision;
-    const folded = foldedFavourite(decision.answers, buildActionSpace(page.actions).targets.CLICK ?? {});
-    if (!folded || folded.probability < this.#options.minConfidence || this.#opened.has(folded.action.node!)) return decision;
-    const { elementRisk, pageRisk } = this.#options;
+    const { minConfidence, elementRisk, pageRisk } = this.#options;
+    const clicks = buildActionSpace(page.actions).targets.CLICK ?? {};
+    const favourite = foldedFavourite(decision.answers, clicks);
+    const likely = favourite && favourite.probability >= minConfidence && !this.#opened.has(favourite.action.node!) ? favourite : undefined;
+    // A person who can't find something opens the "+1" / "More" overflow first, even when it looks unlikely.
+    const folded = likely ?? overflowFolds(decision.answers, clicks).find((fold) => !this.#opened.has(fold.action.node!));
+    if (!folded) return decision;
     const byName = decision.elementRisks?.[folded.id] ?? 1;
     // As for a chosen click: with both questions on, either one saying irreversible holds it.
     const commitRisk = !elementRisk ? (decision.commitRisk ?? 1) : pageRisk ? Math.max(byName, decision.commitRisk ?? 0) : byName;
@@ -614,7 +618,8 @@ export class BrowserTask {
       operation: 'CLICK',
       action: folded.action,
       target: folded.id,
-      confidence: folded.probability,
+      // An overflow try is deliberate but not confident: it sits at the bar, so the unsure guard lets it run.
+      confidence: likely ? folded.probability : minConfidence,
       targetConfidence: undefined,
       commitRisk,
     };
