@@ -2149,6 +2149,20 @@ describe('a risky submit chosen again after the page answered it', () => {
     expect(acted.map((a) => a.label)).toEqual(['Repository name', 'Create repository']);
   });
 
+  it('leaves out new lines with no words, like a footer render time that changes on every load', async () => {
+    const { ask } = scriptedJev([type, submit, submit]);
+    const { asTab } = fakeTab([
+      formPage('a', `${BEFORE}\nPage:\n3ms`),
+      formPage('b', `${BEFORE}\nPage:\n3ms`),
+      formPage('c', `${REJECTED}\nPage:\n2ms`),
+    ]);
+    const task = new BrowserTask(asTab, ask, options);
+    task.update({ confirmIrreversible: true });
+    const summary = await task.run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain(`the page then said: "${BANNER}". Submitting it again`);
+  });
+
   it('still quotes the text the page said right after the submit once a scroll took it off the page', async () => {
     const { ask } = scriptedJev([type, submit, { operation: 'SCROLL_DOWN' }, submit]);
     const { asTab, acted } = fakeTab([formPage('a', BEFORE), formPage('b', BEFORE), formPage('c', REJECTED), formPage('d', BEFORE)]);
@@ -2197,6 +2211,17 @@ describe('a risky submit chosen again after the page answered it', () => {
     expect(second.status).toBe('blocked');
     expect(second.reason).toContain(`the page then said: "${BANNER}"`);
     expect(acted.map((a) => a.label)).toEqual(['Repository name', 'Create repository']);
+  });
+
+  it('ignores a field typed on an earlier page: only the form that was submitted counts', async () => {
+    const search = page({ url: 'http://fixture/explore', fingerprint: 'e', text: 'Explore', actions: [control('Search repositories', 3, 'fill')] });
+    const { ask } = scriptedJev([type, type, submit, submit]);
+    const { asTab } = fakeTab([search, formPage('a', BEFORE), formPage('b', BEFORE), formPage('c', REJECTED)]);
+    const task = new BrowserTask(asTab, ask, options);
+    task.update({ confirmIrreversible: true });
+    const summary = await task.run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain(`the page then said: "${BANNER}"`);
   });
 
   it('leaves a repeated risky label alone when no field was typed before it (a list of Delete buttons)', async () => {

@@ -73,6 +73,9 @@ const pageTextFor = (text: string) =>
 const CONFIRM_TITLE_CHARS = 80;
 // How much of a page dialog's text a step or a repeat reason quotes.
 const DIALOG_MESSAGE_CHARS = 200;
+// How much of what a page said after a submit a blocked reason quotes, and how many submits a task remembers.
+const SUBMIT_ANSWER_CHARS = 300;
+const SUBMITS_KEPT = 10;
 
 const DEFAULTS = {
   maxSteps: 40,
@@ -177,6 +180,10 @@ export class BrowserTask {
   #lastTyped: PageAction | undefined;
   /** Set while the last executed step changed a field (typed, ticked) and nothing was saved since; `noted` once a DONE was sent back for it. */
   #unsavedEdit: { noted: boolean } | undefined;
+  /** Every field this task typed into, with the path it was on: what a submit sent, for telling a form that came back from a new page. */
+  #typedFields: { label: string; path: string }[] = [];
+  /** Risky clicks that executed, with what the page said right after (see #rejectedSubmit). */
+  #submits: Submit[] = [];
   /** Consecutive misses on the same target node because it couldn't be reached on an unchanged page. */
   #unreachable = { node: undefined as number | undefined, count: 0 };
   /** Consecutive refusals of wait, Escape, scroll or Enter because the page changed since the decision; any executed action resets it. */
@@ -469,8 +476,14 @@ export class BrowserTask {
         this.#unreachable = { node: undefined, count: 0 };
         this.#pageLevelStale = 0;
         this.#lastTyped = decision.operation === 'TYPE_TEXT' && isSearchLike(action) ? action : undefined;
+        if (decision.operation === 'TYPE_TEXT') this.#typedFields.push({ label: action.label, path: pathOf(page.url) });
         // A confirmation covers exactly one risky click.
         if (isRiskyClick(decision)) this.#confirmedCommit = false;
+        // What a rejected submit is told from later: where the click was, what had been typed, and the page's text before it.
+        const submitted =
+          isRiskyClick(decision) && decision.action
+            ? { label: bareLabel(decision.action.label), path: pathOf(page.url), fields: this.#typedOn(pathOf(page.url)), textBefore: page.text }
+            : undefined;
 
         const before = page.fingerprint;
         const ran = {
@@ -497,6 +510,10 @@ export class BrowserTask {
           confidence,
         });
         this.#unsavedEdit = isUnsavedEdit(decision.operation, action, page) ? { noted: false } : undefined;
+        // ...and what the page said right after it.
+        if (submitted) {
+          this.#submits = [...this.#submits, { ...submitted, answer: newTextOf(page.text, submitted.textBefore) }].slice(-SUBMITS_KEPT);
+        }
         const repeatedDialog = this.#reportDialogs(firstStep);
         if (repeatedDialog) return stop('blocked', repeatedDialog, decision);
         if (repeatingWithoutEffect(this.#history)) {
@@ -742,6 +759,31 @@ export class BrowserTask {
     return true;
   }
 
+  // The fields typed into on this path: a search box used on an earlier page isn't part of this form.
+  #typedOn(path: string) {
+    return [...new Set(this.#typedFields.filter((field) => field.path === path).map((field) => field.label))];
+  }
+
+  // A form that came back with new text after its submit was rejected, and sending the same values again repeats the
+  // rejection: the same click, on the same path, with every typed field still listed. A page that moved on (another path,
+  // a wizard's next step where the fields are gone) is a new form, and a click with nothing typed before it (a list of
+  // Delete buttons) says nothing about this one.
+  #rejectedSubmit(decision: Decision, page: PageState): Submit | undefined {
+    if (!decision.action) return undefined;
+    const label = bareLabel(decision.action.label);
+    const path = pathOf(page.url);
+    return [...this.#submits]
+      .reverse()
+      .find(
+        (submit) =>
+          submit.label === label &&
+          submit.path === path &&
+          submit.answer &&
+          submit.fields.length > 0 &&
+          submit.fields.every((field) => page.actions.some((listed) => listed.kind === 'fill' && listed.label === field)),
+      );
+  }
+
   // Returns [status, reason] when this decision is the calling agent's to make.
   #handBack(decision: Decision, page: PageState): [TaskStatus, string] | undefined {
     const { doneWhen } = this.#options;
@@ -775,6 +817,13 @@ export class BrowserTask {
       return ['needs_input', `No supplied value fits the field "${decision.action!.label}"`];
     }
     if (isRiskyClick(decision) && !this.#confirmedCommit) {
+      const rejected = this.#rejectedSubmit(decision, page);
+      if (rejected) {
+        return [
+          'blocked',
+          `"${rejected.label}" was already submitted on this page, and the page then said: "${rejected.answer}". Submitting it again would repeat the same request; tell the user what the page says.`,
+        ];
+      }
       // The page title says which target the click acts on (a repository, an order), for the agent to hold against the user's words.
       const title = page.title.slice(0, CONFIRM_TITLE_CHARS);
       return [
@@ -789,6 +838,41 @@ export class BrowserTask {
 // Optional MCP/CLI arguments arrive as explicit undefined; they must not erase defaults or earlier values.
 const definedOnly = <T extends object>(options: T) =>
   Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)) as T;
+
+// A risky click that ran: where it was, what had been typed, and the page's new text right after it.
+interface Submit {
+  label: string;
+  path: string;
+  fields: string[];
+  textBefore: string;
+  answer: string;
+}
+
+const bareLabel = (label: string) => label.replace(/ \(appears on hover\)$/, '');
+
+// The URL path plus search, without the hash: the same form comes back on the same one.
+const pathOf = (url: string) => {
+  try {
+    const { pathname, search } = new URL(url);
+    return pathname + search;
+  } catch {
+    return url;
+  }
+};
+
+// A line with no words, only digits, separators and a unit (a footer's "2ms" render time), changes on every load and says nothing the page did.
+const NO_WORDS = /^[\d\s.,:%]+(ms|s|%)?$/i;
+
+// The lines of the page's text now that were not there before, trimmed and joined; the reader's own password lines say nothing the page did.
+const newTextOf = (text: string, before: string) => {
+  const known = new Set(before.split('\n').map((line) => line.trim()));
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !known.has(line) && !line.startsWith('Password field "') && !NO_WORDS.test(line))
+    .join(' ')
+    .slice(0, SUBMIT_ANSWER_CHARS);
+};
 
 const isSearchLike = (field: PageAction) =>
   ['searchbox', 'combobox'].includes(field.role ?? '') || SEARCH_LIKE.test(field.label);
