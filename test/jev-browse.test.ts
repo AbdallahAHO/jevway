@@ -147,6 +147,8 @@ const fakeTab = (pages: PageState[] = [page()]) => {
   let observed = 0;
   const tab = {
     staleOnce: false,
+    /** Refusals left: the page changed under every click until this runs out (a page that re-renders faster than a decision takes). */
+    stale: 0,
     /** A page whose text never stops changing: wait, Escape, scroll and Enter are refused as stale unless forced. */
     busy: false,
     /** Every call to act, refused or not, with whether the loop forced it. */
@@ -199,6 +201,10 @@ const fakeTab = (pages: PageState[] = [page()]) => {
       if (tab.staleOnce) {
         tab.staleOnce = false;
         throw new StalePage('moved');
+      }
+      if (tab.stale > 0) {
+        tab.stale--;
+        throw new StalePage('Page changed since this decision');
       }
       if (tab.unreachable > 0) {
         tab.unreachable--;
@@ -947,6 +953,45 @@ describe('BrowserTask', () => {
     const summary = await new BrowserTask(asTab, ask, { goal: 'Loop', changeWaitMs: 0 }).run();
     expect(summary).toMatchObject({ status: 'blocked', reason: 'The last 3 actions did not change the page' });
     expect(summary.steps).toHaveLength(3);
+  });
+
+  describe('on a page that changes faster than a decision takes', () => {
+    const PAY = 'Confirm booking and pay €412';
+    const options = { goal: 'Pay', maxSteps: 5, changeWaitMs: 0 };
+
+    it('does not spend the decision budget on clicks the page refused', async () => {
+      // maxSteps 5 gives 10 decisions: 10 refusals plus the click and DONE would end step_budget if each were charged; 10 is the most the cap allows.
+      const clicks = Array.from({ length: 11 }, () => ({ operation: 'CLICK', click_target: '4' }));
+      const { ask } = scriptedJev([...clicks, { operation: 'DONE' }]);
+      const { tab, asTab, acted } = fakeTab([page({ fingerprint: 'before' }), page({ fingerprint: 'after' })]);
+      tab.stale = 10;
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted).toEqual([{ label: PAY }]);
+      expect(summary.status).toBe('done');
+    });
+
+    it('hands back blocked once clicks have been refused more than 2 times maxSteps', async () => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '4' }]);
+      const { tab, asTab, acted } = fakeTab();
+      tab.stale = 1000;
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary).toMatchObject({
+        status: 'blocked',
+        reason: `The page kept changing under the click: "${PAY}" was refused 11 times as stale`,
+      });
+      expect(tab.calls).toHaveLength(11);
+      expect(acted).toEqual([]);
+    });
+
+    it('still ends step_budget when decisions are spent without a refusal', async () => {
+      // A stop the page has already moved past is re-decided without acting; none of that is a refusal, so the 10-decision budget holds.
+      const { ask, requests } = scriptedJev([{ operation: 'BLOCKED' }]);
+      const { tab, asTab } = fakeTab();
+      tab.fresh = async () => false;
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary).toMatchObject({ status: 'step_budget', reason: 'Made 10 decisions without finishing' });
+      expect(requests).toHaveLength(10);
+    });
   });
 });
 
