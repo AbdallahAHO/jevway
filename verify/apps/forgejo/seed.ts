@@ -6,14 +6,20 @@
  *   node verify/apps/forgejo/seed.ts users     # once after `docker compose up`: the admin and the user ada (idempotent)
  *   node verify/apps/forgejo/seed.ts reset     # ada/app and ada/scratch back to the seeded state
  *
+ * Sign-up suites also read accounts (admin API) and the Mailpit mailbox that catches Forgejo's mail.
+ *
  * @example
  * await resetDemo();
  * (await labelsOf(await issueByTitle('Add dark mode'))).includes('help wanted'); // false until a run adds it
+ *
+ * const mail = await latestMailTo('signup-1@example.test', { timeoutMs: 10_000 });
+ * linkIn(mail.text, '/user/activate'); // 'http://127.0.0.1:3311/user/activate?code=…'
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 export const ORIGIN = 'http://127.0.0.1:3311';
+const MAILPIT_API = 'http://127.0.0.1:8325/api/v1';
 export const ADA = { username: 'ada', password: 'ada-pass-1234', email: 'ada@jev.test' };
 const ADMIN = { username: 'jev-admin', password: 'jev-admin-pass-1', email: 'jev-admin@jev.test' };
 const API = `${ORIGIN}/api/v1`;
@@ -144,6 +150,73 @@ export const branchProtections = async () =>
   ((await read<{ branch_name?: string; rule_name?: string }[]>(`/repos/${ADA.username}/app/branch_protections`)) ?? []).map(
     (rule) => rule.rule_name || rule.branch_name || '',
   );
+
+// Accounts and mail, for the sign-up suite.
+
+export interface Account {
+  login: string;
+  email: string;
+  full_name: string;
+  active: boolean;
+}
+
+/** Every account, activated or not (the admin list includes accounts still waiting for their activation mail). */
+export const accounts = async () => {
+  const everyone: Account[] = [];
+  for (let page = 1; ; page++) {
+    const batch = (await read<Account[]>(`/admin/users?limit=50&page=${page}`)) ?? [];
+    everyone.push(...batch);
+    if (batch.length < 50) return everyone;
+  }
+};
+
+/** The account with this username, or undefined when none exists. */
+export const userByName = async (name: string) =>
+  (await accounts()).find((account) => account.login.toLowerCase() === name.toLowerCase());
+
+/** Removes an account and everything it owns. Callers delete only accounts their own jobs created. */
+export const deleteUser = (name: string) => send('DELETE', `/admin/users/${name}?purge=true`);
+
+export interface Mail {
+  subject: string;
+  text: string;
+  html: string;
+}
+
+/**
+ * Removes the messages sent to addresses containing `recipientPart`. Scoped on purpose: the mailbox is shared with
+ * other suites, so deleting every message would wipe mail someone else is waiting for.
+ */
+export const clearMailbox = async (recipientPart: string) => {
+  const response = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:${recipientPart}`)}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error(`Cannot clear the mailbox (${response.status}): ${await response.text()}`);
+};
+
+/**
+ * The newest message addressed to exactly this address, waiting up to `timeoutMs` for it to arrive; undefined when none
+ * does. Forgejo queues its mail, so it can land a second or two after the page that promised it.
+ */
+export const latestMailTo = async (address: string, { timeoutMs }: { timeoutMs: number }): Promise<Mail | undefined> => {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const found = await fetch(`${MAILPIT_API}/search?query=${encodeURIComponent(`to:"${address}"`)}`).then((r) => r.json());
+    const message = (found.messages as { ID: string; To: { Address: string }[] }[]).find((m) =>
+      m.To.some((to) => to.Address.toLowerCase() === address.toLowerCase()),
+    );
+    if (message) {
+      const { Subject, Text, HTML } = await fetch(`${MAILPIT_API}/message/${message.ID}`).then((r) => r.json());
+      return { subject: Subject, text: Text ?? '', html: HTML ?? '' };
+    }
+    if (Date.now() >= deadline) return undefined;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+};
+
+/** The first link in a mail body whose path starts with `pathPrefix` (plain text or HTML; `&amp;` decoded). */
+export const linkIn = (body: string, pathPrefix: string) =>
+  [...body.matchAll(/https?:\/\/[^\s<>"')]+/g)]
+    .map(([link]) => link.replaceAll('&amp;', '&'))
+    .find((link) => new URL(link).pathname.startsWith(pathPrefix));
 
 if (import.meta.main) {
   const [command] = process.argv.slice(2);
