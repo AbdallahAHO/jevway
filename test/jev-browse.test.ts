@@ -53,6 +53,20 @@ const page = (overrides: Partial<PageState> = {}): PageState => ({
   ...overrides,
 });
 
+// A phone layout folds details away behind a disclosure. No text fields, so BLOCKED is not needs_input.
+const showMore = (expanded?: string): PageAction => ({
+  id: 'more',
+  kind: 'click',
+  node: 20,
+  role: 'button',
+  label: 'Show more details',
+  ...(expanded && { expanded }),
+});
+const foldedPage = (fingerprint: string, expanded?: string) =>
+  page({ actions: [...bookingActions.filter((action) => action.kind !== 'fill'), showMore(expanded)], fingerprint });
+const clickTargetOf = (state: PageState, label: string) =>
+  Object.entries(buildActionSpace(state.actions).targets.CLICK!).find(([, action]) => action.label === label)![0];
+
 const answer = (choice: string, ids: string[], confidence = 0.95) => ({
   type: 'choice',
   choice,
@@ -446,6 +460,19 @@ describe('per-element commit risk', () => {
     expect(Object.keys(requests[1].questions)).toEqual(['risk_4']);
     expect((requests[1].questions.risk_4 as any).instructions.element.element).toBe('[4] Confirm booking and pay €412');
     expect(decision).toMatchObject({ commitRisk: 0.92, elementRisks: { '4': 0.92 }, requests: 2 });
+  });
+
+  it('asks about a collapsed control the click head favours when the operation is BLOCKED, and about no other', async () => {
+    const folded = foldedPage('a', 'false');
+    const more = clickTargetOf(folded, 'Show more details');
+    const { ask, requests } = scriptedJev([{ operation: 'BLOCKED', click_target: more, [`risk_${more}`]: 0.02 }]);
+    const decision = await decide(ask, { ...input, page: folded, elementRisk: 'chosen' });
+    expect(Object.keys(requests[1].questions)).toEqual([`risk_${more}`]);
+    expect(decision).toMatchObject({ operation: 'BLOCKED', elementRisks: { [more]: 0.02 }, requests: 2 });
+
+    const plain = foldedPage('a');
+    const unfolded = scriptedJev([{ operation: 'BLOCKED', click_target: clickTargetOf(plain, 'Show more details') }]);
+    expect((await decide(unfolded.ask, { ...input, page: plain, elementRisk: 'chosen' })).requests).toBe(1);
   });
 
   it('scores the ranked taps for the autopilot, and a malformed score counts as risky', async () => {
@@ -874,6 +901,56 @@ describe('loop gotchas', () => {
       const { ask } = scriptedJev([{ operation: 'BLOCKED', done_check: 0.9 }]);
       const summary = await new BrowserTask(fakeTab([noFields]).asTab, ask, { goal: 'x', changeWaitMs: 0 }).run();
       expect(summary.status).toBe('blocked');
+    });
+  });
+
+  describe('BLOCKED while the click head favours a collapsed control', () => {
+    const options = { goal: 'Find the prompt', elementRisk: true, changeWaitMs: 0 };
+    const more = clickTargetOf(foldedPage('a', 'false'), 'Show more details');
+    const blockedOnMore = { operation: 'BLOCKED', click_target: more };
+
+    it('opens a collapsed control the click head favours instead of handing back blocked', async () => {
+      // The risk follow-up is the second request, so it reads the second step's script too.
+      const { ask } = scriptedJev([{ ...blockedOnMore, [`risk_${more}`]: 0.02 }, { [`risk_${more}`]: 0.02 }, { operation: 'DONE' }]);
+      const { asTab, acted } = fakeTab([foldedPage('a', 'false'), foldedPage('b', 'true')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted).toEqual([{ label: 'Show more details' }]);
+      expect(summary.status).toBe('done');
+    });
+
+    it('opens it only once per element', async () => {
+      const { ask } = scriptedJev([{ ...blockedOnMore, [`risk_${more}`]: 0.02 }]);
+      const { asTab, acted } = fakeTab([foldedPage('a', 'false'), foldedPage('b', 'false')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted).toEqual([{ label: 'Show more details' }]);
+      expect(summary.status).toBe('blocked');
+    });
+
+    it('does not open a control that is not collapsed', async () => {
+      const { ask } = scriptedJev([{ ...blockedOnMore, [`risk_${more}`]: 0.02 }]);
+      const { asTab, acted } = fakeTab([foldedPage('a'), foldedPage('b')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted).toEqual([]);
+      expect(summary.status).toBe('blocked');
+    });
+
+    it('a collapsed control judged risky by name asks for confirmation', async () => {
+      const { ask } = scriptedJev([{ ...blockedOnMore, [`risk_${more}`]: 0.9 }]);
+      const { asTab, acted } = fakeTab([foldedPage('a', 'false'), foldedPage('b', 'false')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary).toMatchObject({ status: 'needs_confirmation' });
+      expect(summary.reason).toContain('Show more details');
+      expect(acted).toEqual([]);
+    });
+
+    it('still opens a confirmed control: only a click that ran counts as opened', async () => {
+      const { ask } = scriptedJev([{ ...blockedOnMore, [`risk_${more}`]: 0.9 }]);
+      const { asTab, acted } = fakeTab([foldedPage('a', 'false'), foldedPage('b', 'false'), foldedPage('c', 'false')]);
+      const task = new BrowserTask(asTab, ask, options);
+      expect((await task.run()).status).toBe('needs_confirmation');
+      task.update({ confirmIrreversible: true });
+      await task.run();
+      expect(acted).toEqual([{ label: 'Show more details' }]);
     });
   });
 
