@@ -7,6 +7,9 @@ import { DEVICES, type Device } from './devices.ts';
 // Atomic DOM read from browser-use/jev-ultrafast (MIT): visible text + indexed controls + freshness guards.
 const READ_STATE = readFileSync(new URL('./snapshot.js', import.meta.url), 'utf8');
 const MARKER = `(() => { const state=${READ_STATE}; return state?.marker ?? null; })()`;
+// How long observe() keeps retrying a page that is still changing, and what a call that got no reply at all looks like.
+const OBSERVE_DEADLINE_MS = 2_000;
+const TIMED_OUT = /timed out after/;
 
 export type ActionKind = 'click' | 'fill' | 'select' | 'scroll' | 'wait' | 'enter' | 'escape';
 
@@ -266,7 +269,12 @@ export class Tab {
     await this.#call('Page.navigate', { url });
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
-      if ((await this.#evaluate('document.readyState').catch(() => null)) === 'complete') return;
+      // A frozen renderer never answers: the wait ends at its deadline, not after one more 30 s protocol call.
+      const state = await Promise.race([
+        this.#evaluate('document.readyState').catch(() => null),
+        sleep(deadline - Date.now()).then(() => null),
+      ]);
+      if (state === 'complete') return;
       await sleep(20);
     }
   }
@@ -284,7 +292,8 @@ export class Tab {
 
   async observe(): Promise<PageState> {
     await this.#settleAfterInput();
-    for (let attempt = 0; attempt < 25; attempt++) {
+    const started = Date.now();
+    for (let attempt = 0; attempt < 25 && Date.now() - started < OBSERVE_DEADLINE_MS; attempt++) {
       try {
         const state = await this.#evaluate(`window.__jevWanted=${JSON.stringify(this.#wanted)};${READ_STATE}`);
         if (state) return { ...state, fingerprint: fingerprint(state) };
@@ -293,7 +302,7 @@ export class Tab {
       }
       await sleep(40);
     }
-    throw new StalePage('Page did not settle within 1s');
+    throw new StalePage(`Page did not settle within ${((Date.now() - started) / 1000).toFixed(1)}s`);
   }
 
   /** Clicks/selects compare the target's own guard; everything else compares the whole-page marker. */
@@ -460,12 +469,17 @@ export class Tab {
       expression: `(${SETTLE})(${JSON.stringify(action)})`,
       awaitPromise: true,
       returnByValue: true,
-    }).catch(() => undefined);
+    }).catch((error) => {
+      // Settling is best effort, but a page that does not answer at all is a browser error, not a reason to wait again.
+      if (error instanceof CdpError && TIMED_OUT.test(error.message)) throw error;
+    });
   }
 
   async #evaluate(expression: string): Promise<any> {
     const response = await this.#call('Runtime.evaluate', { expression, returnByValue: true }).catch((error) => {
-      throw error instanceof CdpError ? new StalePage(error.message) : error;
+      // A protocol error mid-navigation means the page moved on. A call that timed out means it stopped answering (a
+      // frozen renderer): that must end the call as a browser error, not be retried as "changed" 25 times at 30 s each.
+      throw error instanceof CdpError && !TIMED_OUT.test(error.message) ? new StalePage(error.message) : error;
     });
     if (response.exceptionDetails) throw new StalePage('Document changed during evaluation');
     return response.result?.value;
