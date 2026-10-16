@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Skeleton table</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  /* A list app's loading state: empty blocks that pulse with an endless animation until the rows arrive. */
+  .skeleton { width: 240px; height: 20px; margin: 8px 0; background: #ddd; animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.4; } }
+  #rows a { display: block; margin: 8px 0; }
+</style>
+</head>
+<body>
+<button type="button" id="load">Tracing</button>
+<button type="button" id="forever">Forever</button>
+<div id="rows"></div>
+<script>
+  window.__fixture = { opened: null };
+  const rows = document.getElementById('rows');
+  const placeholders = () => {
+    rows.replaceChildren(...Array.from({ length: 8 }, () => Object.assign(document.createElement('div'), { className: 'skeleton' })));
+  };
+  // 8 pulsing blocks, swapped for 5 real rows after 900 ms.
+  document.getElementById('load').addEventListener('click', () => {
+    placeholders();
+    setTimeout(() => {
+      rows.replaceChildren(
+        ...Array.from({ length: 5 }, (_, i) => {
+          const link = Object.assign(document.createElement('a'), { href: '#trace-' + (i + 1), textContent: 'Trace ' + (i + 1) });
+          link.addEventListener('click', () => (window.__fixture.opened = 'Trace ' + (i + 1)));
+          return link;
+        }),
+      );
+    }, 900);
+  });
+  // 8 pulsing blocks that never resolve.
+  document.getElementById('forever').addEventListener('click', placeholders);
+</script>
+</body>
+</html>

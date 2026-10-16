@@ -453,6 +453,36 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'a skeleton is read once its rows arrive',
+    file: 'skeleton-table.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const load = find(page.actions, 'button', /^Tracing$/);
+      assert.ok(load, `Tracing not listed: ${labelsOf(page.actions)}`);
+      await tab.act(load, page);
+      const loaded = await tab.observe();
+      const first = find(loaded.actions, 'link', /^Trace 1$/);
+      assert.ok(first, `Trace 1 not listed after the click, the page was read while its rows were placeholders: ${labelsOf(loaded.actions)}`);
+      await tab.act(first, loaded);
+      assert.equal((await fixtureState(tab)).opened, 'Trace 1');
+    },
+  },
+  {
+    name: 'placeholders that never stop end the wait and are named',
+    file: 'skeleton-table.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const forever = find(page.actions, 'button', /^Forever$/);
+      assert.ok(forever, `Forever not listed: ${labelsOf(page.actions)}`);
+      await tab.act(forever, page);
+      const started = performance.now();
+      const stuck = await tab.observe();
+      const took = performance.now() - started;
+      assert.ok(took < 2500, `the listing took ${Math.round(took)} ms`);
+      assert.match(stuck.text, /Loading: 8 placeholder blocks on screen/, `the page text does not say it is loading: ${JSON.stringify(stuck.text.slice(0, 120))}`);
+    },
+  },
+  {
     name: 'a row action with opacity 0 until its row is hovered is listed as appearing on hover',
     file: 'hover-row-actions.html',
     run: async (tab) => {
