@@ -8,6 +8,10 @@
  * run, give a job an async `passes` that reads the app's own state (e.g. its API), and set `expect` on jobs that must
  * end in a hand-back (a destructive job expects `needs_confirmation`) instead of `done`.
  *
+ * Two-call jobs give a `followUp`: after the first call it reads the page's table and URL (or any other system, e.g. a
+ * mailbox) and returns the second call's goal and values. It may also set `navigate` (a URL to open first, like a link
+ * from an email) and `prepare` (a fixed script on the tab, like typing a password, which jev-browse never does).
+ *
  * Env knobs, with NAME the uppercased `name`: `JEV_<NAME>_RUNS` (default 3), `JEV_<NAME>_ONLY` (comma-separated job
  * ids), `JEV_<NAME>_DEVICE` (a key of DEVICES, default desktop) and `JEV_<NAME>_PHRASING` (`as-written` or `terse`).
  *
@@ -44,12 +48,12 @@ const FOLLOW_UP_WAIT_MS = 5_000;
 const FOLLOW_UP_POLL_MS = 250;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-// A calling agent's second call: the job's follow-up from the table, polled only when the first call ended on the list.
+// A calling agent's second call: the job's follow-up from the table and the page's URL, polled only when the first call ended on the list.
 const readFollowUp = async (tab: Tab, followUp: NonNullable<Job['followUp']>, firstCallDone: boolean) => {
   const deadline = Date.now() + (firstCallDone ? FOLLOW_UP_WAIT_MS : 0);
   for (;;) {
     const rows = await readTable(tab);
-    const next = followUp(rows);
+    const next = await followUp(rows, { url: new URL(String(await tab.evaluate('location.href'))) });
     if (next || Date.now() >= deadline) return { next, rows };
     await sleep(FOLLOW_UP_POLL_MS);
   }
@@ -73,8 +77,8 @@ export interface RunJobsOptions {
   startUrl: string;
   browser: BrowserSource;
   jobs: Job[];
-  /** Runs on each fresh tab before the task starts. A throw aborts the whole suite, not only that run. */
-  before?: (tab: Tab) => Promise<void>;
+  /** Runs on each fresh tab before the task starts, given the job about to run. A throw aborts the whole suite, not only that run. */
+  before?: (tab: Tab, job: Job) => Promise<void>;
   /** Puts the app back in its seeded state before each run (write suites). A throw aborts the whole suite, like `before`. */
   reset?: (job: Job, run: number) => Promise<void>;
 }
@@ -142,7 +146,7 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
           // "Internal error" on launched headless Chrome. Login cookies stay.
           await tab.evaluate('localStorage.clear(); sessionStorage.clear()');
           await tab.navigate(startUrl);
-          await before?.(tab);
+          await before?.(tab, job);
           ready = true;
           const task = new BrowserTask(tab, ask, {
             ...profileOptions(profile),
@@ -154,19 +158,23 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
             recordDir: new URL(dir, outDir).pathname,
           });
           const summaries = [await task.run()];
-          // Two-call jobs: like a calling agent, read the page's table and continue the same session with a value.
+          // Two-call jobs: like a calling agent, read what the first call left behind (the page's table, a mailbox) and continue the same session.
           const firstCallDone = summaries[0].status === 'done';
           const { next, rows } = (job.followUp && (await readFollowUp(tab, job.followUp, firstCallDone))) || {};
           const followUpMissing = Boolean(job.followUp && firstCallDone && !next);
           if (next) {
-            task.update({ ...next, doneWhen: job.doneWhen });
+            // `navigate` and `prepare` are the harness's part of the second call, not task options.
+            const { navigate, prepare, ...patch } = next;
+            if (navigate) await tab.navigate(navigate);
+            await prepare?.(tab);
+            task.update({ ...patch, doneWhen: job.doneWhen });
             summaries.push(await task.run());
           }
           const summary = summaries.at(-1)!;
           // Ground truth comes from a separate read of the page, not from the task's summary.
           const url = new URL(String(await tab.evaluate('location.href')));
           const text = String(await tab.evaluate('document.body?.innerText ?? ""'));
-          const reached = await job.passes(url, text);
+          const reached = await job.passes(url, text, summaries);
           // A pass needs both: the check holds and the run ended with an expected status (default done). Holding with another status is only "reached".
           const passed = reached && (job.expect ?? ['done']).includes(summary.status);
           writeFileSync(new URL(`${dir}trace.json`, outDir), JSON.stringify(task.trace, null, 1));

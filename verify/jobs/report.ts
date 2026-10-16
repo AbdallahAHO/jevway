@@ -1,6 +1,24 @@
 // The jobs report: one self-contained page next to the run folders it links to.
+import type { Tab } from '../../src/browser/tab.ts';
 import { escapeHtml as escape, type RecordedStep } from '../../src/task/recording.ts';
 import type { TaskStatus, TaskSummary } from '../../src/task/run-task.ts';
+
+/**
+ * A calling agent's second call on the same session: what it asks next, from whatever the first call left behind
+ * (a table, a mailbox).
+ *
+ * @example
+ * // After sign-up the agent reads the activation mail, opens its link, types the password itself, and continues.
+ * { goal: 'Finish activating the account.', values: {}, navigate: activationLink, prepare: fillPassword }
+ */
+export interface FollowUp {
+  goal: string;
+  values: Record<string, string>;
+  /** A URL the calling agent opens in the same tab before the second call, as it would follow a link from an email. */
+  navigate?: string;
+  /** A fixed harness script run on the tab after `navigate`, before the second call: what the calling agent's own browser tool does (e.g. types a password, which jev-browse never does). */
+  prepare?: (tab: Tab) => Promise<void>;
+}
 
 export interface Job {
   id: string;
@@ -16,12 +34,16 @@ export interface Job {
   firstDoneWhen?: string;
   /** How a pass is judged, for readers of the report. */
   check: string;
-  /** Ground truth from the final page or the app's own state (e.g. its API), never the task's own status. */
-  passes: (url: URL, text: string) => boolean | Promise<boolean>;
+  /** Ground truth from the final page or the app's own state (e.g. its API), never the task's own status. `summaries` are the run's calls, for a check on what jev-browse did (e.g. a value it must not have typed). */
+  passes: (url: URL, text: string, summaries: TaskSummary[]) => boolean | Promise<boolean>;
   /** The statuses that count as success (default `['done']`). A destructive job expects `needs_confirmation`; a deliberately invalid request expects a hand-back. */
   expect?: TaskStatus[];
-  /** Two-call jobs: what the calling agent asks next, from the table it read after the first call. */
-  followUp?: (rows: Record<string, string>[]) => { goal: string; values: Record<string, string> } | undefined;
+  /**
+   * Two-call jobs: what the calling agent asks next, from the first table on the page (`rows`) and the page's URL after
+   * the first call. May be async (e.g. to read a mailbox). Called once even when the first call did not end `done`;
+   * `undefined` means there is nothing to continue with.
+   */
+  followUp?: (rows: Record<string, string>[], context: { url: URL }) => FollowUp | undefined | Promise<FollowUp | undefined>;
 }
 
 export type Phrasing = 'as-written' | 'terse';
@@ -150,7 +172,7 @@ const jobSection = (
   <dt>Goal given to Jev</dt><dd>${escape(goalFor(job, phrasing))}</dd>
   ${job.values ? `<dt>Values</dt><dd><code>${escape(JSON.stringify(job.values))}</code></dd>` : ''}
   <dt>Done when</dt><dd>${escape(job.doneWhen)}</dd>
-  ${job.followUp ? `<dt>Second call</dt><dd>The calling agent reads the table after the first call and continues the same session${followUp ? ` with <code>${escape(JSON.stringify(followUp))}</code>` : ''}.</dd>` : ''}
+  ${job.followUp ? `<dt>Second call</dt><dd>The calling agent reads what the first call left behind (a table, a mailbox) and continues the same session${followUp ? ` with <code>${escape(JSON.stringify(followUp))}</code>` : ''}.</dd>` : ''}
   <dt>Checked by</dt><dd>${job.expect ? `Pass: ends ${escape(job.expect.join(' or '))}, and the check holds: ` : ''}${escape(job.check)}</dd>
 </dl>
 <div class="chips">${runs.map(runChip).join('')}</div>
