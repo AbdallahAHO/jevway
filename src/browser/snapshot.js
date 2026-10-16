@@ -125,10 +125,13 @@
       .filter(safe)
       .map((e) => [identity(e), e.value, e.checked, e.selectedIndex, e.disabled, e.readOnly]),
   ];
+  // jev-browse: a hover-revealed target is invisible when observed and when checked, so it is guarded by identity, name
+  // and row text like any other; the visibility flag keeps a target that disappeared stale.
   cache.guard = (e) => {
-    if (!e?.isConnected || !visible(e)) return null;
+    if (!e?.isConnected) return null;
     const scope = e.closest('form,dialog,[role="dialog"],article,li,tr,[role="row"]') || e.parentElement;
     return [
+      visible(e),
       identity(e),
       role(e),
       name(e),
