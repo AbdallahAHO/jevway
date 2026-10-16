@@ -1085,6 +1085,29 @@ describe('real-site robustness', () => {
     ]);
   });
 
+  it('offers Enter after typing into a filter field, whose list only filters on Enter', async () => {
+    const filterPage = (fingerprint: string) =>
+      page({
+        fingerprint,
+        actions: [
+          { id: 'e1', kind: 'fill', node: 10, role: 'textbox', label: 'Filter by name...', value: '' },
+          { id: 'wait', kind: 'wait', label: 'Wait for the page to update' },
+        ],
+      });
+    const { ask, requests } = scriptedJev([
+      { operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: 'query' },
+      { operation: 'PRESS_ENTER' },
+      { operation: 'DONE' },
+    ]);
+    const { asTab, acted } = fakeTab([filterPage('a'), filterPage('b'), filterPage('c')]);
+    await new BrowserTask(asTab, ask, { goal: 'Filter alerts by cpu', values: { query: 'cpu' } }).run();
+    expect(Object.keys((requests[1].questions.operation as any).criteria)).toContain('PRESS_ENTER');
+    expect(acted).toEqual([
+      { label: 'Filter by name...', text: 'cpu' },
+      { label: 'Press Enter in "Filter by name..." to submit what was typed' },
+    ]);
+  });
+
   it('never offers Enter after typing into a field that is not search-like', async () => {
     const { ask, requests } = scriptedJev([
       { operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: 'email' },

@@ -113,8 +113,8 @@ const LAST_LOOK_DONE = 0.5;
 const HEAD_DISAGREES = 0.6;
 // The screenshot look confirms the spike at the same bar a DONE needs.
 const SPIKE_CONFIRMED = LAST_LOOK_DONE;
-// Enter is offered only after typing into a field like these; elsewhere it could submit a form.
-const SEARCH_LIKE = /search|query|find/i;
+// Enter is offered only after typing into a search or filter field (a filtered list often updates only on Enter); elsewhere it could submit a form.
+const SEARCH_LIKE = /search|query|find|filter/i;
 // A covered target is fed back as history so Jev can clear it (dismiss a popover); this many times per run.
 const MAX_COVERED_RETRIES = 2;
 const ESCAPE: PageAction = { id: 'press_escape', kind: 'escape', label: 'Press Escape to close the open menu, popover or suggestion list' };
