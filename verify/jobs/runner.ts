@@ -68,8 +68,9 @@ const VALUE_CHARS_KEPT = 120;
 const sampleRows = (rows: Record<string, string>[]) =>
   rows.slice(0, ROWS_KEPT).map((row) => Object.fromEntries(Object.entries(row).map(([header, value]) => [header, value.slice(0, VALUE_CHARS_KEPT)])));
 
-// `Clicking "<label>" looks irreversible (risk …)`: the reason of a needs_confirmation hand-back.
-const CONFIRMATION_LABEL = /^Clicking "(.*)" looks irreversible/;
+// `Clicking "<label>" on "<page title>" looks irreversible (risk …)`: the reason of a needs_confirmation hand-back. The page
+// title follows the label (and is left out when the page has none), so the label is read up to its own closing quote.
+const CONFIRMATION_LABEL = /^Clicking "(.*?)"(?: on ".*?")? looks irreversible/;
 const confirmationLabel = ({ status, reason }: TaskSummary) =>
   status === 'needs_confirmation' ? CONFIRMATION_LABEL.exec(reason)?.[1] : undefined;
 
