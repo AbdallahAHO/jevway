@@ -1,0 +1,50 @@
+# A throwaway Forgejo (SQLite) plus Mailpit for jev-browse's write suites. Started with `pnpm apps:forgejo:up`,
+# removed with its data by `pnpm apps:forgejo:down`. Local test data only: nothing here is a real secret.
+name: jev-forgejo
+
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:12.0.4
+    environment:
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__security__INSTALL_LOCK: 'true'
+      FORGEJO__server__DOMAIN: 127.0.0.1
+      FORGEJO__server__ROOT_URL: http://127.0.0.1:3311/
+      FORGEJO__server__DISABLE_SSH: 'true'
+      FORGEJO__server__OFFLINE_MODE: 'true'
+      FORGEJO__repository__DEFAULT_BRANCH: main
+      # Mail goes to Mailpit (SMTP 1025, no auth, no TLS); sign-up needs email confirmation.
+      FORGEJO__mailer__ENABLED: 'true'
+      FORGEJO__mailer__PROTOCOL: smtp
+      FORGEJO__mailer__SMTP_ADDR: mailpit
+      FORGEJO__mailer__SMTP_PORT: '1025'
+      FORGEJO__mailer__FROM: forgejo@jev.test
+      FORGEJO__service__DISABLE_REGISTRATION: 'false'
+      FORGEJO__service__REGISTER_EMAIL_CONFIRM: 'true'
+      FORGEJO__log__LEVEL: Warn
+    ports:
+      - '127.0.0.1:3311:3000'
+    volumes:
+      - forgejo-data:/data
+    depends_on:
+      mailpit:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3000/api/healthz']
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  mailpit:
+    image: axllent/mailpit:v1.31.3
+    ports:
+      - '127.0.0.1:8325:8025'
+      - '127.0.0.1:1325:1025'
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  forgejo-data:
