@@ -280,6 +280,20 @@
     wanted.length > 0 &&
     candidates.some((e) => eligible(e) && !outOfView(cache.clickRect(e)) && holdsWanted(e, role(e)));
   let wantedListed = 0;
+  // jev-browse: a link or button in an on-screen table row, scrolled sideways out of view inside the table's scroll box, is
+  // still a choice: a person swipes the table to reach it, and clicking scrolls it in. At most 2 per row and 20 in all.
+  const rowLinksListed = new Map();
+  let sidewaysListed = 0;
+  const sidewaysRowOf = (e, rname) => {
+    const row = ['link', 'button'].includes(rname) && sidewaysListed < 20 ? e.closest('tr,[role="row"]') : null;
+    if (!row || (rowLinksListed.get(row) || 0) >= 2 || e.getBoundingClientRect().width <= 0) return null;
+    const rowBox = row.getBoundingClientRect(),
+      rowY = rowBox.y + rowBox.height / 2;
+    if (rowY < 0 || rowY >= innerHeight) return null;
+    for (let p = e.parentElement; p && p !== document.body; p = p.parentElement)
+      if (['auto', 'scroll'].includes(getComputedStyle(p).overflowX) && p.scrollWidth > p.clientWidth) return row;
+    return null;
+  };
   for (const e of candidates) {
     const shown = eligible(e);
     const hover = !shown && revealedByHover(e);
@@ -293,8 +307,13 @@
     const offscreen = outOfView(r);
     const wantedOffscreen = offscreen && !wantedOnscreen && wantedListed < 5 && holdsWanted(e, rname);
     if (wantedOffscreen) wantedListed++;
-    if (!rname || (offscreen && !sideways && !wantedOffscreen)) continue;
+    const sidewaysRow = rname && offscreen && !wantedOffscreen ? sidewaysRowOf(e, rname) : null;
+    if (!rname || (offscreen && !sideways && !wantedOffscreen && !sidewaysRow)) continue;
     if (rname === 'gridcell' && e.querySelector('button,[role="button"]')) continue;
+    if (sidewaysRow) {
+      sidewaysListed++;
+      rowLinksListed.set(sidewaysRow, (rowLinksListed.get(sidewaysRow) || 0) + 1);
+    }
     if (hover) hoverListed++;
     const suffix = hover ? hoverSuffix : '';
     const base = {
@@ -304,13 +323,13 @@
       // capped: table rows holding whole JSON payloads otherwise blow the request past the model's token limit.
       label:
         cap(
-          (rname === 'row' || hiddenInput
+          ((rname === 'row' || hiddenInput
             ? e.innerText.replace(/\s+/g, ' ').trim()
             : unnamedToggle(e, rname)
               ? rowContext(e)
               : name(e).replace(/\s+/g, ' ').trim()) ||
             contextName(e, hiddenInput, rname) ||
-            rname,
+            rname) + (sidewaysRow ? ' — row: ' + sidewaysRow.innerText.replace(/\s+/g, ' ').trim() : ''),
           200 - suffix.length,
         ) + suffix,
       rect: { x: r.x, y: r.y, w: r.width, h: r.height },
