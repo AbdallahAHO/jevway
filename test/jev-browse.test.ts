@@ -223,20 +223,58 @@ describe('BrowserTask', () => {
     expect(acted).toEqual([{ label: 'Email address', text: 'ada@example.com' }]);
   });
 
-  it('hands back needs_input instead of inventing a value', async () => {
-    const { ask } = scriptedJev([{ operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: NO_SUPPLIED_VALUE }]);
+  it('hands back needs_input instead of inventing a value, after one retry', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: NO_SUPPLIED_VALUE }]);
     const { asTab, acted } = fakeTab();
-    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', values: { name: 'Ada' } }).run();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', values: { name: 'Ada' }, changeWaitMs: 0 }).run();
     expect(summary.status).toBe('needs_input');
-    expect(summary.reason).toContain('Email address');
+    expect(summary.reason).toBe('No supplied value fits the field "Email address"');
+    expect(requests).toHaveLength(2);
     expect(acted).toEqual([]);
   });
 
-  it('turns BLOCKED on empty fields without values into needs_input naming them', async () => {
-    const { ask } = scriptedJev([{ operation: 'BLOCKED', value_for_1: 'name', value_for_2: NO_SUPPLIED_VALUE }]);
+  it('lets the model pick another step once when no supplied value fits the field it chose', async () => {
+    const { ask, requests } = scriptedJev([
+      { operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: NO_SUPPLIED_VALUE },
+      { operation: 'CLICK', click_target: '1' },
+      { operation: 'DONE', done_check: 0.9 },
+    ]);
+    const pages = ['a', 'b', 'c', 'd'].map((fingerprint) => page({ fingerprint }));
+    const { asTab, acted } = fakeTab(pages);
+    const summary = await new BrowserTask(asTab, ask, {
+      goal: 'Open the booking',
+      doneWhen: 'x',
+      values: { name: 'Ada' },
+      changeWaitMs: 0,
+    }).run();
+    expect(summary.status).toBe('done');
+    expect(acted).toEqual([{ label: 'Open Full name' }]);
+    expect(summary.steps[0]).toMatchObject({
+      operation: 'TYPE_TEXT',
+      element: 'Email address',
+      not_executed: expect.stringContaining('no supplied value fits this field'),
+    });
+    expect(JSON.stringify(requests[1])).toContain('no supplied value fits this field');
+  });
+
+  it('gives each distinct field its own retry before asking the caller', async () => {
+    const { ask, requests } = scriptedJev([
+      { operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: NO_SUPPLIED_VALUE },
+      { operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: NO_SUPPLIED_VALUE },
+    ]);
+    const { asTab, acted } = fakeTab();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', values: { name: 'Ada' }, changeWaitMs: 0 }).run();
+    expect(summary).toMatchObject({ status: 'needs_input', reason: 'No supplied value fits the field "Full name"' });
+    expect(requests).toHaveLength(3);
+    expect(acted).toEqual([]);
+  });
+
+  it('turns BLOCKED on empty fields without values into needs_input naming them, with no retry', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'BLOCKED', value_for_1: 'name', value_for_2: NO_SUPPLIED_VALUE }]);
     const { asTab } = fakeTab();
     const summary = await new BrowserTask(asTab, ask, { goal: 'Book', values: { name: 'Ada' } }).run();
     expect(summary).toMatchObject({ status: 'needs_input', reason: 'Blocked: no supplied value for "Email address"' });
+    expect(requests).toHaveLength(1);
   });
 
   it('gates an irreversible click until the agent confirms, then allows exactly one', async () => {
@@ -1172,12 +1210,13 @@ describe('loop gotchas', () => {
       const arrived = page({ fingerprint: 'list arrived' });
       const askingForInput = { operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: NO_SUPPLIED_VALUE };
 
+      // The first field with no value is a retry, so needs_input only comes (and waits) on the second ask.
       it.each([
-        ['needs_input', askingForInput, page()],
-        ['blocked', { operation: 'BLOCKED' }, noFields],
-      ])('gives the page a moment before handing back %s, and goes on once it changed', async (_status, handBack, loading) => {
-        const { ask } = scriptedJev([handBack, { operation: 'DONE' }]);
-        const { asTab, acted } = fakeTab([loading, arrived]);
+        ['needs_input', [askingForInput, askingForInput], [page(), page(), arrived]],
+        ['blocked', [{ operation: 'BLOCKED' }], [noFields, arrived]],
+      ])('gives the page a moment before handing back %s, and goes on once it changed', async (_status, handBacks, pages) => {
+        const { ask } = scriptedJev([...handBacks, { operation: 'DONE' }]);
+        const { asTab, acted } = fakeTab(pages);
         const summary = await new BrowserTask(asTab, ask, { goal: 'Open datasets', values: { name: 'Ada' }, changeWaitMs: 1000 }).run();
         expect(summary.status).toBe('done');
         expect(acted).toEqual([]);
@@ -1185,12 +1224,12 @@ describe('loop gotchas', () => {
 
       it('still hands back needs_input when the page never changes, only later', async () => {
         vi.useFakeTimers();
-        const { ask, requests } = scriptedJev([askingForInput, { operation: 'DONE' }]);
+        const { ask, requests } = scriptedJev([askingForInput, askingForInput, { operation: 'DONE' }]);
         const running = new BrowserTask(fakeTab().asTab, ask, { goal: 'Book', values: { name: 'Ada' }, changeWaitMs: 300 }).run();
         await vi.advanceTimersByTimeAsync(2000);
         const summary = await running;
         expect(summary.status).toBe('needs_input');
-        expect(requests).toHaveLength(1);
+        expect(requests).toHaveLength(2);
       });
     });
 

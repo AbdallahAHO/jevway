@@ -164,6 +164,8 @@ export class BrowserTask {
   #outcomes: { action: string; print: string }[] = [];
   /** Nodes of collapsed controls already opened instead of handing back blocked: each is tried once. */
   #opened = new Set<number>();
+  /** Nodes of fields the model chose with no supplied value to type: each is refused once before the caller is asked. */
+  #refusedForValue = new Set<number>();
   #tab: Tab;
   #ask: Ask;
   #recording: Recording | undefined;
@@ -313,6 +315,20 @@ export class BrowserTask {
           continue;
         }
         const handBack = this.#handBack(decision);
+        // A field the model has no value for is first a wrong turn, and only the second time a question for the caller.
+        if (handBack?.[0] === 'needs_input' && decision.operation === 'TYPE_TEXT' && !this.#refusedForValue.has(decision.action!.node!)) {
+          this.#refusedForValue.add(decision.action!.node!);
+          record(false);
+          this.#history.push({
+            operation: decision.operation,
+            element: decision.action!.label,
+            not_executed:
+              'no supplied value fits this field; type nothing here — choose another step, or BLOCKED if the goal needs a value you were not given',
+            confidence: round(decision.confidence),
+          });
+          page = await this.#tab.observe();
+          continue;
+        }
         if (handBack) {
           // A page still loading (skeleton rows have no text) gets up to changeWaitMs before the agent is asked for input or told the run is stuck.
           if (handBack[0] === 'needs_input' || handBack[0] === 'blocked') {
