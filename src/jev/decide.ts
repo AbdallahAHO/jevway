@@ -371,15 +371,18 @@ const readValue = (answer: unknown, values: Record<string, string>) => {
 const targetIndexOf = (space: ActionSpace, operation: TargetOperation, action: PageAction) =>
   Object.entries(space.targets[operation]!).find(([, candidate]) => candidate === action)![0];
 
-// The chosen click first, then (for the autopilot) the remaining taps by the target head's ranking.
-const elementRiskTargets = (input: DecisionInput, space: ActionSpace, decision: Pick<Decision, 'operation' | 'action' | 'answers'>) => {
+// The chosen click and the element under the screenshot box first (a box rescue clicks it, so it is judged by name too),
+// then (for the autopilot) the remaining taps by the target head's ranking.
+const elementRiskTargets = (input: DecisionInput, space: ActionSpace, decision: Pick<Decision, 'operation' | 'action' | 'answers' | 'nextClick'>) => {
   const clicks = space.targets.CLICK;
   if (!input.elementRisk || !input.checkCommitRisk || !clicks) return [];
   const chosen = decision.operation === 'CLICK' ? [targetIndexOf(space, 'CLICK', decision.action!)] : [];
-  if (input.elementRisk === 'chosen') return chosen;
+  const boxed = decision.nextClick?.match ? [decision.nextClick.match] : [];
+  const judged = [...new Set([...chosen, ...boxed])];
+  if (input.elementRisk === 'chosen') return judged;
   const probabilities: Record<string, number> = decision.answers.click_target?.probabilities ?? {};
   const ranked = Object.keys(clicks).sort((a, b) => (probabilities[b] ?? 0) - (probabilities[a] ?? 0));
-  return [...new Set([...chosen, ...ranked])].slice(0, MAX_RISK_TARGETS);
+  return [...new Set([...judged, ...ranked])].slice(0, MAX_RISK_TARGETS);
 };
 
 const riskQuestion = (input: DecisionInput, space: ActionSpace, index: string) =>

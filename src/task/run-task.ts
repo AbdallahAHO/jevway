@@ -551,7 +551,9 @@ export class BrowserTask {
     };
     if (next.match) {
       const action = buildActionSpace(page.actions).targets.CLICK![next.match];
-      return { ...rescued, operation: 'CLICK', action, target: next.match };
+      // The box's own risk rates the control the model means, not necessarily the element under the box: with by-name judging on, the rescued element is judged by name too (unjudged counts as certain risk); with it off, only the box risk exists.
+      const commitRisk = Math.max(next.commitRisk, this.#options.elementRisk ? (decision.elementRisks?.[next.match] ?? 1) : 0);
+      return { ...rescued, operation: 'CLICK', action, target: next.match, commitRisk };
     }
     return this.#options.allowCoordinateClicks ? { ...rescued, operation: 'CLICK_AT' } : decision;
   }
