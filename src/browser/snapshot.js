@@ -193,7 +193,7 @@
     }
     return '';
   };
-  const contextName = (e, hiddenInput) => {
+  const contextName = (e, hiddenInput, rname) => {
     const own = hiddenInput ? name(hiddenInput).trim() : '';
     if (own) return own;
     const controlled = e.getAttribute('aria-controls');
@@ -205,7 +205,13 @@
       if (target?.trim()) return 'Toggle ' + target.replace(/\s+/g, ' ').trim();
     }
     const icon = [e, ...e.querySelectorAll('svg,i,span,img')].map(iconHint).find(Boolean);
-    return icon ? icon.replace(/-/g, ' ') + ' icon' : '';
+    if (icon) return icon.replace(/-/g, ' ') + ' icon';
+    // jev-browse: with no name, row or icon, a control is named by the short text right around it, as a person reads it.
+    const around = [e.parentElement, e.parentElement?.parentElement]
+      .map((container) => (container?.innerText || '').replace(/\s+/g, ' ').trim())
+      .find((text) => text && text.length <= 80);
+    if (!around) return '';
+    return unnamedToggle(e, rname) ? 'Select: ' + around : around;
   };
   const queried = roots.flatMap(deepQuery);
   // jev-browse: a checkbox or radio hidden with opacity or display (Grafana's quick time ranges) is chosen through its
@@ -285,7 +291,7 @@
             : unnamedToggle(e, rname)
               ? rowContext(e)
               : name(e).replace(/\s+/g, ' ').trim()) ||
-            contextName(e, hiddenInput) ||
+            contextName(e, hiddenInput, rname) ||
             rname,
           200 - suffix.length,
         ) + suffix,
