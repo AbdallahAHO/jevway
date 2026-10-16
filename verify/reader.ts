@@ -591,6 +591,22 @@ const checks: Check[] = [
       );
     },
   },
+  {
+    name: 'password fields are described as filled or empty, never listed or read',
+    file: 'password-fields.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      // The page text is what the model reads: it holds the fact and none of the value, the length or a prefix of it.
+      assert.ok(!JSON.stringify(page).includes('secret-9431'), 'the password value reached the page state');
+      assert.deepEqual(
+        controls(page.actions).map((action) => action.label),
+        ['Username', 'Open Username', 'Sign in'],
+      );
+      assert.ok(page.text.includes('Password field "Password": filled'), `the filled field is not described: ${page.text}`);
+      assert.ok(page.text.includes('Password field "Confirm password": empty'), `the empty field is not described: ${page.text}`);
+      assert.ok(!page.text.includes('Old password'), `a hidden field is described: ${page.text}`);
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port.
