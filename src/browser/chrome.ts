@@ -75,7 +75,14 @@ const launchChrome = async (headless: boolean): Promise<ChromeHandle> => {
     'about:blank',
   ];
   const chrome = spawn(chromeExecutable(), args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  const endpoint = await readDevToolsEndpoint(chrome);
+  const endpoint = await readDevToolsEndpoint(chrome).catch(async (error) => {
+    // Chrome started but never reported DevTools: don't leave it or its profile behind.
+    await stopChrome(chrome);
+    try {
+      rmSync(profile, { recursive: true, force: true });
+    } catch {}
+    throw error;
+  });
   const cdp = await CdpConnection.open(endpoint);
   return {
     cdp,
@@ -132,5 +139,8 @@ const readDevToolsEndpoint = (chrome: ChildProcess) =>
         resolve(match[1]);
       }
     });
-    chrome.once('exit', (code) => reject(new Error(`Chrome exited (${code}) before DevTools started`)));
+    chrome.once('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`Chrome exited (${code}) before DevTools started`));
+    });
   });
