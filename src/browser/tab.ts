@@ -126,6 +126,8 @@ export class Tab {
    * Viewport JPEG with each mark drawn as a numbered box, so a vision model can tie what it sees to an
    * element index. The overlay is removed before this returns, so it never meets a freshness check or input.
    * `sharp` is for people (step recordings): native pixel ratio at high quality, never sent to a model.
+   * The model image is sized from the viewport captured now (a page can zoom out to fit after it was observed, so
+   * `viewport` is only the observed size) and checked after capture: it never leaves with a side over its limit.
    *
    * @example
    * const jpeg = await tab.markedScreenshot(buildActionSpace(page.actions).marks, page);
@@ -140,10 +142,16 @@ export class Tab {
     try {
       // Rendered at 2× CSS pixels whatever the screen: Chrome re-rasterises at the clip scale, so text stays crisp.
       if (sharp) return await this.screenshot({ format: 'jpeg', quality: 90, scale: 2 / pixelRatio });
-      // Output pixels are CSS pixels × scale × pixel ratio. Stay within 1024 wide and 1536 tall: models read about
-      // a megapixel, and Jev rejects any side over 1568 px (a phone at 2× is 786×1704 unscaled).
-      const scale = Math.min(1, 1024 / (viewport.w * pixelRatio), 1536 / (viewport.h * pixelRatio));
-      return await this.screenshot({ format: 'jpeg', quality: 60, scale });
+      // Output pixels are CSS pixels × scale × pixel ratio. Models read about a megapixel, and Jev rejects any side
+      // over 1568 px (a phone at 2× is 786×1704 unscaled), so stay within 1024 wide and 1536 tall.
+      const { clientWidth, clientHeight } = await this.#cssViewport();
+      const scale = Math.min(1, MODEL_IMAGE.width / (clientWidth * pixelRatio), MODEL_IMAGE.height / (clientHeight * pixelRatio));
+      const jpeg = await this.screenshot({ format: 'jpeg', quality: 60, scale });
+      const size = jpegSize(jpeg);
+      const overshoot = size ? Math.max(size.width / MODEL_IMAGE.width, size.height / MODEL_IMAGE.height) : 1;
+      if (overshoot <= 1) return jpeg;
+      // The page resized between measuring and capturing: shrink by the overshoot and capture once more.
+      return await this.screenshot({ format: 'jpeg', quality: 60, scale: (scale / overshoot) * 0.99 });
     } finally {
       await this.#evaluate(`document.getElementById('${MARKS_ID}')?.remove()`).catch(() => undefined);
     }
@@ -192,9 +200,13 @@ export class Tab {
     return this.#evaluate(expression);
   }
 
-  async #viewportClip(scale: number) {
+  async #cssViewport() {
     const { cssVisualViewport } = await this.#call('Page.getLayoutMetrics');
-    const { pageX, pageY, clientWidth, clientHeight } = cssVisualViewport;
+    return cssVisualViewport as { pageX: number; pageY: number; clientWidth: number; clientHeight: number };
+  }
+
+  async #viewportClip(scale: number) {
+    const { pageX, pageY, clientWidth, clientHeight } = await this.#cssViewport();
     return { x: pageX, y: pageY, width: clientWidth, height: clientHeight, scale };
   }
 
@@ -404,6 +416,31 @@ export class Tab {
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// What a model image may measure in output pixels.
+const MODEL_IMAGE = { width: 1024, height: 1536 };
+
+/**
+ * Width and height of a JPEG, read from its start-of-frame marker. Null when the bytes are not a JPEG.
+ *
+ * @example
+ * jpegSize(await tab.screenshot({ format: 'jpeg' })); // { width: 393, height: 852 }
+ */
+export const jpegSize = (base64: string) => {
+  const bytes = Buffer.from(base64, 'base64');
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  for (let at = 2; at + 9 <= bytes.length; ) {
+    if (bytes[at] !== 0xff) return null;
+    const marker = bytes[at + 1];
+    // Start of frame 0-15 except the table markers DHT (c4), JPG (c8) and DAC (cc).
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+      return { width: bytes.readUInt16BE(at + 7), height: bytes.readUInt16BE(at + 5) };
+    }
+    // Fill bytes between segments, then a segment whose length counts its own two bytes.
+    at += marker === 0xff ? 1 : 2 + bytes.readUInt16BE(at + 2);
+  }
+  return null;
+};
 
 // A finger's tap lasts tens of milliseconds; a zero-length tap made some widgets open and close at once.
 const TAP_MS = 60;
