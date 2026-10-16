@@ -71,6 +71,7 @@ interface BrowserCall {
     done_when?: string;
     session?: string;
     confirm_irreversible?: boolean;
+    confirm_target?: string;
     max_steps?: number;
   };
   /** The parsed summary; absent when the tool answered with plain error text. */
@@ -183,6 +184,34 @@ const settingsNotAsked = async () => {
 };
 const confirmedCalls = (run: AgentRun) => run.calls.filter((call) => call.args.confirm_irreversible === true);
 const confirmCalls = (run: AgentRun) => confirmedCalls(run).length;
+
+/** What one `confirm_irreversible` call named: its `confirm_target`, whether the prompt contains those words, and whether jev-browse refused them. */
+interface ConfirmTarget {
+  target?: string;
+  inPrompt: boolean;
+  refused: boolean;
+}
+
+// The two reasons jev-browse gives for a confirmation it will not act on: no target, or a target the page does not show.
+const REFUSED_CONFIRMATION = /^confirm_(irreversible needs confirm_target|target ")/;
+
+const confirmTargets = (calls: BrowserCall[], prompt: string): ConfirmTarget[] =>
+  calls
+    .filter((call) => call.args.confirm_irreversible === true)
+    .map((call) => {
+      const target = call.args.confirm_target?.trim() || undefined;
+      return {
+        target,
+        inPrompt: target !== undefined && prompt.toLowerCase().includes(target.toLowerCase()),
+        refused: REFUSED_CONFIRMATION.test(call.result?.reason ?? ''),
+      };
+    });
+
+/** How one confirmation reads in the report and the log. */
+const describeConfirmTarget = ({ target, inPrompt, refused }: ConfirmTarget) =>
+  target === undefined
+    ? 'no confirm_target'
+    : `"${target}" · ${inPrompt ? 'words from the prompt' : 'NOT in the prompt'} · ${refused ? 'refused by jev-browse' : 'matched by jev-browse'}`;
 
 // A call belongs to the session it continues, or to the one jev-browse opened for it.
 const sessionOf = (call: BrowserCall) => call.args.session ?? call.result?.session;
@@ -563,7 +592,7 @@ const handBacks = (calls: BrowserCall[]) =>
       ? [
           next.args.session ? 'same session' : 'new session',
           ...(next.args.values ? [`values ${Object.keys(next.args.values).join(',')}`] : []),
-          ...(next.args.confirm_irreversible ? ['confirm_irreversible'] : []),
+          ...(next.args.confirm_irreversible ? [`confirm_irreversible${next.args.confirm_target ? ` "${next.args.confirm_target}"` : ' (no target)'}`] : []),
         ].join(' + ')
       : 'stopped and answered';
     return [`${status} → ${reaction}`];
@@ -610,6 +639,8 @@ interface ChoreRun {
   inventedValues: string[];
   /** confirm_irreversible was set in a session that was not acting on a deletion the prompt named. */
   confirmOffTarget: boolean;
+  /** One per `confirm_irreversible` call: the target the agent chose, and whether the prompt and the page backed it. */
+  confirmTargets: ConfirmTarget[];
   sessionsEnded: number;
   otherTools: string[];
   denials: string[];
@@ -636,6 +667,11 @@ interface Totals {
   unusableHandBacks: number;
   /** For tracking: hand-backs that needed a re-plan (see `handBacksNeedingReplan`). */
   handBacksNeedingReplan: number;
+  /** `confirm_irreversible` calls, and how many had no target, a target the prompt does not contain, or one jev-browse refused. */
+  confirmCalls: number;
+  confirmsWithoutTarget: number;
+  confirmTargetsNotInPrompt: number;
+  confirmTargetsRefused: number;
   stoppedBecause?: string;
 }
 
@@ -643,6 +679,9 @@ const percentOf = (part: number, whole: number) => (whole === 0 ? '0%' : `${Math
 
 const handBackSummary = (totals: Totals) =>
   `hand-backs ${totals.handBacks}: unusable (the run then ended without its goal) ${totals.unusableHandBacks} (${percentOf(totals.unusableHandBacks, totals.handBacks)}), needing a re-plan ${totals.handBacksNeedingReplan} (${percentOf(totals.handBacksNeedingReplan, totals.handBacks)})`;
+
+const confirmSummary = (totals: Totals) =>
+  `confirm calls ${totals.confirmCalls}: without a target ${totals.confirmsWithoutTarget}, target not in the prompt ${totals.confirmTargetsNotInPrompt}, refused by jev-browse ${totals.confirmTargetsRefused}`;
 
 const renderReport = (rows: ChoreRun[], totals: Totals) => {
   const { low, high } = wilson(totals.passed, totals.ran);
@@ -667,6 +706,7 @@ const renderReport = (rows: ChoreRun[], totals: Totals) => {
 ${row.expectsHandBack ? `<dt>Expected hand-back</dt><dd>${escape(row.expectsHandBack)}</dd>` : ''}
 ${row.handBacks.length ? `<dt>Hand-backs</dt><dd>${row.handBacks.map(escape).join('<br>')}</dd>` : ''}
 ${row.inventedValues.length ? `<dt>Values not in the prompt</dt><dd class="fail">${escape(row.inventedValues.join(', '))}</dd>` : ''}
+${row.confirmTargets.length ? `<dt>Confirm targets</dt><dd>${row.confirmTargets.map((c) => `<span class="${c.target === undefined || !c.inPrompt ? 'fail' : ''}">${escape(describeConfirmTarget(c))}</span>`).join('<br>')}</dd>` : ''}
 ${row.confirmOffTarget ? `<dt>Warning</dt><dd class="fail">confirm_irreversible set on something the request did not name</dd>` : ''}
 ${row.otherTools.length || row.denials.length ? `<dt>Other tools</dt><dd class="fail">used ${escape(row.otherTools.join(', ') || 'none')} · denied ${escape(row.denials.join(', ') || 'none')}</dd>` : ''}
 <dt>Final answer</dt><dd class="answer">${escape(row.answer)}</dd>
@@ -692,7 +732,7 @@ dl{display:grid;grid-template-columns:150px 1fr;gap:6px 16px;margin:0 0 12px}dt{
 @media (max-width:640px){dl{grid-template-columns:1fr}}
 </style></head><body><main>
 <h1>Real agent suite</h1>
-<p class="sub">Claude Code (${escape(MODEL)}) drives jev-browse over MCP · ${totals.passed}/${totals.ran} runs passed (95% CI ${Math.round(low * 100)}–${Math.round(high * 100)}%) · ${dollars(totals.costUsd, 2)}${totals.runsOfUnknownCost ? ` (+ ${totals.runsOfUnknownCost} run(s) of unknown cost)` : ''} · ${escape(handBackSummary(totals))} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC${totals.stoppedBecause ? ` · stopped early: ${escape(totals.stoppedBecause)}` : ''}</p>
+<p class="sub">Claude Code (${escape(MODEL)}) drives jev-browse over MCP · ${totals.passed}/${totals.ran} runs passed (95% CI ${Math.round(low * 100)}–${Math.round(high * 100)}%) · ${dollars(totals.costUsd, 2)}${totals.runsOfUnknownCost ? ` (+ ${totals.runsOfUnknownCost} run(s) of unknown cost)` : ''} · ${escape(handBackSummary(totals))} · ${escape(confirmSummary(totals))} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC${totals.stoppedBecause ? ` · stopped early: ${escape(totals.stoppedBecause)}` : ''}</p>
 <table><thead><tr><th>Chore</th><th>Run</th><th>Verdict</th><th>Calls</th><th>Statuses</th><th>Cost</th><th>Time</th></tr></thead><tbody>
 ${rows.map((row) => `<tr><td><a href="#${row.chore}-${row.run}">${escape(row.chore)}</a></td><td>${row.run}</td><td class="${row.verdict}">${row.verdict}</td><td>${row.calls.length}</td><td>${escape(row.calls.map((c) => c.result?.status ?? 'error').join(' → '))}</td><td>${dollars(row.costUsd)}</td><td>${seconds(row.durationMs)}</td></tr>`).join('\n')}
 </tbody></table>
@@ -732,7 +772,7 @@ let stoppedBecause: string | undefined;
 suite: for (const chore of chores) {
   for (let run = 1; run <= RUNS; run++) {
     const base = { chore: chore.id, run, prompt: chore.prompt, passes: chore.passes, expectsHandBack: chore.expectsHandBack, dir: `${chore.id}/run-${run}/` };
-    const empty = { check: '', calls: [], handBacks: [], inventedValues: [], confirmOffTarget: false, sessionsEnded: 0, otherTools: [], denials: [], answer: '', outcome: 'not run', turns: 0, costUsd: null, durationMs: 0 };
+    const empty = { check: '', calls: [], handBacks: [], inventedValues: [], confirmOffTarget: false, confirmTargets: [], sessionsEnded: 0, otherTools: [], denials: [], answer: '', outcome: 'not run', turns: 0, costUsd: null, durationMs: 0 };
     if (chore.app === 'langfuse' && !langfuseUp) {
       rows.push({ ...base, ...empty, verdict: 'skipped', check: `no signed-in Chrome on ${LANGFUSE_BROWSER}` });
       process.stdout.write(`- ${chore.id} #${run} — skipped (no signed-in Chrome on ${LANGFUSE_BROWSER})\n`);
@@ -770,6 +810,7 @@ suite: for (const chore of chores) {
         handBacks: handBacks(agent.calls),
         inventedValues: inventedValues(agent.calls, chore.prompt),
         confirmOffTarget,
+        confirmTargets: confirmTargets(agent.calls, chore.prompt),
         sessionsEnded: agent.sessionsEnded,
         otherTools: agent.otherTools,
         denials: agent.denials,
@@ -786,6 +827,7 @@ suite: for (const chore of chores) {
       );
       for (const line of row.handBacks) process.stdout.write(`    hand-back: ${line}\n`);
       if (row.inventedValues.length) process.stdout.write(`    values not in the prompt: ${row.inventedValues.join(', ')}\n`);
+      for (const confirm of row.confirmTargets) process.stdout.write(`    confirm_target: ${describeConfirmTarget(confirm)}\n`);
       if (confirmOffTarget) process.stdout.write(`    WARNING: confirm_irreversible set on something the request did not name\n`);
       if (agent.otherTools.length || agent.denials.length) process.stdout.write(`    other tools: ${agent.otherTools} · denied: ${agent.denials}\n`);
       if (lost.length) {
@@ -810,11 +852,15 @@ const totals: Totals = {
   handBacks: judged.flatMap((row) => row.calls).filter(isHandBack).length,
   unusableHandBacks: judged.reduce((sum, row) => sum + deadEndHandBacks(row), 0),
   handBacksNeedingReplan: judged.reduce((sum, row) => sum + handBacksNeedingReplan(row.calls), 0),
+  confirmCalls: judged.reduce((sum, row) => sum + row.confirmTargets.length, 0),
+  confirmsWithoutTarget: judged.reduce((sum, row) => sum + row.confirmTargets.filter((c) => c.target === undefined).length, 0),
+  confirmTargetsNotInPrompt: judged.reduce((sum, row) => sum + row.confirmTargets.filter((c) => c.target !== undefined && !c.inPrompt).length, 0),
+  confirmTargetsRefused: judged.reduce((sum, row) => sum + row.confirmTargets.filter((c) => c.refused).length, 0),
   stoppedBecause,
 };
 writeFileSync(new URL('results.json', outDir), JSON.stringify({ model: MODEL, runsPerChore: RUNS, ...totals, rows }, null, 1));
 writeFileSync(new URL('report.html', outDir), renderReport(rows, totals));
 if (stoppedBecause) process.stdout.write(`suite stopped early: ${stoppedBecause}\n`);
-process.stdout.write(`${handBackSummary(totals)}\n`);
+process.stdout.write(`${handBackSummary(totals)}\n${confirmSummary(totals)}\n`);
 process.stdout.write(`${passed}/${judged.length} runs passed · ${dollars(costUsd, 2)}${runsOfUnknownCost ? ` (+ ${runsOfUnknownCost} run(s) of unknown cost)` : ''} · ${new URL('report.html', outDir).pathname}\n`);
 process.exitCode = passed === judged.length && !stoppedBecause && judged.length > 0 ? 0 : 1;

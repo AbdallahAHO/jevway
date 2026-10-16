@@ -20,6 +20,8 @@ export interface FollowUp {
   prepare?: (tab: Tab) => Promise<void>;
   /** The label of the click the second call's request names (see `Job.confirms`). */
   confirms?: RegExp;
+  /** The words the second call's request uses for what that click acts on (see `Job.confirmTarget`). */
+  confirmTarget?: string;
 }
 
 /** A `needs_confirmation` hand-back on a click, and whether the calling agent confirmed it (its label matched `confirms`). */
@@ -50,6 +52,8 @@ export interface Job {
    * click ends the call as a hand-back, since the agent would ask the user about anything the request did not name.
    */
   confirms?: RegExp;
+  /** With `confirms`: the words of the user's request that name what the click acts on, passed as `confirm_target`; the page must show them. */
+  confirmTarget?: string;
   /** The statuses that count as success (default `['done']`). A destructive job expects `needs_confirmation`; a deliberately invalid request expects a hand-back. */
   expect?: TaskStatus[];
   /**
@@ -188,7 +192,7 @@ const jobSection = (
   <dt>Goal given to Jev</dt><dd>${escape(goalFor(job, phrasing))}</dd>
   ${job.values ? `<dt>Values</dt><dd><code>${escape(JSON.stringify(job.values))}</code></dd>` : ''}
   <dt>Done when</dt><dd>${escape(job.doneWhen)}</dd>
-  ${job.confirms ? `<dt>Confirmation</dt><dd>The calling agent confirms only the click the user asked for: <code>${escape(String(job.confirms))}</code>${featured?.confirmations?.length ? `. Run ${featured.run}: ${featured.confirmations.map((c) => `${c.given ? 'confirmed' : 'handed back'} <code>${escape(c.label)}</code>`).join(', ')}` : ''}.</dd>` : ''}
+  ${job.confirms ? `<dt>Confirmation</dt><dd>The calling agent confirms only the click the user asked for: <code>${escape(String(job.confirms))}</code>${job.confirmTarget ? ` for <code>${escape(job.confirmTarget)}</code>` : ''}${featured?.confirmations?.length ? `. Run ${featured.run}: ${featured.confirmations.map((c) => `${c.given ? 'confirmed' : 'handed back'} <code>${escape(c.label)}</code>`).join(', ')}` : ''}.</dd>` : ''}
   ${job.followUp ? `<dt>Second call</dt><dd>The calling agent reads what the first call left behind (a table, a mailbox) and continues the same session${followUp ? ` with <code>${escape(JSON.stringify(followUp))}</code>` : ''}.</dd>` : ''}
   <dt>Checked by</dt><dd>${job.expect ? `Pass: ends ${escape(job.expect.join(' or '))}, and the check holds: ` : ''}${escape(job.check)}</dd>
 </dl>

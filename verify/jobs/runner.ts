@@ -13,7 +13,8 @@
  * from an email) and `prepare` (a fixed script on the tab, like typing a password, which jev-browse never does). A job
  * sets `confirms` (and a follow-up its own) to the label of the irreversible click the user's request names, e.g.
  * `/register/i`: the runner confirms each distinct click that matches once (up to 3 per call) and hands back any
- * other, like a calling agent that asks the user about everything the request did not name.
+ * other, like a calling agent that asks the user about everything the request did not name. It passes the job's
+ * `confirmTarget`, the words of that request which name what the click acts on, as `confirm_target`.
  *
  * Env knobs, with NAME the uppercased `name`: `JEV_<NAME>_RUNS` (default 3), `JEV_<NAME>_ONLY` (comma-separated job
  * ids), `JEV_<NAME>_DEVICE` (a key of DEVICES, default desktop) and `JEV_<NAME>_PHRASING` (`as-written` or `terse`).
@@ -78,11 +79,11 @@ const confirmationLabel = ({ status, reason }: TaskSummary) =>
 const MAX_CONFIRMATIONS_PER_CALL = 3;
 
 // One call of a calling agent. A needs_confirmation on a click the user's request names (`confirms` matches its label)
-// continues with `confirm_irreversible` (the skill's rule: one confirmation per click), so the call can show several
+// continues with `confirm_irreversible` and `confirm_target` (the skill's rule: one confirmation per click), so the call can show several
 // summaries. Each distinct label is confirmed once, and at most MAX_CONFIRMATIONS_PER_CALL in all: the same click asked
 // for again is a retry of something that did not work (a submit the page rejected), which the request did not name, and
 // a click that does not match ends the call there too. Each hand-back goes into `confirmations`, confirmed or not.
-const runCall = async (task: BrowserTask, confirms: RegExp | undefined, confirmations: Confirmation[]) => {
+const runCall = async (task: BrowserTask, { confirms, confirmTarget }: Pick<Job, 'confirms' | 'confirmTarget'>, confirmations: Confirmation[]) => {
   const summaries = [await task.run()];
   const confirmed = new Set<string>();
   for (;;) {
@@ -92,7 +93,7 @@ const runCall = async (task: BrowserTask, confirms: RegExp | undefined, confirma
     confirmations.push({ label, given });
     if (!given) return summaries;
     confirmed.add(label);
-    task.update({ confirmIrreversible: true });
+    task.update({ confirmIrreversible: true, confirmTarget });
     summaries.push(await task.run());
   }
 };
@@ -190,18 +191,18 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
             recordDir: new URL(dir, outDir).pathname,
           });
           const confirmations: Confirmation[] = [];
-          const summaries = await runCall(task, job.confirms, confirmations);
+          const summaries = await runCall(task, job, confirmations);
           // Two-call jobs: like a calling agent, read what the first call left behind (the page's table, a mailbox) and continue the same session.
           const firstCallDone = summaries.at(-1)!.status === 'done';
           const { next, rows } = (job.followUp && (await readFollowUp(tab, job.followUp, firstCallDone))) || {};
           const followUpMissing = Boolean(job.followUp && firstCallDone && !next);
           if (next) {
             // `navigate` and `prepare` are the harness's part of the second call, not task options.
-            const { navigate, prepare, confirms, ...patch } = next;
+            const { navigate, prepare, confirms, confirmTarget, ...patch } = next;
             if (navigate) await tab.navigate(navigate);
             await prepare?.(tab);
             task.update({ ...patch, doneWhen: job.doneWhen });
-            summaries.push(...(await runCall(task, confirms, confirmations)));
+            summaries.push(...(await runCall(task, { confirms, confirmTarget }, confirmations)));
           }
           const summary = summaries.at(-1)!;
           // Ground truth comes from a separate read of the page, not from the task's summary.

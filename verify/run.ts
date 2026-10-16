@@ -127,7 +127,7 @@ await scenario('fixture: irreversible "Confirm booking and pay" hands back needs
 });
 
 await scenario('fixture: confirmed continuation completes the booking', async () => {
-  stays.update({ confirmIrreversible: true });
+  stays.update({ confirmIrreversible: true, confirmTarget: 'Casa Flora' });
   const summary = await stays.run();
   staySummaries.push(summary);
   expectStatus(summary, 'done');

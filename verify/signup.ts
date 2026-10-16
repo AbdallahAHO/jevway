@@ -39,6 +39,8 @@ let current: Record<string, string> = {};
 // "Confirm password". Any other click that needs confirming is handed back.
 const REGISTER = /register/i;
 const ACTIVATE = /register|activate|confirm password/i;
+// The words the second call's request uses for what the activation (and the profile save) acts on.
+const ACCOUNT = 'account';
 // The second call of onboard also saves the profile, which the request names too.
 const ACTIVATE_AND_SAVE = /activate|confirm password|update profile/i;
 
@@ -54,7 +56,9 @@ const activateByMail =
     if (!(await userByName(current.username))) return undefined;
     const mail = await latestMailTo(current.email, { timeoutMs: MAIL_TIMEOUT_MS });
     const link = mail && (linkIn(mail.text, '/user/activate') ?? linkIn(mail.html, '/user/activate'));
-    return link ? { goal, values: {}, navigate: link, confirms, prepare: async (tab) => void (await typePasswords(tab)) } : undefined;
+    return link
+      ? { goal, values: {}, navigate: link, confirms, confirmTarget: ACCOUNT, prepare: async (tab) => void (await typePasswords(tab)) }
+      : undefined;
   };
 
 const typedPassword = (summaries: TaskSummary[]) =>
@@ -155,6 +159,8 @@ const reset = async (job: Job, runNumber: number) => {
   for (const { login } of await accounts()) if (login.startsWith(PREFIX)) await deleteUser(login);
   await clearMailbox(PREFIX);
   job.values = current = valuesFor(job, runNumber);
+  // The registration names the account it creates: the username the request carries.
+  job.confirmTarget = current.username;
 };
 
 // What the calling agent's own browser tool does and jev-browse never does: type into every password field on the page.
