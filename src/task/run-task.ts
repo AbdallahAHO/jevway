@@ -127,6 +127,8 @@ const HEAD_DISAGREES = 0.6;
 const SPIKE_CONFIRMED = LAST_LOOK_DONE;
 // Enter is offered only after typing into a search or filter field (a filtered list often updates only on Enter); elsewhere it could submit a form.
 const SEARCH_LIKE = /search|query|find|filter/i;
+const UNSAVED_EDIT_NOTE =
+  'not accepted: the last step changed a field and nothing was saved or submitted since; save or submit it, then say DONE';
 // A covered target is fed back as history so Jev can clear it (dismiss a popover); this many times per run.
 const MAX_COVERED_RETRIES = 2;
 const ESCAPE: PageAction = { id: 'press_escape', kind: 'escape', label: 'Press Escape to close the open menu, popover or suggestion list' };
@@ -173,6 +175,8 @@ export class BrowserTask {
   #dialogsSeen = new Map<string, number>();
   /** The search-like field typed into by the last executed action, if any: PRESS_ENTER may submit it. */
   #lastTyped: PageAction | undefined;
+  /** Set while the last executed step changed a field (typed, ticked) and nothing was saved since; `noted` once a DONE was sent back for it. */
+  #unsavedEdit: { noted: boolean } | undefined;
   /** Consecutive misses on the same target node because it couldn't be reached on an unchanged page. */
   #unreachable = { node: undefined as number | undefined, count: 0 };
   /** Each executed action and the page fingerprint right after it, to spot one that toggles in place. */
@@ -305,6 +309,10 @@ export class BrowserTask {
           decision.operation === 'BLOCKED' && !decision.fieldsWithoutValue.length && doneProbability >= LAST_LOOK_DONE;
         if (doneWhen && blockedOnMetGoal) {
           record(false);
+          if (this.#sendBackUnsavedEdit(decision, doneProbability)) {
+            page = await this.#tab.observe();
+            continue;
+          }
           return stop('done', `Completion condition verified: ${doneWhen}`, decision);
         }
 
@@ -322,6 +330,12 @@ export class BrowserTask {
             confidence: round(decision.confidence),
           });
           await new Promise((resolve) => setTimeout(resolve, 300));
+          page = await this.#tab.observe();
+          continue;
+        }
+
+        if (decision.operation === 'DONE' && doneWhen && this.#sendBackUnsavedEdit(decision, decision.doneProbability ?? 0)) {
+          record(false);
           page = await this.#tab.observe();
           continue;
         }
@@ -475,6 +489,7 @@ export class BrowserTask {
           page_changed: page.fingerprint !== before,
           confidence,
         });
+        this.#unsavedEdit = isUnsavedEdit(decision.operation, action, page) ? { noted: false } : undefined;
         const repeatedDialog = this.#reportDialogs(firstStep);
         if (repeatedDialog) return stop('blocked', repeatedDialog, decision);
         if (repeatingWithoutEffect(this.#history)) {
@@ -710,6 +725,16 @@ export class BrowserTask {
     return decision.operation === 'CLICK' && !!check && check.visible < COVERED_BELOW && check.overlap < COVERED_OVERLAP_BELOW;
   }
 
+  // A typed or ticked change isn't done until it's saved, and a person clicks Save. Right after one, a done check under the
+  // steady bar sends the DONE (or BLOCKED-as-done) back once per edit instead of stopping on an unsaved form.
+  #sendBackUnsavedEdit(decision: Decision, doneProbability: number) {
+    const edit = this.#unsavedEdit;
+    if (!edit || edit.noted || doneProbability >= GUARDS.doneSteady) return false;
+    edit.noted = true;
+    this.#history.push({ operation: 'DONE', element: '', not_executed: UNSAVED_EDIT_NOTE, confidence: round(decision.confidence) });
+    return true;
+  }
+
   // Returns [status, reason] when this decision is the calling agent's to make.
   #handBack(decision: Decision, page: PageState): [TaskStatus, string] | undefined {
     const { doneWhen } = this.#options;
@@ -760,6 +785,15 @@ const definedOnly = <T extends object>(options: T) =>
 
 const isSearchLike = (field: PageAction) =>
   ['searchbox', 'combobox'].includes(field.role ?? '') || SEARCH_LIKE.test(field.label);
+
+// Typing into a field or ticking a checkbox, radio or switch changes a form without saving it; a search or filter box has
+// nothing to save. A tick counts only while the control is still listed afterwards: a picker option that closes on click applied at once.
+const isUnsavedEdit = (operation: string, action: PageAction | undefined, pageAfter: PageState) =>
+  !!action &&
+  ((operation === 'TYPE_TEXT' && !isSearchLike(action)) ||
+    (operation === 'CLICK' &&
+      (['checkbox', 'radio', 'switch'].includes(action.role ?? '') || action.checked !== undefined) &&
+      pageAfter.actions.some((listed) => listed.node === action.node)));
 
 const isRiskyClick = (decision: Decision) =>
   ['CLICK', 'CLICK_AT'].includes(decision.operation) && (decision.commitRisk ?? 0) >= 0.5;

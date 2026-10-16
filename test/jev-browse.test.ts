@@ -2038,6 +2038,24 @@ describe('DONE right after an unsaved edit', () => {
     expect(notes(summary.steps)).toHaveLength(0);
   });
 
+  it('takes a picker option that closes on click as applied, not as an unsaved edit', async () => {
+    const withOption = page({
+      fingerprint: 'open',
+      actions: [
+        { id: 'e1', kind: 'click', node: 1, role: 'radio', label: 'Last 6 hours', checked: 'false' },
+        { id: 'wait', kind: 'wait', label: 'Wait for the page to update' },
+      ],
+    });
+    const closed = page({ fingerprint: 'closed', actions: [{ id: 'wait', kind: 'wait', label: 'Wait for the page to update' }] });
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'DONE', done_check: 0.54 }]);
+    const { asTab, acted } = fakeTab([withOption, closed, closed]);
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(summary).toMatchObject({ status: 'done', done_probability: 0.54 });
+    expect(requests).toHaveLength(2);
+    expect(acted.map((a) => a.label)).toEqual(['Last 6 hours']);
+    expect(notes(summary.steps)).toHaveLength(0);
+  });
+
   it('takes typing into a search field as nothing to save', async () => {
     const { ask, requests } = scriptedJev([type('3', 'query'), { operation: 'DONE', done_check: 0.6 }]);
     const { asTab, acted } = fakeTab(settingsPages());
