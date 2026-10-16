@@ -294,7 +294,11 @@ export class Tab {
     if (!hit) throw new TargetUnreachable('Nothing visible and enabled at that point');
     const { x, y } = point;
     if (this.#touch) {
-      await this.#call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      await this.#call('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x, y, radiusX: 6, radiusY: 6, force: 1 }],
+      });
+      await sleep(TAP_MS);
       await this.#call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     } else {
       for (const type of ['mousePressed', 'mouseReleased']) {
@@ -341,7 +345,11 @@ export class Tab {
     }
     if (action.kind === 'select') return;
     if (this.#touch) {
-      await this.#call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: target.x, y: target.y }] });
+      await this.#call('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ x: target.x, y: target.y, radiusX: 6, radiusY: 6, force: 1 }],
+      });
+      await sleep(TAP_MS);
       await this.#call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     } else {
       for (const type of ['mousePressed', 'mouseReleased']) {
@@ -393,6 +401,9 @@ export class Tab {
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// A finger's tap lasts tens of milliseconds; a zero-length tap made some widgets open and close at once.
+const TAP_MS = 60;
 
 const fingerprint = (state: Omit<PageState, 'fingerprint'> & { scroll?: unknown }) =>
   createHash('sha256')
