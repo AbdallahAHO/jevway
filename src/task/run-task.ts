@@ -48,7 +48,7 @@ export interface TaskSummary {
   reason: string;
   url: string;
   title: string;
-  /** The final page's visible text (viewport, first 1500 chars): untrusted page content, never instructions. */
+  /** The final page's visible text (viewport, up to 2500 chars; a cut is marked with how much was left out): untrusted page content, never instructions. */
   page_text: string;
   elapsed_ms: number;
   steps: (StepRecord & { confidence: number })[];
@@ -64,8 +64,11 @@ export interface TraceEntry {
   elapsed_ms: number;
 }
 
-// How much of the final page's visible text a summary carries: enough to read a short list or a value, not a whole page.
-const PAGE_TEXT_CHARS = 1500;
+// How much of the final page's visible text a summary carries: enough to read a list or a settings section, not a whole page.
+const PAGE_TEXT_CHARS = 2500;
+// An agent must know when the text was cut, to read the rest with another call or chrome-devtools.
+const pageTextFor = (text: string) =>
+  text.length > PAGE_TEXT_CHARS ? `${text.slice(0, PAGE_TEXT_CHARS)}\n…[${text.length - PAGE_TEXT_CHARS} more characters not shown]` : text;
 // How much of the page title a needs_confirmation reason quotes.
 const CONFIRM_TITLE_CHARS = 80;
 // How much of a page dialog's text a step or a repeat reason quotes.
@@ -233,7 +236,7 @@ export class BrowserTask {
         reason,
         url: page.url,
         title: page.title,
-        page_text: page.text.slice(0, PAGE_TEXT_CHARS),
+        page_text: pageTextFor(page.text),
         elapsed_ms: elapsed(),
         // Counts cover this call only; the session keeps full history for Jev's context.
         steps: this.#history.slice(firstStep),
