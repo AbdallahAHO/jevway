@@ -104,7 +104,7 @@ const JOBS: Job[] = [
     // Finding the errored run means comparing a column: the calling agent reads it and names the run.
     goal: `Go to Experiments. ${READ_ONLY}`,
     firstDoneWhen: 'The Experiments list is showing.',
-    doneWhen: "An experiment run's results page is open: a table of its dataset item inputs with the run's summary and scores.",
+    doneWhen: "An experiment run's results page is open, showing the run's name as a column heading with its SUMMARY and SCORES.",
     followUp: (rows) => {
       const errored = rows.find((row) => Number(row['Error Count']) > 0 && row['Start Time']);
       return errored && {
