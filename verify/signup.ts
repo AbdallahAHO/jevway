@@ -69,7 +69,7 @@ const JOBS: Job[] = [
     doneWhen: 'The account is activated: Forgejo says so, or shows the signed-in dashboard.',
     check: "Forgejo's admin API lists the new account as active",
     passes: async () => (await userByName(current.username))?.active === true,
-    followUp: activateByMail('Finish activating the account.'),
+    followUp: activateByMail('I typed the password into the activation form; finish activating the account.'),
   },
   {
     id: 'onboard',
@@ -84,7 +84,7 @@ const JOBS: Job[] = [
       const account = await userByName(current.username);
       return account?.active === true && account.full_name.trim() === FULL_NAME;
     },
-    followUp: activateByMail('Finish activating the account, then set your full name to the name in values in your profile settings.'),
+    followUp: activateByMail('I typed the password into the activation form; finish activating the account, then set your full name to the name in values in your profile settings.'),
   },
   {
     id: 'bad-email',
