@@ -607,6 +607,26 @@ const checks: Check[] = [
       assert.ok(!page.text.includes('Old password'), `a hidden field is described: ${page.text}`);
     },
   },
+  {
+    name: 'a click the browser drops is reported, not counted as done',
+    file: 'repeated-actions.html',
+    run: async (tab) => {
+      const addToCart = (page: { actions: PageAction[] }) =>
+        page.actions.find((action) => action.role === 'button' && action.label === 'Add to cart — Backpack')!;
+      const page = await tab.observe();
+      // The browser accepts the press and release but never delivers them, as in the live SauceDemo failure.
+      await tab.send('Input.setIgnoreInputEvents', { ignore: true });
+      try {
+        await assert.rejects(tab.act(addToCart(page), page), /no input/i);
+        assert.deepEqual((await fixtureState(tab)).added, [], 'the dropped click reached the page');
+      } finally {
+        await tab.send('Input.setIgnoreInputEvents', { ignore: false });
+      }
+      const again = await tab.observe();
+      await tab.act(addToCart(again), again);
+      assert.deepEqual((await fixtureState(tab)).added, ['Backpack']);
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port.
