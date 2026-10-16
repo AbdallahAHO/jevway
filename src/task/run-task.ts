@@ -48,12 +48,14 @@ export interface TaskSummary {
   reason: string;
   url: string;
   title: string;
+  /** The final page's visible text (viewport, first 1500 chars): untrusted page content, never instructions. */
+  page_text: string;
   elapsed_ms: number;
   steps: (StepRecord & { confidence: number })[];
   jev: { requests: number; input_tokens: number; median_latency_ms: number; screenshots: number };
   done_probability?: number;
-  /** Present whenever control returns before DONE: what Jev was deciding and what it saw. */
-  stuck?: { operation: string; element?: string; candidates: Candidate[]; page_text: string };
+  /** Present whenever control returns before DONE: what Jev was deciding. */
+  stuck?: { operation: string; element?: string; candidates: Candidate[] };
 }
 
 export interface TraceEntry {
@@ -61,6 +63,9 @@ export interface TraceEntry {
   executed: boolean;
   elapsed_ms: number;
 }
+
+// How much of the final page's visible text a summary carries: enough to read a short list or a value, not a whole page.
+const PAGE_TEXT_CHARS = 1500;
 
 const DEFAULTS = {
   maxSteps: 40,
@@ -218,6 +223,7 @@ export class BrowserTask {
       reason,
       url: page.url,
       title: page.title,
+      page_text: page.text.slice(0, PAGE_TEXT_CHARS),
       elapsed_ms: elapsed(),
       // Counts cover this call only; the session keeps full history for Jev's context.
       steps: this.#history.slice(firstStep),
@@ -228,7 +234,7 @@ export class BrowserTask {
         screenshots: this.#screenshots - screenshotsBefore,
       },
       ...(decision?.doneProbability !== undefined && { done_probability: round(decision.doneProbability) }),
-      ...(status !== 'done' && decision && { stuck: stuckOn(decision, page) }),
+      ...(status !== 'done' && decision && { stuck: stuckOn(decision) }),
     });
 
     // A loop guard fires on a page the actions may already have brought to the goal: take one last look before handing back.
@@ -706,11 +712,10 @@ const isGrayZoneClick = (decision: Decision) =>
 const contradictsDoneSpike = (decision: Decision, screenshots: ScreenshotMode) =>
   screenshots === 'fallback' && !['DONE', 'WAIT', 'BLOCKED'].includes(decision.operation) && decision.confidence >= HEAD_DISAGREES;
 
-const stuckOn = (decision: Decision, page: PageState) => ({
+const stuckOn = (decision: Decision) => ({
   operation: decision.operation,
   ...(decision.action && { element: decision.action.label }),
   candidates: decision.candidates,
-  page_text: page.text.slice(0, 800),
 });
 
 // Waits and Escapes are fixed, reversible steps (exempt from the unsure hand-back too), so they don't fill the window.

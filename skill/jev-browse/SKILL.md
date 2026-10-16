@@ -30,10 +30,10 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 
 | Status | Do this |
 | --- | --- |
-| `done` | Trust `url`/`title`; inspect with chrome-devtools if the user needs details. |
+| `done` | Trust `url`/`title`. Read `page_text` for what the page shows (the visible part, up to 1500 chars); scroll with another call or inspect with chrome-devtools for more. |
 | `needs_input` | The reason names the field. Get the value (ask the user if unknown) and call again with the same `session` and the new `values`. |
 | `needs_confirmation` | The next click looks irreversible (pay, send, delete, submit). Continue with `confirm_irreversible: true` only when the user's own request names this action and its target; for anything else, stop and ask the user. "Delete the repository X" covers every click that deletes X: on Forgejo, the danger-zone button and then the dialog's button, each needing its own confirmation. "Tidy up unused repos", a different repository, or a step the user never asked for (paying while reviewing an order) is not covered: ask first. Each confirmation covers one click. |
-| `uncertain` / `blocked` | Read `stuck.candidates` and `stuck.page_text`. Rephrase `goal` for the same `session`, or do the step with chrome-devtools and then continue. A `reason` saying the browser dropped a click means nothing was clicked and rephrasing cannot help: call again or check the browser. |
+| `uncertain` / `blocked` | Read `stuck.candidates` and `page_text`. Rephrase `goal` for the same `session`, or do the step with chrome-devtools and then continue. A `reason` saying the browser dropped a click means nothing was clicked and rephrasing cannot help: call again or check the browser. |
 | `step_budget` | Split the goal into smaller calls on the same `session`. |
 
 End with `browser_task_end` when finished (it closes the tab it opened unless `keep_tab: true`).
