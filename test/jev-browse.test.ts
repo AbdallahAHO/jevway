@@ -2139,6 +2139,114 @@ describe('loop gotchas', () => {
     });
   });
 
+  describe('a risky submit while the menu the run opened still lists a supplied value', () => {
+    const options = { goal: 'Open an issue labelled with the text in label', values: { label: 'bug' }, changeWaitMs: 0 };
+    const labelsTrigger = (expanded: string): PageAction => ({ id: 'labels', kind: 'click', node: 50, role: 'combobox', label: 'Labels', expanded });
+    const bugOption = (extra: Partial<PageAction> = {}): PageAction => ({ id: 'bug', kind: 'click', node: 51, role: 'option', label: 'bug', ...extra });
+    const create: PageAction = { id: 'create', kind: 'click', node: 52, role: 'button', label: 'Create issue' };
+    const form = (fingerprint: string, expanded: string, menuListed = expanded === 'true') =>
+      page({ actions: [labelsTrigger(expanded), ...(menuListed ? [bugOption()] : []), create], fingerprint });
+    const closed = form('a', 'false');
+    const open = (fingerprint: string) => form(fingerprint, 'true');
+    const labels = { operation: 'CLICK', click_target: clickTargetOf(closed, 'Labels') };
+    // The menu's rows take element numbers, so the same button has another number once the menu is open.
+    const submit = { operation: 'CLICK', click_target: clickTargetOf(open('x'), 'Create issue'), commit_risk: 0.8 };
+    const submitClosed = { ...submit, click_target: clickTargetOf(closed, 'Create issue') };
+    const pickBug = { operation: 'CLICK', click_target: clickTargetOf(open('x'), 'bug') };
+    const NOTE = 'not accepted: the menu you opened lists "bug" (label) and it isn\'t picked yet; pick it first, or answer BLOCKED';
+
+    it('feeds back once to pick the value first, then lets the submit go to the hand-back as usual', async () => {
+      const { ask } = scriptedJev([labels, submit, pickBug, submit]);
+      const { asTab, acted } = fakeTab([closed, open('b'), open('c'), open('d'), open('e')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary).toMatchObject({ status: 'needs_confirmation' });
+      expect(summary.reason).toContain('Create issue');
+      expect(acted).toEqual([{ label: 'Labels' }, { label: 'bug' }]);
+      expect(summary.steps.map((step) => [step.operation, step.element, step.not_executed])).toEqual([
+        ['CLICK', 'Labels', undefined],
+        ['CLICK', '', NOTE],
+        ['CLICK', 'bug', undefined],
+      ]);
+    });
+
+    it('does not interrupt a confirmed submit that comes after the pick', async () => {
+      const { ask } = scriptedJev([labels, submit, pickBug, submit]);
+      const { asTab, acted } = fakeTab([closed, open('b'), open('c'), open('d'), open('e'), form('f', 'false')]);
+      const task = new BrowserTask(asTab, ask, options);
+      expect((await task.run()).status).toBe('needs_confirmation');
+      task.update({ confirmIrreversible: true, confirmTarget: 'Staylist' });
+      await task.run();
+      expect(acted.map((a) => a.label)).toEqual(['Labels', 'bug', 'Create issue']);
+    });
+
+    it('feeds back before a confirmed submit too, and the confirmation waits for the pick', async () => {
+      const { ask } = scriptedJev([labels, submit, pickBug, submit]);
+      const { asTab, acted } = fakeTab([closed, open('b'), open('c'), open('d'), open('e'), form('f', 'false')]);
+      const task = new BrowserTask(asTab, ask, options);
+      task.update({ confirmIrreversible: true, confirmTarget: 'Staylist' });
+      const summary = await task.run();
+      expect(acted.map((a) => a.label)).toEqual(['Labels', 'bug', 'Create issue']);
+      expect(summary.steps.filter((step) => step.not_executed).map((step) => step.not_executed)).toEqual([NOTE]);
+    });
+
+    it('says nothing when the value was already picked', async () => {
+      const { ask } = scriptedJev([labels, pickBug, submit]);
+      const { asTab } = fakeTab([closed, open('b'), open('c'), open('d')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('needs_confirmation');
+      expect(summary.steps.filter((step) => step.not_executed)).toEqual([]);
+    });
+
+    it('says nothing when the option already shows as applied', async () => {
+      const applied = (fingerprint: string) => page({ actions: [labelsTrigger('true'), bugOption({ checked: 'true' }), create], fingerprint });
+      const { ask } = scriptedJev([labels, submit]);
+      const { asTab } = fakeTab([closed, applied('b'), applied('c')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('needs_confirmation');
+      expect(summary.steps.filter((step) => step.not_executed)).toEqual([]);
+    });
+
+    it('says nothing with no menu open, or with a menu the page opened itself', async () => {
+      const noMenu = scriptedJev([submitClosed]);
+      const without = await new BrowserTask(fakeTab([closed, closed]).asTab, noMenu.ask, options).run();
+      expect(without.status).toBe('needs_confirmation');
+      expect(without.steps).toEqual([]);
+
+      const byPage = scriptedJev([submit]);
+      const withMenu = await new BrowserTask(fakeTab([open('a'), open('b')]).asTab, byPage.ask, options).run();
+      expect(withMenu.status).toBe('needs_confirmation');
+      expect(withMenu.steps).toEqual([]);
+    });
+
+    it('says nothing when the risky click is the option itself', async () => {
+      const riskyPick = { ...pickBug, commit_risk: 0.8 };
+      const { ask } = scriptedJev([labels, riskyPick]);
+      const { asTab, acted } = fakeTab([closed, open('b'), open('c')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('needs_confirmation');
+      expect(summary.reason).toContain('bug');
+      expect(summary.steps.filter((step) => step.not_executed)).toEqual([]);
+      expect(acted).toEqual([{ label: 'Labels' }]);
+    });
+
+    it('says nothing for a value the menu does not list', async () => {
+      const { ask } = scriptedJev([labels, submit]);
+      const { asTab } = fakeTab([closed, open('b'), open('c')]);
+      const summary = await new BrowserTask(asTab, ask, { ...options, values: { label: 'enhancement' } }).run();
+      expect(summary.status).toBe('needs_confirmation');
+      expect(summary.steps.filter((step) => step.not_executed)).toEqual([]);
+    });
+
+    it('feeds back once per option and value: the second submit goes to the hand-back as usual', async () => {
+      const { ask } = scriptedJev([labels, submit, submit]);
+      const { asTab, acted } = fakeTab([closed, open('b'), open('c'), open('d')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('needs_confirmation');
+      expect(summary.steps.filter((step) => step.not_executed)).toHaveLength(1);
+      expect(acted).toEqual([{ label: 'Labels' }]);
+    });
+  });
+
   describe('the last look before a guard hands back', () => {
     const click = { operation: 'CLICK', click_target: '1' };
     const options = { goal: 'Open it', doneWhen: 'It is open', changeWaitMs: 0 };
