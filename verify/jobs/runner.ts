@@ -10,7 +10,10 @@
  *
  * Two-call jobs give a `followUp`: after the first call it reads the page's table and URL (or any other system, e.g. a
  * mailbox) and returns the second call's goal and values. It may also set `navigate` (a URL to open first, like a link
- * from an email) and `prepare` (a fixed script on the tab, like typing a password, which jev-browse never does).
+ * from an email) and `prepare` (a fixed script on the tab, like typing a password, which jev-browse never does). A job
+ * sets `confirms` (and a follow-up its own) to the label of the irreversible click the user's request names, e.g.
+ * `/register/i`: the runner confirms that click once per call and hands back any other, like a calling agent that asks
+ * the user about everything the request did not name.
  *
  * Env knobs, with NAME the uppercased `name`: `JEV_<NAME>_RUNS` (default 3), `JEV_<NAME>_ONLY` (comma-separated job
  * ids), `JEV_<NAME>_DEVICE` (a key of DEVICES, default desktop) and `JEV_<NAME>_PHRASING` (`as-written` or `terse`).
@@ -30,8 +33,8 @@ import { connectChrome, type BrowserSource } from '../../src/browser/chrome.ts';
 import { DEVICES, type DeviceName } from '../../src/browser/devices.ts';
 import { Tab } from '../../src/browser/tab.ts';
 import { createAsk, profileOptions, resolveModel } from '../../src/jev/model.ts';
-import { BrowserTask } from '../../src/task/run-task.ts';
-import { goalFor, isFlaky, renderReport, wilson, type Job, type JobResult, type Phrasing } from './report.ts';
+import { BrowserTask, type TaskSummary } from '../../src/task/run-task.ts';
+import { goalFor, isFlaky, renderReport, wilson, type Confirmation, type Job, type JobResult, type Phrasing } from './report.ts';
 
 // The first table on the page as rows keyed by header text: what a calling agent reads with chrome-devtools.
 const readTable = async (tab: Tab): Promise<Record<string, string>[]> =>
@@ -64,6 +67,29 @@ const ROWS_KEPT = 10;
 const VALUE_CHARS_KEPT = 120;
 const sampleRows = (rows: Record<string, string>[]) =>
   rows.slice(0, ROWS_KEPT).map((row) => Object.fromEntries(Object.entries(row).map(([header, value]) => [header, value.slice(0, VALUE_CHARS_KEPT)])));
+
+// `Clicking "<label>" looks irreversible (risk …)`: the reason of a needs_confirmation hand-back.
+const CONFIRMATION_LABEL = /^Clicking "(.*)" looks irreversible/;
+const confirmationLabel = ({ status, reason }: TaskSummary) =>
+  status === 'needs_confirmation' ? CONFIRMATION_LABEL.exec(reason)?.[1] : undefined;
+
+// One call of a calling agent. A needs_confirmation on the click the user's request names (`confirms` matches its
+// label) continues once with `confirm_irreversible` (the skill's rule: one click per confirmation), so the call shows
+// two summaries; any other click ends the call there, and so does a second one after the confirmed click. Each
+// hand-back goes into `confirmations`, confirmed or not.
+const runCall = async (task: BrowserTask, confirms: RegExp | undefined, confirmations: Confirmation[]) => {
+  const summaries = [await task.run()];
+  const label = confirmationLabel(summaries[0]);
+  if (!confirms || label === undefined) return summaries;
+  const given = confirms.test(label);
+  confirmations.push({ label, given });
+  if (!given) return summaries;
+  task.update({ confirmIrreversible: true });
+  summaries.push(await task.run());
+  const again = confirmationLabel(summaries[1]);
+  if (again !== undefined) confirmations.push({ label: again, given: false });
+  return summaries;
+};
 
 // A dropped DevTools connection is replaced between runs; past this many replacements the suite stops.
 const MAX_RECONNECTS = 3;
@@ -157,18 +183,19 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
             screenshots,
             recordDir: new URL(dir, outDir).pathname,
           });
-          const summaries = [await task.run()];
+          const confirmations: Confirmation[] = [];
+          const summaries = await runCall(task, job.confirms, confirmations);
           // Two-call jobs: like a calling agent, read what the first call left behind (the page's table, a mailbox) and continue the same session.
-          const firstCallDone = summaries[0].status === 'done';
+          const firstCallDone = summaries.at(-1)!.status === 'done';
           const { next, rows } = (job.followUp && (await readFollowUp(tab, job.followUp, firstCallDone))) || {};
           const followUpMissing = Boolean(job.followUp && firstCallDone && !next);
           if (next) {
             // `navigate` and `prepare` are the harness's part of the second call, not task options.
-            const { navigate, prepare, ...patch } = next;
+            const { navigate, prepare, confirms, ...patch } = next;
             if (navigate) await tab.navigate(navigate);
             await prepare?.(tab);
             task.update({ ...patch, doneWhen: job.doneWhen });
-            summaries.push(await task.run());
+            summaries.push(...(await runCall(task, confirms, confirmations)));
           }
           const summary = summaries.at(-1)!;
           // Ground truth comes from a separate read of the page, not from the task's summary.
@@ -178,10 +205,10 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
           // A pass needs both: the check holds and the run ended with an expected status (default done). Holding with another status is only "reached".
           const passed = reached && (job.expect ?? ['done']).includes(summary.status);
           writeFileSync(new URL(`${dir}trace.json`, outDir), JSON.stringify(task.trace, null, 1));
-          result.runs.push({ run, dir, passed, reached, url: url.href, summaries, ...(next && { followUp: next.values }), ...(followUpMissing && { followUpMissing, rowsRead: sampleRows(rows ?? []) }) });
+          result.runs.push({ run, dir, passed, reached, url: url.href, summaries, ...(next && { followUp: next.values }), ...(confirmations.length && { confirmations }), ...(followUpMissing && { followUpMissing, rowsRead: sampleRows(rows ?? []) }) });
           const whyNot = followUpMissing ? `no matching row for the second call (read ${rows?.length} rows)` : summary.reason;
           process.stdout.write(
-            `${passed ? '✔' : reached ? '◐' : '✘'} ${job.id} #${run} — ${summaries.map((s) => s.status).join(' → ')} in ${summaries.reduce((t, s) => t + s.elapsed_ms, 0)}ms · ${summaries.reduce((t, s) => t + s.steps.length, 0)} actions · ${summaries.reduce((t, s) => t + s.jev.requests, 0)} requests${passed ? '' : ` · ${whyNot} · ${url.href}`}\n`,
+            `${passed ? '✔' : reached ? '◐' : '✘'} ${job.id} #${run} — ${summaries.map((s) => s.status).join(' → ')} in ${summaries.reduce((t, s) => t + s.elapsed_ms, 0)}ms · ${summaries.reduce((t, s) => t + s.steps.length, 0)} actions · ${summaries.reduce((t, s) => t + s.jev.requests, 0)} requests${confirmations.map((c) => ` · ${c.given ? 'confirmed' : 'handed back'} "${c.label}"`).join('')}${passed ? '' : ` · ${whyNot} · ${url.href}`}\n`,
           );
         } catch (error) {
           const { message } = error as Error;

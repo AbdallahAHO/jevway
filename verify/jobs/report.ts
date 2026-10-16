@@ -18,6 +18,14 @@ export interface FollowUp {
   navigate?: string;
   /** A fixed harness script run on the tab after `navigate`, before the second call: what the calling agent's own browser tool does (e.g. types a password, which jev-browse never does). */
   prepare?: (tab: Tab) => Promise<void>;
+  /** The label of the click the second call's request names (see `Job.confirms`). */
+  confirms?: RegExp;
+}
+
+/** A `needs_confirmation` hand-back on a click, and whether the calling agent confirmed it (its label matched `confirms`). */
+export interface Confirmation {
+  label: string;
+  given: boolean;
 }
 
 export interface Job {
@@ -36,6 +44,12 @@ export interface Job {
   check: string;
   /** Ground truth from the final page or the app's own state (e.g. its API), never the task's own status. `summaries` are the run's calls, for a check on what jev-browse did (e.g. a value it must not have typed). */
   passes: (url: URL, text: string, summaries: TaskSummary[]) => boolean | Promise<boolean>;
+  /**
+   * The label of the irreversible click the user's request names, e.g. `/register/i`. A call that ends `needs_confirmation`
+   * on a click whose label matches is confirmed once and continues, as the skill tells a calling agent to; any other
+   * click ends the call as a hand-back, since the agent would ask the user about anything the request did not name.
+   */
+  confirms?: RegExp;
   /** The statuses that count as success (default `['done']`). A destructive job expects `needs_confirmation`; a deliberately invalid request expects a hand-back. */
   expect?: TaskStatus[];
   /**
@@ -64,6 +78,8 @@ export interface RunResult {
   summaries: TaskSummary[];
   /** The values the calling agent passed in its second call. */
   followUp?: Record<string, string>;
+  /** Jobs with `confirms`: every `needs_confirmation` click of the run, confirmed or handed back. */
+  confirmations?: Confirmation[];
   /** Two-call jobs: the first call ended done but the table had no row to continue with, so the second call never ran. */
   followUpMissing?: boolean;
   /** Two-call jobs with no matching row: the first rows the table showed, to see why none matched. */
@@ -172,6 +188,7 @@ const jobSection = (
   <dt>Goal given to Jev</dt><dd>${escape(goalFor(job, phrasing))}</dd>
   ${job.values ? `<dt>Values</dt><dd><code>${escape(JSON.stringify(job.values))}</code></dd>` : ''}
   <dt>Done when</dt><dd>${escape(job.doneWhen)}</dd>
+  ${job.confirms ? `<dt>Confirmation</dt><dd>The calling agent confirms only the click the user asked for: <code>${escape(String(job.confirms))}</code>${featured?.confirmations?.length ? `. Run ${featured.run}: ${featured.confirmations.map((c) => `${c.given ? 'confirmed' : 'handed back'} <code>${escape(c.label)}</code>`).join(', ')}` : ''}.</dd>` : ''}
   ${job.followUp ? `<dt>Second call</dt><dd>The calling agent reads what the first call left behind (a table, a mailbox) and continues the same session${followUp ? ` with <code>${escape(JSON.stringify(followUp))}</code>` : ''}.</dd>` : ''}
   <dt>Checked by</dt><dd>${job.expect ? `Pass: ends ${escape(job.expect.join(' or '))}, and the check holds: ` : ''}${escape(job.check)}</dd>
 </dl>
