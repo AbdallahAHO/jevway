@@ -72,7 +72,7 @@ const JOBS: Job[] = [
     job: 'When answer quality dips, I want to open the answer with the lowest relevance score, so I can read what went wrong.',
     goal: `Go to Scores, show only scores named answer_relevance (filter by the name in score_name), sort them by Value with the lowest first, and open the trace of the lowest one. ${READ_ONLY}`,
     values: { score_name: 'answer_relevance' },
-    doneWhen: 'A trace is open next to or after its answer_relevance score.',
+    doneWhen: 'A trace is open in its own view or side panel: a trace ID heading with its tree of observations (not just the Scores list).',
     check: 'A trace is open (traceId/peek in the URL or a /traces/ page) and the page shows answer_relevance',
     passes: (url, text) => openTrace(url) && /answer_relevance/.test(text),
   },
