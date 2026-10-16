@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { connectChrome } from '../src/browser/chrome.ts';
-import { Tab, TargetUnreachable, type PageAction } from '../src/browser/tab.ts';
+import { StalePage, Tab, TargetUnreachable, type PageAction } from '../src/browser/tab.ts';
 
 interface Check {
   name: string;
@@ -318,6 +318,32 @@ const checks: Check[] = [
       const deletes = actions.filter((action) => /Delete invoice/.test(action.label));
       assert.equal(deletes.length, 3, `expected 3 row actions, listed ${labelsOf(actions)}`);
       assert.ok(deletes.every((action) => action.hover === true), labelsOf(deletes));
+      assert.equal((await fixtureState(tab)).deleted, null);
+    },
+  },
+  {
+    name: 'a hover-revealed row action re-labelled after observation is refused as stale, not clicked',
+    file: 'hover-row-actions.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const target = find(page.actions, 'button', /Delete invoice 001/);
+      assert.ok(target, `Delete invoice 001 not listed: ${labelsOf(page.actions)}`);
+      assert.equal(target.hover, true);
+      // An unkeyed re-render: the same <button> elements stay, their labels and row text swap.
+      await tab.evaluate(`(() => {
+        const [first, second] = document.querySelectorAll('tr');
+        const [firstButton, secondButton] = [first, second].map((row) => row.querySelector('button'));
+        const [firstLabel, secondLabel] = [firstButton, secondButton].map((button) => button.getAttribute('aria-label'));
+        const [firstName, secondName] = [first, second].map((row) => row.firstElementChild.textContent);
+        firstButton.setAttribute('aria-label', secondLabel);
+        secondButton.setAttribute('aria-label', firstLabel);
+        first.firstElementChild.textContent = secondName;
+        second.firstElementChild.textContent = firstName;
+      })()`);
+      await assert.rejects(
+        tab.act(target, page),
+        (error) => error instanceof StalePage && !(error instanceof TargetUnreachable),
+      );
       assert.equal((await fixtureState(tab)).deleted, null);
     },
   },
