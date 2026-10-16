@@ -182,6 +182,31 @@
     const text = (e.closest('tr,[role="row"],li,label')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     return text && 'Select: ' + text;
   };
+  // jev-browse: an icon-only control is named the way a person would describe it: by the control it toggles, or by its icon.
+  const styleModifier = /^fa-(?:solid|regular|light|brands|lg|xs|sm|fw|\d+x)$/;
+  const iconHint = (el) => {
+    const testId = (el.getAttribute('data-testid') || '').match(/^icon-(.+)$/);
+    if (testId) return testId[1];
+    for (const token of (el.getAttribute('class') || '').split(/\s+/)) {
+      const hint = !styleModifier.test(token) && token.match(/^(?:lucide|fa|bi|mdi|icon)-(.+)$/);
+      if (hint) return hint[1];
+    }
+    return '';
+  };
+  const contextName = (e, hiddenInput) => {
+    const own = hiddenInput ? name(hiddenInput).trim() : '';
+    if (own) return own;
+    const controlled = e.getAttribute('aria-controls');
+    if (controlled) {
+      const sibling = [...document.querySelectorAll('[aria-controls="' + CSS.escape(controlled) + '"]')].find(
+        (other) => other !== e && name(other).trim(),
+      );
+      const target = sibling ? name(sibling) : document.getElementById(controlled)?.getAttribute('aria-label');
+      if (target?.trim()) return 'Toggle ' + target.replace(/\s+/g, ' ').trim();
+    }
+    const icon = [e, ...e.querySelectorAll('svg,i,span,img')].map(iconHint).find(Boolean);
+    return icon ? icon.replace(/-/g, ' ') + ' icon' : '';
+  };
   const queried = roots.flatMap(deepQuery);
   // jev-browse: a checkbox or radio hidden with opacity or display (Grafana's quick time ranges) is chosen through its
   // visible label, so the label stands in for the input. A visible input keeps its own entry; a disabled one stays out.
@@ -259,7 +284,9 @@
             ? e.innerText.replace(/\s+/g, ' ').trim()
             : unnamedToggle(e, rname)
               ? rowContext(e)
-              : name(e).replace(/\s+/g, ' ').trim()) || rname,
+              : name(e).replace(/\s+/g, ' ').trim()) ||
+            contextName(e, hiddenInput) ||
+            rname,
           200 - suffix.length,
         ) + suffix,
       rect: { x: r.x, y: r.y, w: r.width, h: r.height },
