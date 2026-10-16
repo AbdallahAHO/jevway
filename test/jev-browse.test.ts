@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CdpError, type CdpConnection } from '../src/browser/cdp.ts';
 import * as chrome from '../src/browser/chrome.ts';
 import { jpegSize, PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
+import { showsTarget } from '../src/browser/words.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
 import { buildRequest, decide, NO_SUPPLIED_VALUE, overflowFolds, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
 import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
@@ -196,6 +197,27 @@ const fakeTab = (pages: PageState[] = [page()]) => {
   };
   return { tab, acted, asTab: tab as unknown as Tab };
 };
+
+describe('the words a confirmation quotes', () => {
+  it.each([
+    ['app', 'The app settings'],
+    ['scratch', 'ada/scratch - Settings'],
+    ['v1.2', 'Milestone v1.2, due soon'],
+    ['v1.2', 'Milestone v1.2.'],
+  ])('finds "%s" in "%s"', (target, shown) => {
+    expect(showsTarget(target, 'Delete', [shown])).toBe(true);
+  });
+
+  it.each([
+    ['app', 'Apply now'],
+    ['ada/app', 'ada/app2 - Settings'],
+    ['ada/scratch', 'ada/scratch-2 - Settings'],
+    ['v1.2', 'Release v1.20'],
+    ['v1.2', 'Release v1.2.3'],
+  ])('does not find "%s" inside a longer word in "%s"', (target, shown) => {
+    expect(showsTarget(target, 'Delete', [shown])).toBe(false);
+  });
+});
 
 describe('action space', () => {
   it('gives each DOM node one index and each operation only its valid targets', () => {
