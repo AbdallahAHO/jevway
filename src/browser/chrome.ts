@@ -75,15 +75,16 @@ const launchChrome = async (headless: boolean): Promise<ChromeHandle> => {
     'about:blank',
   ];
   const chrome = spawn(chromeExecutable(), args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  const endpoint = await readDevToolsEndpoint(chrome).catch(async (error) => {
-    // Chrome started but never reported DevTools: don't leave it or its profile behind.
+  // Any failure before a handle is returned must not leave Chrome or its profile behind.
+  const abandon = async (error: unknown): Promise<never> => {
     await stopChrome(chrome);
     try {
       rmSync(profile, { recursive: true, force: true });
     } catch {}
     throw error;
-  });
-  const cdp = await CdpConnection.open(endpoint);
+  };
+  const endpoint = await readDevToolsEndpoint(chrome).catch(abandon);
+  const cdp = await CdpConnection.open(endpoint).catch(abandon);
   return {
     cdp,
     // Returns even if Chrome already exited; a profile that can't be removed never rejects.
