@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Repeated actions</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  .grid { display: grid; grid-template-columns: repeat(4, 160px); gap: 12px; }
+  .card { border: 1px solid #bbb; padding: 10px; }
+  .card h3 { margin: 0 0 6px; font-size: 15px; }
+  .pricebar { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+  .thumb { display: inline-block; width: 40px; height: 40px; background: #ddd; }
+  footer { margin-top: 16px; }
+</style>
+</head>
+<body>
+<!-- A shop grid: the price and the button sit in a wrapper under the card, as on SauceDemo. -->
+<div class="grid">
+  <div class="card"><h3>Backpack</h3><p>Carries a laptop.</p><div class="pricebar"><span>$29.99</span><button type="button">Add to cart</button></div></div>
+  <div class="card"><h3>Bike Light</h3><p>Visible from afar.</p><div class="pricebar"><span>$9.99</span><button type="button">Add to cart</button></div></div>
+  <div class="card"><h3>Onesie</h3><p>Soft cotton.</p><div class="pricebar"><span>$7.99</span><button type="button">Add to cart</button></div></div>
+  <div class="card"><h3>Jacket</h3><p>Keeps the wind out.</p><div class="pricebar"><span>$49.99</span><button type="button">Add to cart</button></div></div>
+</div>
+
+<!-- Two links to one page from one card, as on SauceDemo: only the title link's wrapper has text around it, so the card
+     cannot tell the links apart and neither gets a context. -->
+<div class="card" style="margin-top: 12px; width: 220px">
+  <div class="media"><a href="#backpack" aria-label="View Backpack"><span class="thumb"></span></a></div>
+  <div class="info"><a href="#backpack" aria-label="View Backpack"><div>Backpack</div></a><p>Carries a laptop.</p></div>
+</div>
+
+<footer><button type="button">Checkout</button></footer>
+<script>
+  window.__fixture = { added: [] };
+  for (const button of document.querySelectorAll('.card button')) {
+    button.addEventListener('click', () => window.__fixture.added.push(button.closest('.card').querySelector('h3').textContent));
+  }
+</script>
+</body>
+</html>

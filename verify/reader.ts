@@ -562,6 +562,35 @@ const checks: Check[] = [
       );
     },
   },
+  {
+    name: 'repeated action labels carry their card',
+    file: 'repeated-actions.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const adds = page.actions.filter((action) => action.role === 'button' && action.label.startsWith('Add to cart'));
+      assert.deepEqual(
+        adds.map((action) => action.label),
+        ['Backpack', 'Bike Light', 'Onesie', 'Jacket'].map((title) => `Add to cart — ${title}`),
+      );
+      await tab.act(adds[1], page);
+      assert.deepEqual((await fixtureState(tab)).added, ['Bike Light']);
+    },
+  },
+  {
+    name: 'unique labels are unchanged',
+    file: 'repeated-actions.html',
+    run: async (tab) => {
+      const actions = await listed(tab);
+      assert.ok(find(actions, 'button', /^Checkout$/), `Checkout renamed: ${labelsOf(actions)}`);
+      // Two links to one page from one card have no card of their own to tell them apart: neither gets a context, even
+      // though one of their wrappers happens to hold a description.
+      const links = actions.filter((action) => action.role === 'link');
+      assert.deepEqual(
+        links.map((action) => action.label),
+        ['View Backpack', 'View Backpack'],
+      );
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port.
