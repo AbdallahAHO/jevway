@@ -28,7 +28,8 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
 - Pass every text value the goal needs in \`values\` (e.g. {"city":"Lisbon","email":"a@b.co"}). Jev only types supplied values.
 - Pass \`done_when\`: visible evidence of success. It is checked independently before status "done".
 - Statuses that hand control back — continue with the same \`session\`:
-  needs_input → add the missing value to \`values\`; needs_confirmation → the next click looks irreversible, set \`confirm_irreversible: true\` only if the user wants it;
+  needs_input → add the missing value to \`values\`;
+  needs_confirmation → the next click looks irreversible (delete, pay, send). Set \`confirm_irreversible: true\` only when the user's own request names this action and its target (e.g. "delete the repository X" → the clicks that delete X); for anything else, stop and ask the user. Each confirmation covers one click.
   uncertain / blocked → inspect \`stuck\` (candidates, page_text), rephrase \`goal\`, or finish the step with chrome-devtools.
 - Not supported: iframes, shadow DOM, canvas, file uploads, popup tabs. Use chrome-devtools for those.`,
     inputSchema: {
@@ -41,7 +42,12 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
       values: z.record(z.string(), z.string()).optional().describe('Named text values Jev may type.'),
       done_when: z.string().optional().describe('Visible evidence that the goal is complete.'),
       session: z.string().optional().describe('Continue a previous session (same tab, history kept).'),
-      confirm_irreversible: z.boolean().optional().describe('Allow exactly one click flagged as irreversible.'),
+      confirm_irreversible: z
+        .boolean()
+        .optional()
+        .describe(
+          "Allow exactly one click flagged as irreversible — only for the action and target the user's request names.",
+        ),
       max_steps: z.number().int().positive().max(100).optional(),
       allow_coordinate_clicks: z
         .boolean()

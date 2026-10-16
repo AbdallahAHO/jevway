@@ -31,7 +31,7 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 | --- | --- |
 | `done` | Trust `url`/`title`; inspect with chrome-devtools if the user needs details. |
 | `needs_input` | The reason names the field. Get the value (ask the user if unknown) and call again with the same `session` and the new `values`. |
-| `needs_confirmation` | The next click looks irreversible (pay, send, delete, submit). Continue with `confirm_irreversible: true` only if the user asked for that action. It covers one click. |
+| `needs_confirmation` | The next click looks irreversible (pay, send, delete, submit). Continue with `confirm_irreversible: true` only when the user's own request names this action and its target; for anything else, stop and ask the user. "Delete the repository X" covers every click that deletes X: on Forgejo, the danger-zone button and then the dialog's button, each needing its own confirmation. "Tidy up unused repos", a different repository, or a step the user never asked for (paying while reviewing an order) is not covered: ask first. Each confirmation covers one click. |
 | `uncertain` / `blocked` | Read `stuck.candidates` and `stuck.page_text`. Rephrase `goal` for the same `session`, or do the step with chrome-devtools and then continue. |
 | `step_budget` | Split the goal into smaller calls on the same `session`. |
 

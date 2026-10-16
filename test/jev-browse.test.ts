@@ -289,7 +289,10 @@ describe('BrowserTask', () => {
     ]);
     const task = new BrowserTask(asTab, ask, { goal: 'Pay', maxSteps: 2 });
 
-    expect((await task.run()).status).toBe('needs_confirmation');
+    const held = await task.run();
+    expect(held.status).toBe('needs_confirmation');
+    expect(held.reason).toContain('"Confirm booking and pay €412" looks irreversible');
+    expect(held.reason).toContain("Confirm only if the user's request named this action and target; otherwise ask the user.");
     expect(acted).toEqual([]);
 
     task.update({ confirmIrreversible: true });

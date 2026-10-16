@@ -103,7 +103,7 @@ Every model judges commit risk **per click candidate by name**, in one follow-up
 | --- | --- |
 | `done` | Jev chose DONE **and** a separate `done_when` check passed, or that check alone scored ≥ 0.9 once or ≥ 0.75 on 3 decisions in a row. A rejected DONE waits and re-decides, up to 3 times. |
 | `needs_input` | A field needs a value that isn't in `values`. Nothing is invented. |
-| `needs_confirmation` | The next click looks irreversible (pay, send, delete, submit). `confirm_irreversible: true` allows exactly one such click. |
+| `needs_confirmation` | The next click looks irreversible (pay, send, delete, submit). `confirm_irreversible: true` allows exactly one such click, and an agent should set it only for the action and target the user's own request names; otherwise it asks the user. It is honoured on a new session's first call too. |
 | `uncertain` | Operation or target confidence was below the model threshold (Jev 0.3; per model in `src/jev/model.ts`), 6 actions in a row ran under 0.5 confidence (exploring, not progressing), or DONE could not be verified. |
 | `blocked` | No supported operation can progress, 3 actions in a row changed nothing, the same target was covered 3 times, one action only toggled the page back and forth 4 times, or the same element was used 6 times in 7 actions. |
 | `step_budget` | `max_steps` was reached (default 40). |

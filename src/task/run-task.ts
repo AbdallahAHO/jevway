@@ -683,7 +683,7 @@ export class BrowserTask {
     if (isRiskyClick(decision) && !this.#confirmedCommit) {
       return [
         'needs_confirmation',
-        `Clicking "${decision.action?.label ?? 'the control boxed on the screenshot'}" looks irreversible (risk ${round(decision.commitRisk!)})`,
+        `Clicking "${decision.action?.label ?? 'the control boxed on the screenshot'}" looks irreversible (risk ${round(decision.commitRisk!)}). Confirm only if the user's request named this action and target; otherwise ask the user.`,
       ];
     }
     return undefined;
