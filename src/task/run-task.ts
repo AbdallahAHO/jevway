@@ -257,6 +257,8 @@ export class BrowserTask {
           // A single done spike that the next step confidently contradicts gets one screenshot look; `always` already saw a screenshot and `off` has nothing new to show.
           const lookFirst = !steadyDone && contradictsDoneSpike(decision, screenshots);
           const look = lookFirst ? await this.#lastLook(page) : undefined;
+          // The spike that triggered the look stays in the trace ahead of it, confirmed or not.
+          if (look) this.trace.push({ decision: { ...decision, action: decision.action?.label }, executed: false, elapsed_ms: elapsed() });
           if (!lookFirst || (look?.doneProbability ?? 0) >= SPIKE_CONFIRMED) {
             const verdict = look ?? decision;
             this.trace.push({ decision: { ...verdict, action: verdict.action?.label }, executed: false, elapsed_ms: elapsed() });

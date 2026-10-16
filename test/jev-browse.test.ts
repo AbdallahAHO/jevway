@@ -842,21 +842,34 @@ describe('loop gotchas', () => {
     it('carries on with the next step when the screenshot look does not confirm the goal', async () => {
       const { ask, requests } = scriptedJev([spike, { operation: 'CLICK', click_target: '1', done_check: 0.3 }, { operation: 'DONE', done_check: 0.8 }]);
       const { tab, acted, asTab } = fakeTab(pages());
-      const summary = await new BrowserTask(asTab, ask, options).run();
+      const task = new BrowserTask(asTab, ask, options);
+      const summary = await task.run();
       expect(summary.status).toBe('done');
       expect(acted).toHaveLength(1);
       expect(requests).toHaveLength(3);
       expect(tab.screenshots).toBe(1);
+      // The spike and the look that did not confirm it both show before the step that then ran.
+      expect(task.trace.slice(0, 3)).toMatchObject([
+        { executed: false, decision: { operation: 'CLICK', doneProbability: 0.9 } },
+        { executed: false, decision: { doneProbability: 0.3 } },
+        { executed: true, decision: { operation: 'CLICK', doneProbability: 0.9 } },
+      ]);
     });
 
     it('ends as done without acting when the screenshot look confirms the goal', async () => {
       const { ask, requests } = scriptedJev([spike, { ...spike, done_check: 0.8 }]);
       const { tab, acted, asTab } = fakeTab(pages());
-      const summary = await new BrowserTask(asTab, ask, options).run();
+      const task = new BrowserTask(asTab, ask, options);
+      const summary = await task.run();
       expect(summary).toMatchObject({ status: 'done', done_probability: 0.8, reason: 'Completion condition verified: It is open' });
       expect(acted).toHaveLength(0);
       expect(requests).toHaveLength(2);
       expect(tab.screenshots).toBe(1);
+      // The spike that triggered the look, then the look that ended the run.
+      expect(task.trace.slice(-2)).toMatchObject([
+        { executed: false, decision: { operation: 'CLICK', doneProbability: 0.9 } },
+        { executed: false, decision: { doneProbability: 0.8 } },
+      ]);
     });
 
     it('takes no look when the next step is waiting or unsure', async () => {
