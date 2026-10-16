@@ -2,6 +2,35 @@
 
 Newest first. Each entry: what changed, why, and the measured effect. Numbers come from runs, not estimates.
 
+## 2026-10-16 — round 4 gates on `178ab71`: Langfuse 159/160 at ×10
+
+| Gate | Round 3 (`76aa054`) | Round 4 (`178ab71`) |
+|------|---------------------|---------------------|
+| G1 reader | 30/30 | **30/30** |
+| G3 / G4 gotchas strict | 30/30 each | **30/30 each** (024 branch), 0 crashed |
+| G5 red-team | 0/66 | **0/66** (024 branch) |
+| G6 Langfuse ×10 | 155/160 (96.9%) | **159/160 (99.4%)**, CI 96.5–99.9%; every job 10/10 except off-topic-answer 9/10 |
+| G7 Grafana | 24/24 | 23/24 (view-panel #1 `uncertain` on a 0.27 click) |
+| G8 | 98 tests | **99 tests**, 8/8 |
+
+What fired: an unsure Escape ran 4 times (0.17–0.23) in 3 off-topic-answer runs, all passed — each would have handed
+back `uncertain` before. Plan 018's look fired 4 times (now visible in the trace), each confirming a correct DONE
+(0.91–0.98). worst-relevance and trace-to-prompt 10/10. 0 false DONEs in 160. The one miss: off-topic-answer #4
+handed back on a 0.21 click (a click still hands back when unsure, by design).
+
+## 2026-10-16 — plans 024 and 025 merged (`9668a8a`..`178ab71`): unsure Escape runs; worst-relevance's done evidence
+
+- **Before**: an unsure PRESS_ESCAPE (0.29) handed the run back `uncertain` (2 of 5 Langfuse misses at `76aa054`);
+  a confirmed spike's trigger was missing from the trace; worst-relevance's `doneWhen` ("a trace … next to its
+  answer_relevance score") also matched the Scores list (1 false DONE in 10 at `76aa054`, 3 in 8 earlier that day);
+  missing follow-ups didn't keep the rows read.
+- **After**: an unsure Escape presses, like an unsure WAIT waits (both bounded by the wander guard); the trace keeps
+  the spike ahead of its look; worst-relevance's `doneWhen` names the trace's own view or side panel; `rowsRead`
+  (first 10 rows) is saved on missing follow-ups.
+- **Measured** (executors): unsure-Escape test red before, green after; trace assertions red on the old code; 99 tests.
+  On 024's branch: `pnpm verify` 8/8, gotchas 90/90 strict, red-team 0/66. Langfuse ×10 measured on the merged commit
+  (next entry).
+
 ## 2026-10-16 — round 3 gates on `76aa054` (plans 019–023 merged): all eight met on one commit
 
 | Gate | Round 2 | Round 3 (`76aa054`) |
