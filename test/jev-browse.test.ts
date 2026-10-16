@@ -633,6 +633,53 @@ describe('Box in the task loop', () => {
     expect(onTab.tab.clicksAt[0].y).toBeCloseTo(425);
     expect(summary.steps[0]).toMatchObject({ operation: 'CLICK_AT', element: 'canvas @ 150,425' });
   });
+
+  it('a rejected DONE rescued onto a risky control still asks for confirmation', async () => {
+    const { ask } = scriptedJev([
+      { operation: 'DONE', done_check: 0.2, next_click_box: boxAt(PAY_RECT), next_click_present: 0.9, next_click_commit_risk: 0.95 },
+    ]);
+    const { asTab, acted } = fakeTab([noFields()]);
+    const summary = await new BrowserTask(asTab, ask, { ...boxed, doneWhen: 'Paid' }).run();
+    expect(summary).toMatchObject({ status: 'needs_confirmation' });
+    expect(summary.reason).toContain('Confirm booking and pay €412');
+    expect(acted).toEqual([]);
+  });
+
+  it('an unsure step rescued onto a risky control still asks for confirmation', async () => {
+    const unsureOnPay = {
+      operation: 'WAIT',
+      confidence: 0.1,
+      next_click_box: boxAt(PAY_RECT),
+      next_click_present: 0.9,
+      next_click_commit_risk: 0.95,
+    };
+    const { ask } = scriptedJev([unsureOnPay]);
+    const { asTab, acted } = fakeTab([noFields({ fingerprint: 'a' }), noFields({ fingerprint: 'b' }), noFields({ fingerprint: 'c' })]);
+    const task = new BrowserTask(asTab, ask, boxed);
+
+    expect((await task.run()).status).toBe('needs_confirmation');
+    expect(acted).toEqual([]);
+
+    // One confirmation covers one click: the same rescue on the next step is gated again.
+    task.update({ confirmIrreversible: true });
+    const summary = await task.run();
+    expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
+    expect(summary.status).toBe('needs_confirmation');
+  });
+
+  it('a coordinate click on a risky box still asks for confirmation', async () => {
+    const canvasPay = {
+      operation: 'BLOCKED',
+      next_click_box: boxAt({ x: 100, y: 400, w: 100, h: 50 }),
+      next_click_present: 0.9,
+      next_click_commit_risk: 0.95,
+    };
+    const { ask } = scriptedJev([canvasPay]);
+    const { tab, asTab } = fakeTab([noFields()]);
+    const summary = await new BrowserTask(asTab, ask, { ...boxed, allowCoordinateClicks: true }).run();
+    expect(summary).toMatchObject({ status: 'needs_confirmation' });
+    expect(tab.clicksAt).toEqual([]);
+  });
 });
 
 describe('loop gotchas', () => {
