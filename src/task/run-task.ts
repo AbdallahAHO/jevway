@@ -79,6 +79,8 @@ const DIALOG_MESSAGE_CHARS = 200;
 // How much of what a page said after a submit a blocked reason quotes, and how many submits a task remembers.
 const SUBMIT_ANSWER_CHARS = 300;
 const SUBMITS_KEPT = 10;
+// Lines kept per page path in #seenLines: a page that streams new text forever must not grow the set without end.
+const SEEN_LINES_PER_PATH = 4000;
 
 const DEFAULTS = {
   maxSteps: 40,
@@ -198,6 +200,10 @@ export class BrowserTask {
   #typedFields: { label: string; path: string; value?: string }[] = [];
   /** Risky clicks that executed, with what the page said right after (see #rejectedSubmit). */
   #submits: Submit[] = [];
+  /** Every line of text a decision was made on, per page path: what a submit's answer is measured against, so a reloaded page's chrome never counts as what the page said. */
+  #seenLines = new Map<string, Set<string>>();
+  /** What the page said after the last submit, shown to Jev on top of the page text while the run stays on that path. */
+  #said: { label: string; path: string; lines: string[]; text: string } | undefined;
   /** Consecutive misses on the same target node because it couldn't be reached on an unchanged page. */
   #unreachable = { node: undefined as number | undefined, count: 0 };
   /** Consecutive refusals of wait, Escape, scroll or Enter because the page changed since the decision; any executed action resets it. */
@@ -569,10 +575,13 @@ export class BrowserTask {
         // A confirmation covers exactly one risky click.
         if (isRiskyClick(decision)) this.#spendConfirmation();
         // What a rejected submit is told from later: where the click was, what had been typed, and the page's text before it.
+        const textBefore = page.text;
         const submitted =
           isRiskyClick(decision) && decision.action
-            ? { label: bareLabel(decision.action.label), path: pathOf(page.url), fields: this.#typedOn(pathOf(page.url)), textBefore: page.text }
+            ? { label: bareLabel(decision.action.label), path: pathOf(page.url), fields: this.#typedOn(pathOf(page.url)), textBefore }
             : undefined;
+        // A click while an edit is still unsaved is the save, whatever its risk.
+        const clickedWithEditPending = decision.operation === 'CLICK' && this.#unsavedEdit !== undefined;
 
         const before = page.fingerprint;
         const pathBefore = pathOf(page.url);
@@ -605,6 +614,7 @@ export class BrowserTask {
         if (submitted) {
           this.#submits = [...this.#submits, { ...submitted, answer: newTextOf(page.text, submitted.textBefore) }].slice(-SUBMITS_KEPT);
         }
+        if (submitted || (clickedWithEditPending && !this.#unsavedEdit)) this.#said = this.#saidAfter(bareLabel(action.label), page, textBefore);
         // A click that flipped a collapsed control open leaves the run's own menu: it is closed before the run says done.
         // A fold the disclosure rescue opened is for reading what is inside it, so it stays open.
         if (decision.operation === 'CLICK' && decision.via !== 'disclosure' && action.expanded === 'false' && page.actions.some((a) => a.node === action.node && a.expanded === 'true')) {
@@ -727,12 +737,13 @@ export class BrowserTask {
   // One decision per step; `fallback` takes a second, screenshot-backed look at a shaky or stalled one.
   async #decide(page: PageState, { lastLook = false } = {}): Promise<Decision> {
     const { goal, values, doneWhen, screenshots, compactRules, elementRisk, pageRisk, imageTransport, box, minConfidence } = this.#options;
+    this.#rememberLines(page);
     const decideOn = async (withScreenshot: boolean) => {
       const screenshot = withScreenshot
         ? await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page)
         : undefined;
       const decision = await decide(this.#ask, {
-        page: this.#withKeys(page),
+        page: this.#withSaid(this.#withKeys(page)),
         goal,
         values,
         history: this.#history.slice(-10),
@@ -769,6 +780,32 @@ export class BrowserTask {
       isGrayZoneClick(decision) ||
       (last?.page_changed === false && last.operation !== 'WAIT')
     );
+  }
+
+  #rememberLines(page: PageState) {
+    const path = pathOf(page.url);
+    const seen = this.#seenLines.get(path) ?? new Set<string>();
+    for (const line of linesOf(page.text)) if (seen.size < SEEN_LINES_PER_PATH) seen.add(line);
+    this.#seenLines.set(path, seen);
+  }
+
+  // jev-browse: what the page said after the last submit is the first line of the text Jev reads. The done check judges the current
+  // page's text only, so a "saved" message that scrolled away (or sits above the viewport) is no evidence unless the text carries it.
+  // It stays while the run is on the path where the message appeared; the caller's page_text is never changed.
+  #withSaid(page: PageState): PageState {
+    if (this.#said && this.#said.path !== pathOf(page.url)) this.#said = undefined;
+    if (!this.#said) return page;
+    return { ...page, text: `[Page message after "${this.#said.label}"] ${this.#said.text}\n${page.text}` };
+  }
+
+  // The lines the page now shows that this run never saw on its path. The previous message of a submit doesn't count as seen, so a repeated one is quoted again.
+  #saidAfter(label: string, page: PageState, textBefore: string) {
+    const path = pathOf(page.url);
+    const known = new Set([...(this.#seenLines.get(path) ?? []), ...linesOf(textBefore)]);
+    for (const line of this.#said?.lines ?? []) known.delete(line);
+    const lines = unseenLines(page.text, known);
+    const text = lines.join(' ').slice(0, SUBMIT_ANSWER_CHARS);
+    return text ? { label, path, lines, text } : undefined;
   }
 
   // Fixed keys: right after typing into a search-like field that is still there, Enter can submit it (GitHub, npm,
@@ -1048,16 +1085,14 @@ const pathOf = (url: string) => {
 // A line with no words, only digits, separators and a unit (a footer's "2ms" render time), changes on every load and says nothing the page did.
 const NO_WORDS = /^[\d\s.,:%]+(ms|s|%)?$/i;
 
-// The lines of the page's text now that were not there before, trimmed and joined; the reader's own password lines say nothing the page did.
-const newTextOf = (text: string, before: string) => {
-  const known = new Set(before.split('\n').map((line) => line.trim()));
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line && !known.has(line) && !line.startsWith('Password field "') && !NO_WORDS.test(line))
-    .join(' ')
-    .slice(0, SUBMIT_ANSWER_CHARS);
-};
+const linesOf = (text: string) => text.split('\n').map((line) => line.trim()).filter(Boolean);
+
+// The lines of `text` that are not in `known`; the reader's own password and loading lines say nothing the page did.
+const unseenLines = (text: string, known: Set<string>) =>
+  linesOf(text).filter((line) => !known.has(line) && !line.startsWith('Password field "') && !line.startsWith('Loading: ') && !NO_WORDS.test(line));
+
+// The lines of the page's text now that were not there before, trimmed and joined.
+const newTextOf = (text: string, before: string) => unseenLines(text, new Set(linesOf(before))).join(' ').slice(0, SUBMIT_ANSWER_CHARS);
 
 const isSearchLike = (field: PageAction) =>
   ['searchbox', 'combobox'].includes(field.role ?? '') || SEARCH_LIKE.test(field.label);
