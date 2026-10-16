@@ -41,6 +41,8 @@ export interface PageState {
   guards: Record<string, unknown>;
   omitted_actions: number;
   fingerprint: string;
+  /** Visible password fields as `{ name, filled }`: whether each has dots in it, never its value. */
+  passwordFields?: { name: string; filled: boolean }[];
 }
 
 /** The page moved on since it was observed; observe again and re-decide. Never a reason to guess. */

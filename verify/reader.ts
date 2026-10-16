@@ -605,6 +605,11 @@ const checks: Check[] = [
       assert.ok(page.text.includes('Password field "Password": filled'), `the filled field is not described: ${page.text}`);
       assert.ok(page.text.includes('Password field "Confirm password": empty'), `the empty field is not described: ${page.text}`);
       assert.ok(!page.text.includes('Old password'), `a hidden field is described: ${page.text}`);
+      // The same facts as data, which the request carries outside the page text.
+      assert.deepEqual(page.passwordFields, [
+        { name: 'Password', filled: true },
+        { name: 'Confirm password', filled: false },
+      ]);
     },
   },
   {

@@ -201,6 +201,16 @@ describe('Jev request', () => {
     expect(Array.isArray(buildRequest({ ...input, values: {} }, space).state)).toBe(false);
   });
 
+  it('carries password field state as data, and no key when the page has none', () => {
+    const space = buildActionSpace(bookingActions);
+    const withFields = page({ passwordFields: [{ name: 'Password', filled: true }] });
+    expect((buildRequest({ ...input, page: withFields, values: {} }, space).state as any).password_fields).toEqual([
+      { name: 'Password', filled: true },
+    ]);
+    expect(buildRequest({ ...input, values: {} }, space).state).not.toHaveProperty('password_fields');
+    expect(buildRequest({ ...input, page: page({ passwordFields: [] }), values: {} }, space).state).not.toHaveProperty('password_fields');
+  });
+
   it('rejects malformed answers so nothing executes', () => {
     expect(() => validChoice({ choice: 'X', confidence: 1, probabilities: { A: 1 } }, ['A'])).toThrow(/no action/);
     expect(() => validChoice({ choice: 'A', confidence: 1, probabilities: { A: 0.5, B: 0.1 } }, ['A', 'B'])).toThrow();
