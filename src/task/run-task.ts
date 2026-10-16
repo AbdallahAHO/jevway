@@ -112,6 +112,8 @@ const GUARDS = {
   repeatWindow: 7,
   // The same action this many times, with the page flipping between two states each time, is a toggle loop.
   toggleLoop: 4,
+  // Clicks refused because the page changed since the decision, per allowed step: past that many the page won't hold still (tab.act's StalePage).
+  staleRefusalsPerStep: 2,
 } as const;
 // A DONE the completion check rejects usually means content is still loading: wait and re-decide this many times.
 const MAX_REJECTED_DONE = 3;
@@ -250,6 +252,7 @@ export class BrowserTask {
     let page: PageState = BLANK_PAGE;
     let executed = 0;
     let decisions = 0;
+    let staleRefusals = 0;
     let rejectedDone = 0;
     let coveredRetries = 0;
     let doneStreak = 0;
@@ -488,6 +491,11 @@ export class BrowserTask {
           if (!(error instanceof StalePage)) throw error;
           record(false);
           if (!(error instanceof TargetUnreachable)) {
+            // A page that re-renders faster than a decision takes would otherwise spend the steps' budget on clicks it never let run.
+            decisions--;
+            if (++staleRefusals > maxSteps * GUARDS.staleRefusalsPerStep) {
+              return stop('blocked', `The page kept changing under the click: "${action.label}" was refused ${staleRefusals} times as stale`, decision);
+            }
             if (PAGE_LEVEL_KINDS.includes(action.kind)) this.#pageLevelStale++;
             this.#recording?.discardLast();
             page = await this.#tab.observe();
