@@ -2825,6 +2825,99 @@ describe('page dialogs', () => {
       const summary = await new BrowserTask(asTab, ask, { goal: 'Save', doneWhen: 'x', changeWaitMs: 0 }).run();
       expect(summary.status).toBe('done');
     });
+
+    describe('a click the page asks about before leaving', () => {
+      const link = (label: string, node: number): PageAction => ({ id: `e${node}`, kind: 'click', node, role: 'link', label });
+      // Repository settings: a description, two links away and Save. Every page differs, so no step looks like a no-op.
+      const settingsPages = () =>
+        ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((fingerprint) =>
+          page({
+            fingerprint,
+            actions: [
+              { id: 'e1', kind: 'fill', node: 1, role: 'textbox', label: 'Description', value: '' },
+              link('Wiki', 2),
+              link('Issues', 3),
+              { id: 'e4', kind: 'click', node: 4, role: 'button', label: 'Save settings' },
+            ],
+          }),
+        );
+      // The page's own guard: leaving by these links raises a leave-the-page prompt, answered Stay.
+      const guardLinks = (tab: ReturnType<typeof fakeTab>['tab'], ...labels: string[]) => {
+        const act = tab.act;
+        tab.act = async (...args: Parameters<typeof act>) => {
+          await act(...args);
+          if (labels.includes(args[0].label)) tab.dialogs.push({ type: 'beforeunload', message: '', accepted: false });
+        };
+      };
+      const typeDescription = { operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: 'description' };
+      const wiki = { operation: 'CLICK', click_target: '2' };
+      const issues = { operation: 'CLICK', click_target: '3' };
+      const save = { operation: 'CLICK', click_target: '4', commit_risk: 0.1 };
+      const options = { goal: 'Update the settings', values: { description: 'Battle-tested demo' }, changeWaitMs: 0 };
+      const SAVE_FIRST = (what: string, unsaved: string) =>
+        `${what} would leave the page with ${unsaved}; save it first (a Save or Update button), or answer BLOCKED`;
+      const DESCRIPTION = 'unsaved text in "Description"';
+
+      it('feeds a click back as "save first" naming the field typed, and goes on', async () => {
+        const { ask, requests } = scriptedJev([typeDescription, wiki, save]);
+        const { tab, asTab, acted } = fakeTab(settingsPages());
+        guardLinks(tab, 'Wiki');
+        const summary = await new BrowserTask(asTab, ask, { ...options, maxSteps: 3 }).run();
+        expect(summary.status).not.toBe('blocked');
+        expect(summary.steps[1]).toMatchObject({ operation: 'CLICK', not_executed: SAVE_FIRST('this link', DESCRIPTION) });
+        expect(summary.steps[1].element).toContain('(the page then asked whether to leave the page; stayed on it)');
+        expect(JSON.stringify(requests[2])).toContain('save it first');
+        expect(acted.map((a) => a.label)).toEqual(['Description', 'Wiki', 'Save settings']);
+      });
+
+      it('names a ticked box when that is the unsaved change', async () => {
+        const boxPages = ['a', 'b', 'c', 'd'].map((fingerprint) =>
+          page({
+            fingerprint,
+            actions: [{ id: 'e1', kind: 'click', node: 1, role: 'checkbox', label: 'Enable repository wiki', checked: 'false' }, link('Issues', 2)],
+          }),
+        );
+        const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'CLICK', click_target: '2' }]);
+        const { tab, asTab } = fakeTab(boxPages);
+        guardLinks(tab, 'Issues');
+        const summary = await new BrowserTask(asTab, ask, { goal: 'Turn the wiki off', changeWaitMs: 0, maxSteps: 2 }).run();
+        expect(summary.steps[1]).toMatchObject({ not_executed: SAVE_FIRST('this link', 'unsaved changes to "Enable repository wiki"') });
+      });
+
+      it('hands back naming the field when the same click raises the prompt again', async () => {
+        const { ask } = scriptedJev([typeDescription, wiki]);
+        const { tab, asTab } = fakeTab(settingsPages());
+        guardLinks(tab, 'Wiki');
+        const summary = await new BrowserTask(asTab, ask, options).run();
+        expect(summary.status).toBe('blocked');
+        expect(summary.reason).toBe(
+          'Leaving the page would discard the unsaved text in "Description" (the page asked before leaving); save it first, or ask the user whether to discard it.',
+        );
+      });
+
+      it('gives each link its own "save first" before handing back', async () => {
+        const { ask } = scriptedJev([typeDescription, wiki, issues, issues]);
+        const { tab, asTab } = fakeTab(settingsPages());
+        guardLinks(tab, 'Wiki', 'Issues');
+        const summary = await new BrowserTask(asTab, ask, options).run();
+        expect(summary.steps[1].not_executed).toBe(SAVE_FIRST('this link', DESCRIPTION));
+        expect(summary.steps[2].not_executed).toBe(SAVE_FIRST('this link', DESCRIPTION));
+        expect(summary.status).toBe('blocked');
+        expect(summary.reason).toContain('Leaving the page would discard the unsaved text in "Description"');
+      });
+
+      it('keeps the generic reply when nothing was typed or ticked', async () => {
+        const { ask } = scriptedJev([wiki]);
+        const { tab, asTab } = fakeTab(settingsPages());
+        guardLinks(tab, 'Wiki');
+        const summary = await new BrowserTask(asTab, ask, options).run();
+        expect(summary.steps[0].not_executed).toBeUndefined();
+        expect(summary.status).toBe('blocked');
+        expect(summary.reason).toBe(
+          'The page keeps asking (beforeunload dialog). jev-browse only answers Cancel to these; ask the user how to proceed.',
+        );
+      });
+    });
   });
 });
 
