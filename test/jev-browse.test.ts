@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as chrome from '../src/browser/chrome.ts';
 import { jpegSize, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
-import { buildRequest, decide, NO_SUPPLIED_VALUE, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
+import { buildRequest, decide, NO_SUPPLIED_VALUE, overflowFolds, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
 import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
 import * as model from '../src/jev/model.ts';
 import { resolveModel } from '../src/jev/model.ts';
@@ -69,6 +69,26 @@ const foldedPage = (fingerprint: string, expanded?: string) =>
   page({ actions: [...bookingActions.filter((action) => action.kind !== 'fill'), showMore(expanded)], fingerprint });
 const clickTargetOf = (state: PageState, label: string) =>
   Object.entries(buildActionSpace(state.actions).targets.CLICK!).find(([, action]) => action.label === label)![0];
+
+// A phone header folds a detail behind an overflow chip, while the generic menus beside it look more likely to the click head.
+const overflowChip = (node: number, label: string, expanded = 'false'): PageAction => ({
+  id: `chip${node}`,
+  kind: 'click',
+  node,
+  role: 'button',
+  label,
+  expanded,
+});
+const overflowPage = (fingerprint: string, extras: PageAction[]) =>
+  page({
+    actions: [
+      { id: 'menu', kind: 'click', node: 30, role: 'button', label: 'Open menu' },
+      { id: 'account', kind: 'click', node: 31, role: 'button', label: 'Account menu' },
+      ...extras,
+    ],
+    fingerprint,
+  });
+const SOURCE_LINK: PageAction = { id: 'source', kind: 'click', node: 40, role: 'link', label: 'View source observation' };
 
 const answer = (choice: string, ids: string[], confidence = 0.95) => ({
   type: 'choice',
@@ -209,6 +229,15 @@ describe('Jev request', () => {
     ]);
     expect(buildRequest({ ...input, values: {} }, space).state).not.toHaveProperty('password_fields');
     expect(buildRequest({ ...input, page: page({ passwordFields: [] }), values: {} }, space).state).not.toHaveProperty('password_fields');
+  });
+
+  it('counts generic overflow labels as folds, and no other collapsed label', () => {
+    const labels = ['+1', 'Show 2 more tags', 'More', 'more options', '…', '⋯', '⋮', '...', 'ellipsis icon', 'Filters', 'Show more details', 'More details', 'Moreover'];
+    const state = overflowPage('a', [...labels.map((label, i) => overflowChip(50 + i, label)), overflowChip(80, 'More', 'true')]);
+    const clicks = buildActionSpace(state.actions).targets.CLICK!;
+    const ids = Object.keys(clicks);
+    const folds = overflowFolds({ click_target: answer(ids[0], ids) }, clicks);
+    expect(folds.map((fold) => fold.action.label)).toEqual(labels.slice(0, 9));
   });
 
   it('rejects malformed answers so nothing executes', () => {
@@ -580,6 +609,16 @@ describe('per-element commit risk', () => {
     const plain = foldedPage('a');
     const unfolded = scriptedJev([{ operation: 'BLOCKED', click_target: clickTargetOf(plain, 'Show more details') }]);
     expect((await decide(unfolded.ask, { ...input, page: plain, elementRisk: 'chosen' })).requests).toBe(1);
+  });
+
+  it('asks about every collapsed overflow control when the operation is BLOCKED, and about no other collapsed one', async () => {
+    const chips = [overflowChip(32, 'Show 3 more tags'), overflowChip(33, '⋯'), overflowChip(34, 'Filters')];
+    const state = overflowPage('a', chips);
+    const { ask, requests } = scriptedJev([{ operation: 'BLOCKED', click_target: clickTargetOf(state, 'Open menu') }]);
+    const decision = await decide(ask, { ...input, page: state, elementRisk: 'chosen' });
+    const judged = ['Show 3 more tags', '⋯'].map((label) => clickTargetOf(state, label));
+    expect(Object.keys(requests[1].questions)).toEqual(judged.map((index) => `risk_${index}`));
+    expect(Object.keys(decision.elementRisks!)).toEqual(judged);
   });
 
   it('scores the ranked taps for the autopilot, and a malformed score counts as risky', async () => {
@@ -1106,6 +1145,72 @@ describe('loop gotchas', () => {
       task.update({ confirmIrreversible: true });
       await task.run();
       expect(acted).toEqual([{ label: 'Show more details' }]);
+    });
+  });
+
+  describe('BLOCKED with the target behind a collapsed overflow control', () => {
+    const options = { goal: 'Open the source observation', elementRisk: true, changeWaitMs: 0 };
+    const menu = clickTargetOf(overflowPage('a', []), 'Open menu');
+
+    it.each(['Show 1 more session details', 'More actions'])('opens "%s" even though the click head favours another control', async (label) => {
+      const chip = overflowChip(32, label);
+      const closed = overflowPage('a', [chip]);
+      const opened = overflowPage('b', [overflowChip(32, label, 'true'), SOURCE_LINK]);
+      const link = clickTargetOf(opened, 'View source observation');
+      const chipTarget = clickTargetOf(closed, label);
+      const { ask } = scriptedJev([
+        { operation: 'BLOCKED', click_target: menu, [`risk_${chipTarget}`]: 0.02 },
+        { [`risk_${chipTarget}`]: 0.02 },
+        { operation: 'CLICK', click_target: link },
+        { [`risk_${link}`]: 0.02 },
+        { operation: 'DONE' },
+      ]);
+      const { asTab, acted } = fakeTab([closed, opened, overflowPage('c', [])]);
+      const task = new BrowserTask(asTab, ask, options);
+      const summary = await task.run();
+      expect(acted).toEqual([{ label }, { label: 'View source observation' }]);
+      expect(summary.status).toBe('done');
+      expect(task.trace[0]).toMatchObject({ executed: true, decision: { via: 'disclosure', action: label } });
+    });
+
+    it('opens an overflow control only once, then hands back blocked', async () => {
+      const chip = overflowChip(32, 'More actions');
+      const chipTarget = clickTargetOf(overflowPage('a', [chip]), 'More actions');
+      const { ask } = scriptedJev([{ operation: 'BLOCKED', click_target: menu, [`risk_${chipTarget}`]: 0.02 }]);
+      const { asTab, acted } = fakeTab([overflowPage('a', [chip]), overflowPage('b', [chip])]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted).toEqual([{ label: 'More actions' }]);
+      expect(summary.status).toBe('blocked');
+    });
+
+    it('moves on to the next overflow control once the first has been opened', async () => {
+      const chips = [overflowChip(32, '+2'), overflowChip(33, 'More options')];
+      const risks = Object.fromEntries(chips.map((chip) => [`risk_${clickTargetOf(overflowPage('a', chips), chip.label)}`, 0.02]));
+      const { ask } = scriptedJev([{ operation: 'BLOCKED', click_target: menu, ...risks }]);
+      const { asTab, acted } = fakeTab(['a', 'b', 'c'].map((fingerprint) => overflowPage(fingerprint, chips)));
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted).toEqual([{ label: '+2' }, { label: 'More options' }]);
+      expect(summary.status).toBe('blocked');
+    });
+
+    it('leaves a collapsed control alone when its label is no overflow and the click head does not favour it', async () => {
+      const closed = overflowPage('a', [overflowChip(32, 'Filters')]);
+      const { ask } = scriptedJev([{ operation: 'BLOCKED', click_target: menu }]);
+      const { asTab, acted } = fakeTab([closed, overflowPage('b', [overflowChip(32, 'Filters')])]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted).toEqual([]);
+      expect(summary.status).toBe('blocked');
+    });
+
+    it('asks for confirmation instead of opening an overflow control judged risky by name', async () => {
+      const closed = overflowPage('a', [overflowChip(32, 'More actions')]);
+      const chipTarget = clickTargetOf(closed, 'More actions');
+      const { ask } = scriptedJev([{ operation: 'BLOCKED', click_target: menu, [`risk_${chipTarget}`]: 0.9 }]);
+      const { asTab, acted } = fakeTab([closed, overflowPage('b', [overflowChip(32, 'More actions')])]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary).toMatchObject({ status: 'needs_confirmation' });
+      expect(summary.reason).toContain('More actions');
+      expect(acted).toEqual([]);
     });
   });
 
