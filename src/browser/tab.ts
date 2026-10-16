@@ -473,8 +473,14 @@ const RESOLVE_TARGET = `action => {
   if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
       !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
   if (action.kind==='fill' && (e.readOnly || e.getAttribute('aria-readonly')==='true')) return null;
-  const point=()=>{ const r=window.__jevFast.clickRect(e), x=r.x+r.width/2, y=r.y+r.height/2;
-    return r.width && r.height && x>=0 && y>=0 && x<innerWidth && y<innerHeight && e.contains((${DEEP_HIT})(x,y)) ? {x,y} : null; };
+  // The centre of the visible box first, then four more points inside it; a hit must still land inside the target.
+  const point=()=>{ const r=window.__jevFast.clickRect(e);
+    if (!r.width || !r.height) return null;
+    for (const [px,py] of [[.5,.5],[.25,.5],[.75,.5],[.5,.25],[.5,.75]]) {
+      const x=r.x+r.width*px, y=r.y+r.height*py;
+      if (x>=0 && y>=0 && x<innerWidth && y<innerHeight && e.contains((${DEEP_HIT})(x,y))) return {x,y};
+    }
+    return null; };
   // A target clipped by a scrolling sidebar or list is scrolled just into view once, as a person would.
   let at=point();
   if (!at) { e.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'}); at=point(); }
