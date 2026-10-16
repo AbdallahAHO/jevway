@@ -273,6 +273,14 @@ export class BrowserTask {
             elapsed_ms: elapsed(),
           });
 
+        // Blocked on a page that already meets the completion condition means there is nothing left to do.
+        const blockedOnMetGoal =
+          decision.operation === 'BLOCKED' && !decision.fieldsWithoutValue.length && doneProbability >= LAST_LOOK_DONE;
+        if (doneWhen && blockedOnMetGoal) {
+          record(false);
+          return stop('done', `Completion condition verified: ${doneWhen}`, decision);
+        }
+
         decision = this.#boxRescue(decision, page);
         if (decision.operation === 'DONE' && doneWhen && (decision.doneProbability ?? 0) < 0.5) {
           record(false);

@@ -786,6 +786,31 @@ describe('loop gotchas', () => {
     expect(tab.wanted).toEqual(['u-Gy8s1']);
   });
 
+  describe('BLOCKED on a page that may already meet the goal', () => {
+    // No text fields, so BLOCKED is not needs_input.
+    const noFields = page({ actions: bookingActions.filter((action) => action.kind !== 'fill') });
+    const options = { goal: 'x', doneWhen: 'It is done', changeWaitMs: 0 };
+
+    it('ends as done when Jev is blocked on a page whose completion check passes', async () => {
+      const { ask, requests } = scriptedJev([{ operation: 'BLOCKED', done_check: 0.6 }]);
+      const summary = await new BrowserTask(fakeTab([noFields]).asTab, ask, options).run();
+      expect(summary).toMatchObject({ status: 'done', reason: 'Completion condition verified: It is done' });
+      expect(requests).toHaveLength(1);
+    });
+
+    it('stays blocked when the completion check does not pass', async () => {
+      const { ask } = scriptedJev([{ operation: 'BLOCKED', done_check: 0.3 }]);
+      const summary = await new BrowserTask(fakeTab([noFields]).asTab, ask, options).run();
+      expect(summary.status).toBe('blocked');
+    });
+
+    it('stays blocked without a completion condition', async () => {
+      const { ask } = scriptedJev([{ operation: 'BLOCKED', done_check: 0.9 }]);
+      const summary = await new BrowserTask(fakeTab([noFields]).asTab, ask, { goal: 'x', changeWaitMs: 0 }).run();
+      expect(summary.status).toBe('blocked');
+    });
+  });
+
   it('keeps a click that progresses each time, like paging or a counter', async () => {
     const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
     const pages = ['x', 'a', 'b', 'c', 'd', 'e'].map((fingerprint) => page({ fingerprint }));
