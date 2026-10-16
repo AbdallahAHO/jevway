@@ -669,15 +669,25 @@ const RESOLVE_TARGET = `action => {
 const SETTLE = `action => new Promise(resolve => {
   const field=window.__jevFast?.nodes.get(action.node);
   const autocomplete=action.kind==='fill' && field?.getAttribute('role')==='combobox';
-  let frames=0, stopped=false;
+  let frames=0, stopped=false, extended=false;
+  const started=performance.now();
   const finish=()=>{stopped=true;resolve()};
-  setTimeout(finish,autocomplete ? 200 : 50);
+  let deadline=setTimeout(finish,autocomplete ? 200 : 50);
+  // jev-browse: a menu or popover fading in is read as hover-only until it has opened, and a person waits for it too. The wait
+  // is capped at 400 ms, and endless animations (spinners, pulsing dots) don't count.
+  const animating=()=>document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().endTime!==Infinity);
   const ready=()=>{
     if (stopped) return;
+    const moving=animating();
+    if (moving && !extended) {
+      extended=true;
+      clearTimeout(deadline);
+      deadline=setTimeout(finish,Math.max(0,400-(performance.now()-started)));
+    }
     const ids=(field?.getAttribute('aria-controls')||field?.getAttribute('aria-owns')||'').split(/\\s+/).filter(Boolean);
     const roots=ids.length ? ids.map(id=>document.getElementById(id)).filter(Boolean) : [document];
     const options=roots.flatMap(root=>[...root.querySelectorAll('[role="option"]')]);
-    if (++frames>=2 && (!autocomplete || options.some(e=>{
+    if (++frames>=2 && !moving && (!autocomplete || options.some(e=>{
       const r=e.getBoundingClientRect();
       return r.width && r.height && r.bottom>0 && r.top<innerHeight &&
         e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
