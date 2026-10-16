@@ -429,10 +429,20 @@ const checks: Check[] = [
     name: 'a long container does not name a control',
     file: 'container-names.html',
     run: async (tab) => {
+      // The first button on the page sits under the long paragraph.
+      const [guard] = (await listed(tab)).filter((action) => action.role === 'button');
+      assert.equal(guard?.label, 'button');
+    },
+  },
+  {
+    name: 'a control is never named from a neighbouring control',
+    file: 'container-names.html',
+    run: async (tab) => {
       const buttons = (await listed(tab)).filter((action) => action.role === 'button');
+      // Long-paragraph button, Save, then the unnamed button beside Save.
       assert.deepEqual(
         buttons.map((action) => action.label),
-        ['button'],
+        ['button', 'Save', 'button'],
       );
     },
   },

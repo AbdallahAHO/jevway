@@ -193,6 +193,11 @@
     }
     return '';
   };
+  const interactive =
+    'a,button,input,select,textarea,[contenteditable="true"],' +
+    ['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option', 'combobox']
+      .map((role) => '[role="' + role + '"]')
+      .join(',');
   const contextName = (e, hiddenInput, rname) => {
     const own = hiddenInput ? name(hiddenInput).trim() : '';
     if (own) return own;
@@ -207,8 +212,21 @@
     const icon = [e, ...e.querySelectorAll('svg,i,span,img')].map(iconHint).find(Boolean);
     if (icon) return icon.replace(/-/g, ' ') + ' icon';
     // jev-browse: with no name, row or icon, a control is named by the short text right around it, as a person reads it.
+    // Text inside another control (a neighbouring "Save") is skipped: it would name this one after that one.
+    const textAround = (container) => {
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+      const words = [];
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const control = node.parentElement.closest(interactive);
+        const other = control && control !== e && container.contains(control);
+        if (!other && node.parentElement.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))
+          words.push(node.textContent);
+      }
+      return words.join(' ').replace(/\s+/g, ' ').trim();
+    };
     const around = [e.parentElement, e.parentElement?.parentElement]
-      .map((container) => (container?.innerText || '').replace(/\s+/g, ' ').trim())
+      .filter((container) => container && container !== document.body && container !== document.documentElement)
+      .map(textAround)
       .find((text) => text && text.length <= 80);
     if (!around) return '';
     return unnamedToggle(e, rname) ? 'Select: ' + around : around;

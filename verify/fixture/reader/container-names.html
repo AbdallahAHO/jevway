@@ -31,6 +31,11 @@
   </div>
 </section>
 
+<!-- A short container holding another control: the unnamed button must not borrow the neighbour's "Save". -->
+<section>
+  <div><button type="button">Save</button><button type="button" style="width:16px;height:16px"></button></div>
+</section>
+
 <script>
   window.__fixture = { facets: [], page: '1' };
   for (const box of document.querySelectorAll('button[role="checkbox"]')) {
