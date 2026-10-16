@@ -382,6 +382,31 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'a details summary shows whether its section is open',
+    file: 'details-section.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const units = find(page.actions, 'button', /^Units$/);
+      assert.ok(units, `Units not listed: ${labelsOf(page.actions)}`);
+      assert.equal(units.expanded, 'false');
+      assert.equal(find(page.actions, 'button', /^Collaborators$/)?.expanded, 'true');
+      await tab.act(units, page);
+      const opened = await tab.observe();
+      assert.equal(find(opened.actions, 'button', /^Units$/)?.expanded, 'true');
+      assert.ok(find(opened.actions, 'link', /^Wiki$/), `Wiki not listed after opening Units: ${labelsOf(opened.actions)}`);
+    },
+  },
+  {
+    name: 'a control is named without the text of its hidden descendants',
+    file: 'dropdown-hidden-menu.html',
+    run: async (tab) => {
+      const actions = await listed(tab);
+      assert.ok(find(actions, 'button', /^Labels$/), `the picker is not named "Labels": ${labelsOf(actions)}`);
+      assert.ok(find(actions, 'button', /^Save$/), `the button is not named "Save": ${labelsOf(actions)}`);
+      assert.ok(find(actions, 'button', /^Hidden name$/), `the aria-labelledby control lost its name: ${labelsOf(actions)}`);
+    },
+  },
+  {
     name: 'a row action with opacity 0 until its row is hovered is listed as appearing on hover',
     file: 'hover-row-actions.html',
     run: async (tab) => {

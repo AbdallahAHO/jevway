@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dropdown with a hidden menu</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  .picker, button { display: block; margin-bottom: 12px; padding: 8px 12px; }
+  .picker { border: 1px solid #bbb; width: 200px; cursor: pointer; }
+</style>
+</head>
+<body>
+<!-- A label picker: its menu is display:none until opened, so a person (and an accessible name) sees only "Labels". -->
+<div class="picker" tabindex="0" role="button">
+  Labels
+  <div class="menu" style="display:none">
+    <input placeholder="Filter label">
+    <div>bug</div>
+    <div>wontfix</div>
+  </div>
+</div>
+<!-- A hidden status span is not part of what a person reads on the button. -->
+<button type="button">Save <span style="visibility:hidden">(unsaved)</span></button>
+<!-- aria-labelledby may point at a hidden element: the reference wins over the hiding. -->
+<span id="hidden-name" style="display:none">Hidden name</span>
+<button type="button" aria-labelledby="hidden-name">x</button>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Details section</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  nav { width: 220px; border: 1px solid #ccc; }
+  details { border-bottom: 1px solid #ddd; }
+  summary { padding: 8px 12px; cursor: pointer; }
+  details a { display: block; padding: 6px 24px; }
+</style>
+</head>
+<body>
+<!-- Forgejo's repository settings sidebar: a section opens in place, with no URL change and no aria-expanded. -->
+<nav>
+  <details>
+    <summary>Units</summary>
+    <a href="#wiki">Wiki</a>
+  </details>
+  <details open>
+    <summary>Collaborators</summary>
+    <a href="#access">Access</a>
+  </details>
+</nav>
+</body>
+</html>
