@@ -78,6 +78,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
           values,
           doneWhen: done_when,
           maxSteps: max_steps,
+          confirmIrreversible: confirm_irreversible,
           allowCoordinateClicks: allow_coordinate_clicks,
           recordDir: record_dir,
         });

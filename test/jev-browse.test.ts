@@ -2,13 +2,16 @@ import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { jpegSize, StalePage, TargetUnreachable, type PageAction, type PageState, type Tab } from '../src/browser/tab.ts';
+import * as chrome from '../src/browser/chrome.ts';
+import { jpegSize, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
 import { buildRequest, decide, NO_SUPPLIED_VALUE, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
 import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
+import * as model from '../src/jev/model.ts';
 import { resolveModel } from '../src/jev/model.ts';
 import { describeStep, frameDurations, videoOffset } from '../src/task/recording.ts';
 import { BrowserTask } from '../src/task/run-task.ts';
+import { createRunner } from '../src/task/start-task.ts';
 
 const NAME_RECT = { x: 20, y: 100, w: 350, h: 40 };
 const PAY_RECT = { x: 20, y: 700, w: 350, h: 48 };
@@ -293,6 +296,37 @@ describe('BrowserTask', () => {
     const summary = await task.run();
     expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
     expect(summary.status).toBe('needs_confirmation');
+  });
+
+  describe('a new session started through the runner', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    const startWith = async (confirmIrreversible?: boolean) => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '4', commit_risk: 0.9 }]);
+      const { asTab, acted } = fakeTab();
+      vi.spyOn(model, 'createAsk').mockReturnValue(ask);
+      vi.spyOn(chrome, 'connectChrome').mockResolvedValue({ cdp: {} } as chrome.ChromeHandle);
+      vi.spyOn(Tab, 'open').mockResolvedValue(asTab);
+      const task = await createRunner('launch-headless').start({
+        goal: 'Pay',
+        url: 'http://fixture/pay',
+        maxSteps: 1,
+        confirmIrreversible,
+      });
+      return { summary: await task.run(), acted };
+    };
+
+    it('clicks the irreversible target once when the first call already carries the confirmation', async () => {
+      const { summary, acted } = await startWith(true);
+      expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
+      expect(summary.status).not.toBe('needs_confirmation');
+    });
+
+    it('still hands the irreversible click back without the confirmation', async () => {
+      const { summary, acted } = await startWith();
+      expect(summary.status).toBe('needs_confirmation');
+      expect(acted).toEqual([]);
+    });
   });
 
   it('gives a gray-zone click a screenshot look before it runs, and a clearly safe one none', async () => {
