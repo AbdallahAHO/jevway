@@ -42,6 +42,8 @@ export interface RunResult {
   followUp?: Record<string, string>;
   /** Two-call jobs: the first call ended done but the table had no row to continue with, so the second call never ran. */
   followUpMissing?: boolean;
+  /** Two-call jobs with no matching row: the first rows the table showed, to see why none matched. */
+  rowsRead?: Record<string, string>[];
   error?: string;
 }
 
