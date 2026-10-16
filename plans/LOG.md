@@ -2,6 +2,117 @@
 
 Newest first. Each entry: what changed, why, and the measured effect. Numbers come from runs, not estimates.
 
+## 2026-10-16 — plan 034 merged (`9b6b3f5`..`8d0d3c1`): tiny inputs through their field box; valid screenshots
+
+- **Before** (iPhone 15, after 031): the Sort combobox's 4×22 px input opened and closed on a tap; the alert Search
+  field's every hit point landed on its own magnifier/clear wrappers ("covered"); and screenshots were sized from the
+  observed viewport, which a page that zooms out to fit (652 CSS px on a 393 px phone) can outgrow — a stale hint gave
+  a 1175×2547 image, matching the `400 Invalid image dimensions` failures.
+- **After**: a tiny text field or combobox is tapped through its field box (the nearest ancestor, ≤ 3 levels, holding
+  no other control, at least 12 px, whose centre hits itself); a fill whose field is covered by its own decoration is
+  focused with `e.focus()` (a fixed operation on the observed element) and typed into without a press; a foreign
+  overlay still blocks. Model screenshots are sized from the viewport captured now and re-captured smaller if the
+  JPEG still exceeds 1024×1536 (`jpegSize` reads the size).
+- **Measured**: reader 39 → **42/42** (tiny-combobox and decorated-search red first, foreign cover still refused);
+  3 `jpegSize` tests (120 total). Screenshot: 1175×2547 → 709×1535. **Grafana phone 15/24 → 20/24** (sort-dashboards
+  0/3 → 3/3, alert-rules 0/3 → 2/3); desktop 23/24; gotchas 30/30, 30/30, 29/30 (a wizard run; 6/6 on rerun);
+  `pnpm verify` 8/8.
+
+## 2026-10-16 — plan 033 merged (`497a335`..`83b1cbf`): open the collapsed control before giving up
+
+- **Before** (iPhone 15): trace-to-prompt ended `blocked` while the click head put 0.57 on "Show more details" (the
+  phone folds the prompt link behind it); the operation head chose BLOCKED by 0.47 to 0.41.
+- **After**: a BLOCKED decision whose click head favours a collapsed control (`aria-expanded="false"`, at least
+  `minConfidence`) opens it once per element instead of handing back; the click faces the irreversible-click gate with
+  the element judged by name, and by the page-level question too when that is on (risky if either says so). A control
+  counts as opened only once the click ran.
+- **Measured**: 7 new tests (117), red first; gotchas 90/90; red-team 0/66 (**37** goals, the most so far);
+  `pnpm verify` 8/8. Live phone re-run pending.
+
+## 2026-10-16 — plan 031 merged (`0292c80`..`3c0d402`): finger-length taps; several points before "covered"
+
+- **Before**: touch taps were zero-length with no contact area; a target was "covered" if its centre alone missed.
+- **After**: taps last 60 ms with a 6 px radius; four more points inside the visible box are tried (each must still hit
+  inside the target) before a target is called covered.
+- **Measured**: reader 36 → **39/39** (tap-duration and partly-covered checks red first; a fully covered button is still
+  refused). Gotchas 90/90; Grafana desktop 23/24; `pnpm verify` 8/8. **Grafana phone unchanged at 15/24**: live probes
+  showed both target jobs need more — the Sort combobox's listed input is 4×22 px and the compat mouse events after a
+  tap close it (a tap on the field body works), and the alert Search field's five points all hit its own prefix/suffix
+  wrappers. Phone viewport on that page: 652 CSS px (the page zooms out to fit). Plan 034.
+
+## 2026-10-16 — plan 030 merged (`e31442e`..`d534ab1`): loop patience on phone layouts
+
+- **Before** (iPhone 15): the wander guard counted an unsure WAIT toward its 6 (off-topic-answer #2 stopped with the
+  matching rows on screen); a `needs_input` fired while a list was still skeleton rows (dataset-source #3); typing into
+  "Filter by name…" got no Enter (alert-rules).
+- **After**: waits and Escapes don't fill the wander window; a `needs_input`/`blocked` hand-back first waits up to
+  `changeWaitMs` for the page to change and re-decides if it did; Enter is offered after a filter field too.
+- **Measured**: 5 new tests (110), 4 red first. Gotchas 90/90 strict; red-team 0/66 (35 goals); Grafana desktop 24/24;
+  `pnpm verify` 8/8. Grafana phone still 15/24, but alert-rules now **reaches its goal 3/3** (types, presses Enter,
+  `?search=rule:cpu`) and then ends `blocked` on `Model error: 400 Invalid image dimensions` (a screenshot problem on
+  the shrunk-to-fit phone page; new follow-up). Unit tests now take ~13 s: four existing tests hit a real hand-back at
+  the default 1.5 s wait.
+
+## 2026-10-16 — plan 032 merged (`dd68fde`, `16b88f9`): links in visible rows scrolled sideways are listed
+
+- **Before** (iPhone 15): Langfuse's Scores table scrolls sideways on a phone; the trace links sat out of view, so the
+  only reachable thing in that column was its sortable header — clicking it re-sorted by Trace and lost the Value
+  order (worst-relevance 0/3, each run looping to the step budget).
+- **After**: a link or button in a row whose row is vertically on screen, scrolled sideways out of view inside a
+  horizontally scrollable box, is listed (2 per row, 20 overall) and labelled `<name> — row: <row text>`; clicking
+  scrolls it in.
+- **Measured**: reader 34 → **36/36** (listed-and-opens-without-sorting and caps checks red first; a mutation removing
+  the row check fails the cap check). Grafana 24/24; gotchas normal 29/30, slow 30/30, churn 29/30 (both misses
+  `wizard`, a page with no table); `pnpm verify` 8/8. Live phone re-run after the phone track lands.
+
+## 2026-10-16 — plan 029 merged (`e6a7ab3`, `e9b6a32`): two Langfuse jobs accept the phone layout
+
+- **Before** (iPhone 15): prompt-usage 0/3 — each run ended `done` on a generation opened from the prompt's Linked
+  Generations tab (the phone Prompts table has no observations link), which the desktop-only check rejected;
+  failed-experiment's `doneWhen` named a run name and error count the phone results page never shows.
+- **After**: prompt-usage's check accepts both routes (one observation open on `/observations?…promptName…` or on the
+  prompt's Linked Generations tab); failed-experiment's `doneWhen` names what both layouts show.
+- **Measured**: against saved URLs, 3/3 phone and 10/10 desktop prompt-usage runs pass the new check. Live phone
+  re-run after the phone track lands.
+
+## 2026-10-16 — plan 028 merged (`9ec076b`, `f91840e`): a box-rescued click is judged by the element it clicks
+
+- **Before**: `#boxRescue` gave the rescued click the Box answer's own risk, which rates the control the model means
+  (on confirm-modal: Cancel, 0.02–0.05) even when the box lands elsewhere (Delete, 6 of 8 screenshot runs). An unsure
+  or BLOCKED decision there would have been rescued into an ungated Delete.
+- **After**: whenever the box matches an observed element, that element's by-name risk is asked in the same risk
+  follow-up (a new one when no click was chosen); the rescued click takes the higher of it and the box risk, and an
+  unjudged element counts as certain risk. With per-element risk off (no shipped profile), only the box risk exists.
+- **Measured**: 3 tests (2 red on the old code: Pay clicked under a 0.02 box risk; the box's element risk not asked);
+  105 tests; plan 021's route tests unchanged. Red-team 0/66, goals 34/66; `pnpm verify` 8/8.
+
+## 2026-10-16 — plan 026: rule 1 merged (`319f09c`), rule 2 dropped; a Box-rescue gap found
+
+- **Plan premise was wrong**: a 4-run probe showed confirm-modal's final DONE at done check 0.52–0.65, but those were
+  only the runs that chose DONE. The executor's diagnostic (8 runs per mode) found the BLOCKED decisions at
+  0.21–0.46, and the Box answer's own commit risk for **Delete** at 0.02–0.05.
+- **Rule 1** (a BLOCKED whose done check is ≥ 0.5 ends `done`) is sound and costs nothing; merged. It did not change
+  confirm-modal (fallback still 5/5 `blocked`).
+- **Rule 2** (a box on an irreversible control doesn't veto a reversible pick) is dropped: it keyed on
+  `next_click_commit_risk`, which rates *the control the model means to click* (Cancel), not the element under the box
+  (Delete).
+- **Finding (security)**: `#boxRescue` gives the rescued click that same box risk. On confirm-modal the box landed on
+  Delete in 6 of 8 screenshot-mode runs with box risk 0.02–0.05; an unsure or BLOCKED decision there would have been
+  rescued into an ungated Delete. Not observed (the model was confident about Cancel), but one step away. Plan 028.
+- **Measured** on the branch: 103 tests; red-team 0/76 violations; gotchas 90/90; `pnpm verify` 8/8.
+
+## 2026-10-16 — plan 027 merged (`0fc3d47`..`1be3212`): controls named from their small container's text
+
+- **Before**: probe of eight Langfuse pages found 24 controls labelled by their bare role: 6 filter-sidebar value
+  toggles per table page (`checkbox`, their text "chat 220" in a sibling div) and the pagination box (`spinbutton`,
+  inside "Page _ of 30") on every list page.
+- **After**: as the last fallback (after name, row, hidden input, `aria-controls`, icon), a control is named from the
+  visible text of its parent or grandparent when that is 1–80 characters, skipping text inside other controls (an
+  unnamed button beside "Save" stays `button`) and never using the body. Toggles get `Select: …`.
+- **Measured**: reader 30 → **34/34** (two naming checks and the neighbour-control guard red first). Langfuse re-probe:
+  **0 unnamed on all 8 pages** (filter toggles read `Select: chat 219`, …). Grafana 24/24 and probe unchanged (0 labels
+  changed); `pnpm verify` 8/8.
+
 ## 2026-10-16 — round 4 gates on `178ab71`: Langfuse 159/160 at ×10
 
 | Gate | Round 3 (`76aa054`) | Round 4 (`178ab71`) |

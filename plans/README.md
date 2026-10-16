@@ -60,6 +60,15 @@ only plan 014 (connection handling, recording, runner), confirmed by G2/G6/G8 on
 | 023 | Two-call jobs wait for the table; a missing follow-up is reported as such | P2 | S | — | DONE (`2e983ba`) |
 | 024 | An unsure Escape runs like an unsure wait; a confirmed spike keeps its trigger in the trace | P2 | S | — | DONE (`178ab71`) |
 | 025 | worst-relevance's done evidence names the trace view; missing follow-ups keep the rows read | P2 | S | — | DONE (`f35f296`) |
+| 026 | Blocked on a met goal ends done (rule 2, a risky box never vetoes a reversible choice, dropped: its signal is misread) | P2 | S | — | DONE, rule 1 only (`319f09c`) |
+| 028 | A click rescued from a screenshot box is judged by the element it will actually click | P1 | S | — | DONE (`f91840e`) |
+| 029 | Two Langfuse jobs accept the phone layout's route and evidence | P2 | S | — | DONE (`e9b6a32`) |
+| 030 | Waits/Escapes don't count as wandering; a loading page gets a moment; filter fields take Enter | P1 | S | — | DONE (`d534ab1`) |
+| 031 | Taps last like a finger's; a target is covered only after several points miss | P1 | M | — | DONE (`3c0d402`) |
+| 032 | Links in a visible table row are listed when the table is scrolled sideways | P2 | M | — | DONE (`16b88f9`) |
+| 033 | Before handing back blocked, open the collapsed control the model was leaning toward | P2 | S | 030 | DONE (`83b1cbf`) |
+| 034 | A tiny or decorated input is operated through its own field box; model screenshots stay valid | P1 | M | 031 | DONE (`8d0d3c1`) |
+| 027 | A control with no name, row or icon is named from its small container's text | P2 | S | — | DONE (`1be3212`) |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
 they run in parallel. After merging, the gates are re-confirmed on the merged commit.
@@ -69,6 +78,12 @@ the same test file, everything else is disjoint, so all five run in parallel.
 
 Round 4 (planned at `be13f06`, 2026-10-16): 024 (loop) and 025 (Langfuse suite) touch disjoint files and run in parallel;
 the reviewer measures Langfuse after merging so only one suite uses port 9333.
+
+Round 5 (planned at `db7e5f8`, 2026-10-16): 026 (loop) and 027 (reader) run in parallel; the phone track is planned
+from the iPhone 15 baselines on Grafana and Langfuse.
+
+Phone track (planned at `f91840e`, 2026-10-16, from a diagnosis of all 27 failing iPhone-15 runs): 029 (suite), 030
+(loop), 031 (tab executor), 032 (reader) run in parallel; a disclosure-before-BLOCKED plan follows 030 (same file).
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -81,11 +96,26 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   blocked). Separate track; desktop/laptop are the headline.
 - (from 014) The cause of the original DevTools socket close (the exit-13 run) was not reproduced; close code and
   reason are now recorded, so the next occurrence will say why.
-- (from 022) Unnamed column headers were not seen in the Grafana probe; check Langfuse's tables for them before planning.
 
 
 - (from round 4 G6) Plan 018's look fired 4 times at `178ab71`, all confirming correct DONEs (0.91–0.98); it has not
   yet met a false DONE live. Keep counting looks (spike entry followed by a screenshot entry in `trace.json`).
+
+- (from 028) The opt-in `CLICK_AT` rescue and configurations with per-element risk off still rely on the box's own
+  risk, which rates the intended control rather than the spot clicked. No shipped profile is affected.
+- (from 026) confirm-modal still rarely ends `done`: after Cancel, the done check reads "The dialog is closed and the
+  project still exists" at 0.21–0.46 (BLOCKED wins); in screenshot mode the box keeps landing on Delete (hands back).
+  Safe in every run; a done-check discrimination issue on pages where something disappeared.
+
+- (from 034) Phone alert-rules #? still missed once: "Open Search … could not be reached 3 times" — the click (not
+  fill) variant on the decorated 54×32 field; the field-box route covers fills at any size but clicks only for tiny
+  fields.
+- (from phone diagnosis) Grafana's hover-only panel menus are never listed on touch (view-panel 0/3 on phone): try
+  listing them on touch and revealing with a pointer move or a tap on a non-control spot of the panel.
+- (from 030) A `needs_input`/`blocked` hand-back on a page that changes constantly re-decides until the decision cap
+  (`step_budget`) instead of handing back; bounded, but watch for it on rotating-banner pages.
+- (from 030) Four unit tests now wait the default 1.5 s at a real hand-back; set `changeWaitMs: 0` in them to bring
+  `pnpm test` back to ~6 s.
 
 ## Dependency notes
 
