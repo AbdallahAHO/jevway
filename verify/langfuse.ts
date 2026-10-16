@@ -59,8 +59,9 @@ const JOBS: Job[] = [
     id: 'off-topic-answer',
     title: 'Check an off-topic answer',
     job: 'When users ask off-topic questions, I want to read how the bot answered one, so I can confirm it declines politely.',
-    goal: `Go to Tracing, search the traces for the text in search_query, and open the trace whose input asks about the weather in Berlin. ${READ_ONLY}`,
+    goal: `Go to Tracing, set the time range to the past 30 days, search the traces for the text in search_query, and open the trace whose input asks about the weather in Berlin. ${READ_ONLY}`,
     // The phrase the user remembers: plain "weather" matches too much and buries the trace pages deep.
+    // The demo's matching trace ages out of the default "Past 1 day" range, so the goal widens it.
     values: { search_query: 'weather in berlin' },
     doneWhen: 'The detail of the trace asking about the weather in Berlin is open, showing its input and output.',
     check: 'A trace is open (traceId/peek in the URL) and the page mentions the weather in Berlin',
