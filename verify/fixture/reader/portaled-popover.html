@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Portaled popover</title>
+<style>
+  body { margin: 0; font: 14px system-ui, sans-serif; }
+  button { padding: 8px 12px; }
+  /* The sheet: fixed on the right, above the page. */
+  .sheet { position: fixed; top: 0; right: 0; width: 420px; height: 100%; background: #fff; border-left: 1px solid #bbb; z-index: 10; padding: 16px; box-sizing: border-box; }
+  /* The popover is portaled to <body>, outside the sheet, and stacked above it. */
+  .popover { position: fixed; top: 110px; left: 720px; width: 200px; background: #fff; border: 1px solid #bbb; z-index: 20; }
+  /* Plain divs that only look clickable: no role, no tabindex, just a pointer. */
+  .item { cursor: pointer; padding: 8px 12px; }
+  .behind { position: absolute; top: 300px; left: 760px; }
+</style>
+</head>
+<body>
+<!-- What a modal library (the aria-hidden package behind Radix, shadcn and react-aria) leaves on everything outside the
+     sheet: aria-hidden plus its own data-aria-hidden marker. -->
+<div aria-hidden="true" data-aria-hidden="true">
+  <button type="button" class="behind">Behind the sheet</button>
+</div>
+
+<div class="sheet" role="dialog" data-state="open" aria-label="Filters">
+  <h2>Filters</h2>
+  <button type="button" aria-haspopup="dialog" aria-expanded="true">Past 1 day</button>
+</div>
+
+<div aria-hidden="true" data-aria-hidden="true" data-radix-popper-content-wrapper>
+  <div class="popover" role="dialog" aria-label="Date range">
+    <div class="item">Past 1 hour</div>
+    <div class="item">Past 7 days</div>
+    <div class="item">Past 30 days</div>
+  </div>
+</div>
+<script>
+  window.__fixture = { range: null };
+  for (const item of document.querySelectorAll('.item')) {
+    item.addEventListener('click', () => (window.__fixture.range = item.textContent));
+  }
+</script>
+</body>
+</html>

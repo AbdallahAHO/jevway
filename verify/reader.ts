@@ -126,6 +126,20 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'a popover a modal library marked aria-hidden is listed when it is on top',
+    file: 'portaled-popover.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      for (const label of [/^Past 1 hour$/, /^Past 7 days$/, /^Past 30 days$/]) {
+        assert.ok(page.actions.some((action) => ['option', 'button'].includes(action.role ?? '') && label.test(action.label)), `${label} not listed: ${labelsOf(page.actions)}`);
+      }
+      assert.ok(!page.actions.some((action) => /Behind the sheet/.test(action.label)), `a covered control is listed: ${labelsOf(page.actions)}`);
+      const item = page.actions.find((action) => /^Past 30 days$/.test(action.label))!;
+      await tab.act(item, page);
+      assert.equal((await fixtureState(tab)).range, 'Past 30 days');
+    },
+  },
+  {
     name: 'a list that ignores Escape covers the target until dismissPopup closes it',
     file: 'escape-ignored.html',
     run: async (tab) => {
