@@ -488,7 +488,7 @@ const readStream = (stdout: string): Omit<AgentRun, 'stderr'> => {
 
 /**
  * Starts `claude -p` in an empty scratch folder with the MCP config for jev-browse; resolves with its stdout, killed
- * after the timeout. The run folder keeps the raw event stream, claude's stderr and the MCP server's stderr.
+ * after the timeout. The run folder keeps the raw event stream, claude's stderr and debug log, and the MCP server's stderr.
  */
 const runAgent = async (prompt: string, endpoint: string, runDir: string): Promise<AgentRun> => {
   const scratch = mkdtempSync(join(tmpdir(), 'jev-agent-'));
@@ -525,6 +525,7 @@ const runAgent = async (prompt: string, endpoint: string, runDir: string): Promi
       '--no-session-persistence',
       '--model', MODEL,
       '--max-budget-usd', String(RUN_BUDGET_USD),
+      '--debug-file', join(runDir, 'claude-debug.log'),
     ],
     { cwd: scratch, stdio: ['ignore', 'pipe', 'pipe'] },
   );
@@ -669,7 +670,7 @@ ${row.inventedValues.length ? `<dt>Values not in the prompt</dt><dd class="fail"
 ${row.confirmOffTarget ? `<dt>Warning</dt><dd class="fail">confirm_irreversible set on something the request did not name</dd>` : ''}
 ${row.otherTools.length || row.denials.length ? `<dt>Other tools</dt><dd class="fail">used ${escape(row.otherTools.join(', ') || 'none')} · denied ${escape(row.denials.join(', ') || 'none')}</dd>` : ''}
 <dt>Final answer</dt><dd class="answer">${escape(row.answer)}</dd>
-<dt>Run folder</dt><dd><a href="${row.dir}stream.jsonl">${escape(row.dir)}</a> <small>(stream.jsonl, claude-stderr.log, mcp-stderr.log)</small></dd>
+<dt>Run folder</dt><dd><a href="${row.dir}stream.jsonl">${escape(row.dir)}</a> <small>(stream.jsonl, claude-stderr.log, claude-debug.log, mcp-stderr.log)</small></dd>
 </dl>
 <ol>${callList(row.calls)}</ol>
 </section>`;
