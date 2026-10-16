@@ -709,6 +709,39 @@ const checks: Check[] = [
       assert.deepEqual((await fixtureState(tab)).added, ['Backpack']);
     },
   },
+  {
+    name: 'a page dialog is answered with the choice that changes nothing',
+    file: 'dialogs.html',
+    run: async (tab) => {
+      // A dialog freezes the page for every protocol call, so each press must come back within seconds.
+      const press = async (label: RegExp) => {
+        const page = await tab.observe();
+        const button = find(page.actions, 'button', label);
+        assert.ok(button, `${label} not listed: ${labelsOf(page.actions)}`);
+        const started = Date.now();
+        await tab.act(button, page);
+        assert.ok(Date.now() - started < 5000, `acting on ${label} took ${Date.now() - started} ms`);
+      };
+      await press(/^Discard draft$/);
+      assert.equal((await fixtureState(tab)).answer, false);
+      assert.deepEqual(tab.takeDialogs(), [{ type: 'confirm', message: 'Discard the draft?', accepted: false }]);
+      await tab.observe();
+
+      await press(/^Notice$/);
+      assert.equal((await fixtureState(tab)).afterAlert, true);
+      assert.deepEqual(tab.takeDialogs(), [{ type: 'alert', message: 'Saved', accepted: true }]);
+      await tab.observe();
+
+      const page = await tab.observe();
+      const draft = page.actions.find((action) => action.kind === 'fill');
+      assert.ok(draft, `no draft field: ${labelsOf(page.actions)}`);
+      await tab.act(draft, page, 'half-typed comment');
+      await press(/^Reload$/);
+      assert.equal(await tab.evaluate('document.getElementById("draft").value'), 'half-typed comment', 'the page left');
+      assert.deepEqual(tab.takeDialogs(), [{ type: 'beforeunload', message: '', accepted: false }]);
+      await tab.observe();
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port.

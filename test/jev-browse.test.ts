@@ -2,6 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CdpError, type CdpConnection } from '../src/browser/cdp.ts';
 import * as chrome from '../src/browser/chrome.ts';
 import { jpegSize, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
@@ -156,6 +157,9 @@ const fakeTab = (pages: PageState[] = [page()]) => {
     },
     send: async () => ({}),
     onEvent: () => () => true,
+    /** Dialogs the page opened and the tab answered, until the run takes them. */
+    dialogs: [] as { type: string; message: string; accepted: boolean }[],
+    takeDialogs: () => tab.dialogs.splice(0),
     act: async (action: PageAction, _page: PageState, text?: string) => {
       if (tab.staleOnce) {
         tab.staleOnce = false;
@@ -1661,5 +1665,179 @@ describe("a summary carries the final page's text", () => {
     expect(summary.stuck).toMatchObject({ operation: 'CLICK', candidates: expect.any(Array) });
     expect(summary.stuck).toHaveProperty('element');
     expect(summary.stuck).not.toHaveProperty('page_text');
+  });
+});
+
+describe('page dialogs', () => {
+  /** A CDP connection that records calls and lets a test emit protocol events on the tab's session. */
+  const fakeCdp = (handlers: Record<string, () => unknown> = {}) => {
+    const calls: string[] = [];
+    const answered: { accept: boolean }[] = [];
+    const listeners = new Set<(method: string, params: any, sessionId?: string) => void>();
+    const cdp = {
+      send: async (method: string, params: any = {}) => {
+        calls.push(method);
+        if (method === 'Target.attachToTarget') return { sessionId: 'S1' };
+        if (method === 'Page.handleJavaScriptDialog') answered.push({ accept: params.accept });
+        return handlers[method]?.() ?? {};
+      },
+      onEvent: (listener: (method: string, params: any, sessionId?: string) => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const emit = (method: string, params: object) => listeners.forEach((listener) => listener(method, params, 'S1'));
+    return { cdp: cdp as unknown as CdpConnection, calls, answered, emit };
+  };
+
+  const opening = (type: string, message = '') => ({ type, message, url: 'http://fixture/', hasBrowserHandler: true });
+
+  it('answers every dialog at once with the choice that changes nothing: OK only for an alert', async () => {
+    const { cdp, answered, emit } = fakeCdp();
+    const tab = await Tab.attach(cdp, 'T1');
+    for (const type of ['alert', 'confirm', 'prompt', 'beforeunload']) emit('Page.javascriptDialogOpening', opening(type, `${type} text`));
+    expect(answered).toEqual([{ accept: true }, { accept: false }, { accept: false }, { accept: false }]);
+    expect(tab.takeDialogs()).toEqual([
+      { type: 'alert', message: 'alert text', accepted: true },
+      { type: 'confirm', message: 'confirm text', accepted: false },
+      { type: 'prompt', message: 'prompt text', accepted: false },
+      { type: 'beforeunload', message: 'beforeunload text', accepted: false },
+    ]);
+    expect(tab.takeDialogs()).toEqual([]);
+  });
+
+  it('keeps going when the browser refuses the answer', async () => {
+    const { cdp, emit } = fakeCdp({
+      'Page.handleJavaScriptDialog': () => {
+        throw new CdpError('No dialog is showing');
+      },
+    });
+    const tab = await Tab.attach(cdp, 'T1');
+    emit('Page.javascriptDialogOpening', opening('confirm', 'Sure?'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(tab.takeDialogs()).toHaveLength(1);
+  });
+
+  describe('a page that stops answering', () => {
+    const settled = (promise: Promise<unknown>) => promise.then((value) => ({ value }), (error) => ({ error }));
+
+    it('ends observe() with the browser error at once instead of retrying every timeout as a stale page', async () => {
+      let evaluates = 0;
+      const { cdp, calls } = fakeCdp({
+        'Runtime.evaluate': () => {
+          evaluates++;
+          throw new CdpError('Runtime.evaluate timed out after 30000 ms');
+        },
+      });
+      const tab = await Tab.attach(cdp, 'T1');
+      const before = calls.length;
+      evaluates = 0;
+      const outcome: any = await settled(tab.observe());
+      expect(outcome.error).toBeInstanceOf(CdpError);
+      expect(outcome.error).not.toBeInstanceOf(StalePage);
+      expect(outcome.error.message).toBe('Runtime.evaluate timed out after 30000 ms');
+      expect(evaluates).toBe(1);
+      expect(calls.length).toBeGreaterThan(before);
+    });
+
+    it('still retries a protocol error that really means the page is changing', async () => {
+      let evaluates = 0;
+      const { cdp } = fakeCdp({
+        'Runtime.evaluate': () => {
+          evaluates++;
+          throw new CdpError('Cannot find context with specified id');
+        },
+      });
+      const tab = await Tab.attach(cdp, 'T1');
+      evaluates = 0;
+      const outcome: any = await settled(tab.observe());
+      expect(outcome.error).toBeInstanceOf(StalePage);
+      expect(evaluates).toBeGreaterThan(1);
+    });
+
+    it('gives up on navigate() at its deadline even when one evaluate never answers', async () => {
+      vi.useFakeTimers();
+      try {
+        let hung = false;
+        const { cdp } = fakeCdp({
+          'Runtime.evaluate': () => (hung ? new Promise(() => undefined) : {}),
+        });
+        const tab = await Tab.attach(cdp, 'T1');
+        hung = true;
+        let returned = false;
+        void tab.navigate('http://fixture/').then(() => (returned = true));
+        await vi.advanceTimersByTimeAsync(16_000);
+        expect(returned).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('in a run', () => {
+    const confirmAfterEachClick = (tab: ReturnType<typeof fakeTab>['tab'], message = 'Discard the draft?', type = 'confirm') => {
+      const act = tab.act;
+      tab.act = async (...args: Parameters<typeof act>) => {
+        await act(...args);
+        tab.dialogs.push({ type, message, accepted: type === 'alert' });
+      };
+    };
+    const fourPages = ['a', 'b', 'c', 'd'].map((fingerprint) => page({ fingerprint }));
+
+    it("tells Jev about a dialog the page opened after a step, and how it was answered", async () => {
+      const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'DONE', done_check: 0.9 }]);
+      const { tab, asTab } = fakeTab(fourPages);
+      confirmAfterEachClick(tab);
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Open', doneWhen: 'x', changeWaitMs: 0 }).run();
+      expect(summary.status).toBe('done');
+      expect(summary.steps[0].element).toBe('Open Full name (the page then asked "Discard the draft?" in a confirm dialog; answered Cancel)');
+      expect(JSON.stringify(requests.at(-1))).toContain('answered Cancel');
+    });
+
+    it('describes an alert and a leave-the-page prompt in their own words', async () => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'CLICK', click_target: '4', commit_risk: 0 }, { operation: 'DONE', done_check: 0.9 }]);
+      const { tab, asTab } = fakeTab(fourPages);
+      const dialogs = [
+        { type: 'alert', message: 'Saved', accepted: true },
+        { type: 'beforeunload', message: '', accepted: false },
+      ];
+      const act = tab.act;
+      tab.act = async (...args: Parameters<typeof act>) => {
+        await act(...args);
+        tab.dialogs.push(dialogs.shift()!);
+      };
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Save', doneWhen: 'x', changeWaitMs: 0 }).run();
+      expect(summary.steps[0].element).toContain('(the page then showed an alert "Saved"; answered OK)');
+      expect(summary.steps[1].element).toContain('(the page then asked whether to leave the page; stayed on it)');
+    });
+
+    it('reports a dialog that was already open when the call started on the first step it takes', async () => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'DONE', done_check: 0.9 }]);
+      const { tab, asTab } = fakeTab(fourPages);
+      tab.dialogs.push({ type: 'confirm', message: 'Leave the page?', accepted: false });
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Open', doneWhen: 'x', changeWaitMs: 0 }).run();
+      expect(summary.steps[0].element).toContain('the page then asked "Leave the page?" in a confirm dialog; answered Cancel');
+    });
+
+    it('hands back when the page keeps asking the same confirm: it is only ever answered Cancel', async () => {
+      const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
+      const { tab, asTab, acted } = fakeTab(fourPages);
+      confirmAfterEachClick(tab);
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Open' }).run();
+      expect(summary.status).toBe('blocked');
+      expect(summary.reason).toBe(
+        'The page keeps asking "Discard the draft?" (confirm dialog). jev-browse only answers Cancel to these; ask the user how to proceed.',
+      );
+      expect(acted).toHaveLength(2);
+      expect(requests).toHaveLength(2);
+    });
+
+    it('does not count a repeated alert as a loop: OK is its only button and changes nothing', async () => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'CLICK', click_target: '1' }, { operation: 'DONE', done_check: 0.9 }]);
+      const { tab, asTab } = fakeTab(fourPages);
+      confirmAfterEachClick(tab, 'Saved', 'alert');
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Save', doneWhen: 'x', changeWaitMs: 0 }).run();
+      expect(summary.status).toBe('done');
+    });
   });
 });

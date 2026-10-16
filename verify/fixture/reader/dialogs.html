@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Native dialogs</title>
+</head>
+<body>
+<!-- A site's native dialogs: a confirm, an alert, and a beforeunload guard on a half-typed draft. -->
+<button type="button" id="discard">Discard draft</button>
+<button type="button" id="notice">Notice</button>
+<textarea id="draft" aria-label="Draft"></textarea>
+<button type="button" id="reload">Reload</button>
+<script>
+  window.__fixture = { answer: null, afterAlert: false };
+  document.getElementById('discard').addEventListener('click', () => {
+    window.__fixture.answer = confirm('Discard the draft?');
+  });
+  document.getElementById('notice').addEventListener('click', () => {
+    alert('Saved');
+    window.__fixture.afterAlert = true;
+  });
+  addEventListener('beforeunload', (event) => {
+    if (document.getElementById('draft').value) event.preventDefault();
+  });
+  document.getElementById('reload').addEventListener('click', () => location.reload());
+</script>
+</body>
+</html>
