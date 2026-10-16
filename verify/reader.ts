@@ -742,6 +742,28 @@ const checks: Check[] = [
       await tab.observe();
     },
   },
+  {
+    name: 'escape and scroll refused once on a page whose text keeps changing run when forced',
+    file: 'busy-page-menu.html',
+    run: async (tab) => {
+      const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+      // The loop adds Escape while a menu is open; the page reader never lists it.
+      const escape: PageAction = { id: 'press_escape', kind: 'escape', label: 'Press Escape to close the open menu, popover or suggestion list' };
+      let page = await tab.observe();
+      await pause(200);
+      await assert.rejects(tab.act(escape, page), StalePage, 'a ticking page was not refused the first time');
+      await tab.act(escape, page, undefined, { evenIfChanged: true });
+      assert.equal((await fixtureState(tab)).closed, true, 'the menu was not closed');
+      page = await tab.observe();
+      await pause(200);
+      const scrollDown = page.actions.find((action) => action.id === 'scroll_down');
+      assert.ok(scrollDown, `Scroll down not offered: ${labelsOf(page.actions)}`);
+      await assert.rejects(tab.act(scrollDown, page), StalePage, 'a ticking page was not refused the first time');
+      await tab.act(scrollDown, page, undefined, { evenIfChanged: true });
+      for (let waited = 0; waited < 1000 && !(await tab.evaluate('scrollY')); waited += 50) await pause(50);
+      assert.ok((await tab.evaluate('scrollY')) > 0, 'the page did not scroll');
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port.

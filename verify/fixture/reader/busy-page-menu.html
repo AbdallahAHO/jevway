@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Busy page menu</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  [role="menu"] { border: 1px solid #bbb; padding: 4px; width: 160px; }
+  [role="menu"][hidden] { display: none; }
+  .tall { height: 3000px; }
+</style>
+</head>
+<body>
+<!-- A page whose text never stops changing (a live timer) with a menu left open: a check of the whole page can never pass. -->
+<p>Uptime <span id="clock">0</span> ms</p>
+<button type="button" id="options" aria-haspopup="menu" aria-expanded="true">Options</button>
+<div role="menu" id="menu"><button type="button" role="menuitem">Rename</button></div>
+<div class="tall"></div>
+<script>
+  window.__fixture = { closed: false };
+  const clock = document.getElementById('clock');
+  setInterval(() => (clock.textContent = String(Math.round(performance.now()))), 50);
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    document.getElementById('options').setAttribute('aria-expanded', 'false');
+    document.getElementById('menu').hidden = true;
+    window.__fixture.closed = true;
+  });
+</script>
+</body>
+</html>
