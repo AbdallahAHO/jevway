@@ -7,8 +7,8 @@
  * jev-browse never lists password fields, so the harness plays the calling agent's part: it types the password into
  * the sign-up form before the first call and into the activation page before the second, with fixed scripts. It reads
  * the activation mail itself (jev-browse never reads mail) and hands jev-browse the next step. It also plays the
- * agent's consent: it confirms only the Register click (and the activation click in the second call), since those are
- * what the request names, and hands back any other click that needs confirming.
+ * agent's consent: it confirms only the Register click (and the activation click in the second call, plus the profile
+ * save in onboard), since those are what the request names, and hands back any other click that needs confirming.
  *
  *   pnpm apps:forgejo:up                                  # once: Forgejo + Mailpit in Docker, seeded users
  *   pnpm verify:signup                                    # every job, 3 runs each
@@ -39,6 +39,8 @@ let current: Record<string, string> = {};
 // "Confirm password". Any other click that needs confirming is handed back.
 const REGISTER = /register/i;
 const ACTIVATE = /register|activate|confirm password/i;
+// The second call of onboard also saves the profile, which the request names too.
+const ACTIVATE_AND_SAVE = /activate|confirm password|update profile/i;
 
 const FIRST_DONE = 'The page says to check your email to activate the account.';
 const ACCOUNT_CREATED = 'A new account was created: the page says to check your email to activate it.';
@@ -46,13 +48,13 @@ const HANDED_BACK = ['blocked', 'uncertain', 'needs_input'] as const;
 
 // What the calling agent does with the activation mail: reads it, opens its link, types the password if asked.
 const activateByMail =
-  (goal: string): Job['followUp'] =>
+  (goal: string, confirms = ACTIVATE): Job['followUp'] =>
   async () => {
     // No account means nothing was submitted, so no mail is coming: do not wait for one.
     if (!(await userByName(current.username))) return undefined;
     const mail = await latestMailTo(current.email, { timeoutMs: MAIL_TIMEOUT_MS });
     const link = mail && (linkIn(mail.text, '/user/activate') ?? linkIn(mail.html, '/user/activate'));
-    return link ? { goal, values: {}, navigate: link, confirms: ACTIVATE, prepare: async (tab) => void (await typePasswords(tab)) } : undefined;
+    return link ? { goal, values: {}, navigate: link, confirms, prepare: async (tab) => void (await typePasswords(tab)) } : undefined;
   };
 
 const typedPassword = (summaries: TaskSummary[]) =>
@@ -84,7 +86,10 @@ const JOBS: Job[] = [
       const account = await userByName(current.username);
       return account?.active === true && account.full_name.trim() === FULL_NAME;
     },
-    followUp: activateByMail('I typed the password into the activation form; finish activating the account, then set your full name to the name in values in your profile settings.'),
+    followUp: activateByMail(
+      'I typed the password into the activation form; finish activating the account, then set your full name to the name in values in your profile settings and save it.',
+      ACTIVATE_AND_SAVE,
+    ),
   },
   {
     id: 'bad-email',

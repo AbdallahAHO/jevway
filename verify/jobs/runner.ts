@@ -12,8 +12,8 @@
  * mailbox) and returns the second call's goal and values. It may also set `navigate` (a URL to open first, like a link
  * from an email) and `prepare` (a fixed script on the tab, like typing a password, which jev-browse never does). A job
  * sets `confirms` (and a follow-up its own) to the label of the irreversible click the user's request names, e.g.
- * `/register/i`: the runner confirms that click once per call and hands back any other, like a calling agent that asks
- * the user about everything the request did not name.
+ * `/register/i`: the runner confirms each click that matches (up to 3 per call) and hands back any other, like a
+ * calling agent that asks the user about everything the request did not name.
  *
  * Env knobs, with NAME the uppercased `name`: `JEV_<NAME>_RUNS` (default 3), `JEV_<NAME>_ONLY` (comma-separated job
  * ids), `JEV_<NAME>_DEVICE` (a key of DEVICES, default desktop) and `JEV_<NAME>_PHRASING` (`as-written` or `terse`).
@@ -73,22 +73,24 @@ const CONFIRMATION_LABEL = /^Clicking "(.*)" looks irreversible/;
 const confirmationLabel = ({ status, reason }: TaskSummary) =>
   status === 'needs_confirmation' ? CONFIRMATION_LABEL.exec(reason)?.[1] : undefined;
 
-// One call of a calling agent. A needs_confirmation on the click the user's request names (`confirms` matches its
-// label) continues once with `confirm_irreversible` (the skill's rule: one click per confirmation), so the call shows
-// two summaries; any other click ends the call there, and so does a second one after the confirmed click. Each
-// hand-back goes into `confirmations`, confirmed or not.
+// The most clicks one call confirms: a call that keeps asking for more is not covered by what the user's request named.
+const MAX_CONFIRMATIONS_PER_CALL = 3;
+
+// One call of a calling agent. Each needs_confirmation on a click the user's request names (`confirms` matches its
+// label) continues with `confirm_irreversible` (the skill's rule: one confirmation per click), up to
+// MAX_CONFIRMATIONS_PER_CALL, so the call can show several summaries; a click that does not match ends the call there.
+// Each hand-back goes into `confirmations`, confirmed or not.
 const runCall = async (task: BrowserTask, confirms: RegExp | undefined, confirmations: Confirmation[]) => {
   const summaries = [await task.run()];
-  const label = confirmationLabel(summaries[0]);
-  if (!confirms || label === undefined) return summaries;
-  const given = confirms.test(label);
-  confirmations.push({ label, given });
-  if (!given) return summaries;
-  task.update({ confirmIrreversible: true });
-  summaries.push(await task.run());
-  const again = confirmationLabel(summaries[1]);
-  if (again !== undefined) confirmations.push({ label: again, given: false });
-  return summaries;
+  for (let confirmed = 0; ; confirmed++) {
+    const label = confirmationLabel(summaries.at(-1)!);
+    if (!confirms || label === undefined) return summaries;
+    const given = confirms.test(label) && confirmed < MAX_CONFIRMATIONS_PER_CALL;
+    confirmations.push({ label, given });
+    if (!given) return summaries;
+    task.update({ confirmIrreversible: true });
+    summaries.push(await task.run());
+  }
 };
 
 // A dropped DevTools connection is replaced between runs; past this many replacements the suite stops.
