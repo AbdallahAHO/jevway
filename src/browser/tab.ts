@@ -344,16 +344,19 @@ export class Tab {
       throw new TargetUnreachable('Target changed or is covered', Boolean(target?.byPopup));
     }
     if (action.kind === 'select') return;
-    if (this.#touch) {
-      await this.#call('Input.dispatchTouchEvent', {
-        type: 'touchStart',
-        touchPoints: [{ x: target.x, y: target.y, radiusX: 6, radiusY: 6, force: 1 }],
-      });
-      await sleep(TAP_MS);
-      await this.#call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    } else {
-      for (const type of ['mousePressed', 'mouseReleased']) {
-        await this.#call('Input.dispatchMouseEvent', { type, x: target.x, y: target.y, button: 'left', clickCount: 1 });
+    // Focused in the page already: a press on the field's plain decoration would only take the focus away again.
+    if (!target.focused) {
+      if (this.#touch) {
+        await this.#call('Input.dispatchTouchEvent', {
+          type: 'touchStart',
+          touchPoints: [{ x: target.x, y: target.y, radiusX: 6, radiusY: 6, force: 1 }],
+        });
+        await sleep(TAP_MS);
+        await this.#call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      } else {
+        for (const type of ['mousePressed', 'mouseReleased']) {
+          await this.#call('Input.dispatchMouseEvent', { type, x: target.x, y: target.y, button: 'left', clickCount: 1 });
+        }
       }
     }
     if (action.kind !== 'fill') return;
@@ -467,6 +470,16 @@ const PRESS_OUTSIDE = `(() => {
   }
 })()`;
 
+// Same list as the snapshot's `interactive`: a field box holds no control but the one it frames.
+const INTERACTIVE =
+  'a,button,input,select,textarea,[contenteditable="true"],' +
+  ['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option', 'combobox'].map((role) => `[role="${role}"]`).join(',');
+
+// Controls whose visible field is the box a person taps; toggles and buttons keep their own box however small.
+const FIELD_LIKE =
+  'input:not([type="checkbox"],[type="radio"],[type="button"],[type="submit"],[type="reset"],[type="image"]),textarea,' +
+  '[contenteditable="true"],[role="combobox"],[role="textbox"],[role="searchbox"],[role="spinbutton"]';
+
 // Resolves the observed node, rejects hidden/disabled/covered targets, and applies native selects in-page.
 const RESOLVE_TARGET = `action => {
   const e=window.__jevFast?.nodes.get(action.node);
@@ -481,15 +494,38 @@ const RESOLVE_TARGET = `action => {
       if (x>=0 && y>=0 && x<innerWidth && y<innerHeight && e.contains((${DEEP_HIT})(x,y))) return {x,y};
     }
     return null; };
+  // A text field or combobox: what a person sees and taps is the field around it, not the input inside.
+  const own=e.getBoundingClientRect();
+  const tiny=(own.width<12 || own.height<12) && e.matches(${JSON.stringify(FIELD_LIKE)});
+  // The field box: the nearest ancestor (3 levels at most) that holds no other control and is at least as big as the input.
+  const fieldBox=()=>{
+    for (let p=e.parentElement, up=0; p && up<3 && p!==document.body && p!==document.documentElement; p=p.parentElement, up++) {
+      // Another control in here means this is a toolbar or a row, not one field: give up rather than climb.
+      if (p.matches(${JSON.stringify(INTERACTIVE)}) ||
+          [...p.querySelectorAll(${JSON.stringify(INTERACTIVE)})].some(o=>o!==e && !e.contains(o) && o.type!=='hidden')) return null;
+      const r=p.getBoundingClientRect();
+      if (r.width<Math.max(own.width,12) || r.height<Math.max(own.height,12)) continue;
+      // Only this nearest box is tried: its centre must hit the box itself, never a banner or sheet over it.
+      const x=r.x+r.width/2, y=r.y+r.height/2;
+      return x>=0 && y>=0 && x<innerWidth && y<innerHeight && p.contains((${DEEP_HIT})(x,y)) ? {x,y} : null;
+    }
+    return null; };
+  // A fill gets focus on the input itself (a fixed operation, like a select's value); a click taps the field box.
+  const throughField=()=>{ const at=fieldBox();
+    if (!at || action.kind!=='fill') return at;
+    e.focus();
+    return e.matches(':focus') ? {...at, focused:true} : null; };
+  // A tiny input goes through its field box first; a fill the field's own decoration covers (magnifier, clear) goes there last.
+  const reach=()=>(tiny ? throughField() : null) || point() || (action.kind==='fill' ? throughField() : null);
   // A target clipped by a scrolling sidebar or list is scrolled just into view once, as a person would.
-  let at=point();
-  if (!at) { e.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'}); at=point(); }
+  let at=reach();
+  if (!at) { e.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'}); at=reach(); }
   if (!at) {
     // Say what covers it: a popup layer can be closed with Escape, anything else can't be helped from here.
     const r=window.__jevFast.clickRect(e), hit=(${DEEP_HIT})(r.x+r.width/2, r.y+r.height/2);
     return {covered:true, byPopup:Boolean(hit?.closest('[role="listbox"],[role="menu"],[role="dialog"]:not([aria-modal="true"]),[role="tooltip"],[data-radix-popper-content-wrapper],[cmdk-list]'))};
   }
-  const {x,y}=at;
+  const {x,y,focused}=at;
   if (action.kind==='select') {
     if (e.tagName!=='SELECT' || ![...e.options].some(o=>o.value===action.value &&
         !o.disabled && !o.closest('optgroup[disabled]'))) return null;
@@ -497,7 +533,7 @@ const RESOLVE_TARGET = `action => {
     e.dispatchEvent(new Event('input',{bubbles:true}));
     e.dispatchEvent(new Event('change',{bubbles:true}));
   }
-  return {x,y};
+  return {x,y,focused};
 }`;
 
 const SETTLE = `action => new Promise(resolve => {
