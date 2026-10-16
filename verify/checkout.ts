@@ -126,6 +126,21 @@ const signIn = async (tab: Tab, username: string) => {
   throw new Error(`the shop did not answer the sign-in as ${username} within ${SIGN_IN_WAIT_MS}ms`);
 };
 
+// Opens the product list with the shop's own session cookie set, as a calling agent that signed in with its own tool would
+// hand it over. Fails with what the page shows when the cookie no longer signs a shopper in.
+const startSignedIn = async (tab: Tab, username: string) => {
+  await tab.evaluate(`document.cookie = 'session-username=${username}; path=/'`);
+  await tab.navigate(new URL(PRODUCT_LIST, START_URL).href);
+  const shown = `location.pathname === ${JSON.stringify(PRODUCT_LIST)} && [...document.querySelectorAll('button')].some((b) => /add to cart/i.test(b.textContent))`;
+  const deadline = Date.now() + SIGN_IN_WAIT_MS;
+  while (Date.now() < deadline) {
+    if (await tab.evaluate(shown)) return;
+    await sleep(SIGN_IN_POLL_MS);
+  }
+  const seen = await tab.evaluate("location.pathname + ' · ' + document.body.innerText.replace(/\\s+/g, ' ').slice(0, 200)");
+  throw new Error(`the product list did not show for ${username} after setting the session cookie within ${SIGN_IN_WAIT_MS}ms; the page shows: ${seen}`);
+};
+
 // `before` only gets the tab, so `reset` (called first, with the job) tells it whose run this is.
 let jobInRun = '';
 
@@ -138,10 +153,17 @@ await runJobs({
   reset: async (job) => {
     jobInRun = job.id;
   },
-  // The shop keeps the sign-in in a cookie, which the runner's per-run storage clearing leaves alone: drop it, then sign in.
+  // The shop keeps the sign-in in a cookie, which the runner's per-run storage clearing leaves alone: drop it, then set it again.
+  // Only the locked-out run signs in on the login page; for the others that page's move to the product list can leave the
+  // tab dropping CDP input (plan 048), and a calling agent that signed in hands over a signed-in shop anyway.
   before: async (tab) => {
     await tab.evaluate("document.cookie = 'session-username=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'");
-    await tab.navigate(START_URL);
-    await signIn(tab, ACCOUNT_BY_JOB[jobInRun] ?? SHOPPER_ACCOUNT);
+    const account = ACCOUNT_BY_JOB[jobInRun] ?? SHOPPER_ACCOUNT;
+    if (account === LOCKED_OUT_ACCOUNT) {
+      await tab.navigate(START_URL);
+      await signIn(tab, account);
+    } else {
+      await startSignedIn(tab, account);
+    }
   },
 });
