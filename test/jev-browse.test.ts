@@ -16,6 +16,8 @@ import { createRunner } from '../src/task/start-task.ts';
 
 const NAME_RECT = { x: 20, y: 100, w: 350, h: 40 };
 const PAY_RECT = { x: 20, y: 700, w: 350, h: 48 };
+// The user's words naming what a confirmed click acts on, here the page it is on: the control's own words never count.
+const STAYLIST = 'Staylist';
 // A booking form as the snapshot reports it: two text fields, a native select, a pay button.
 const bookingActions: PageAction[] = [
   { id: 'e1', kind: 'fill', node: 1, role: 'textbox', label: 'Full name', value: '', rect: NAME_RECT },
@@ -379,9 +381,10 @@ describe('BrowserTask', () => {
     expect(held.reason).toContain('"Confirm booking and pay €412" on "Staylist" looks irreversible');
     expect(held.reason).toContain("Confirm only if the user's request named this action and this target;");
     expect(held.reason).toContain('a category ("anything unused", "old ones") names no target: list the candidates and ask the user.');
+    expect(held.reason).toContain("To continue, call again with confirm_irreversible and confirm_target (the user's words naming the target).");
     expect(acted).toEqual([]);
 
-    task.update({ confirmIrreversible: true });
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
     const summary = await task.run();
     expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
     expect(summary.status).toBe('needs_confirmation');
@@ -400,7 +403,7 @@ describe('BrowserTask', () => {
   describe('a new session started through the runner', () => {
     afterEach(() => vi.restoreAllMocks());
 
-    const startWith = async (confirmIrreversible?: boolean) => {
+    const startWith = async (confirmIrreversible?: boolean, confirmTarget?: string) => {
       const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '4', commit_risk: 0.9 }]);
       const { asTab, acted } = fakeTab();
       vi.spyOn(model, 'createAsk').mockReturnValue(ask);
@@ -411,13 +414,14 @@ describe('BrowserTask', () => {
         url: 'http://fixture/pay',
         maxSteps: 1,
         confirmIrreversible,
+        confirmTarget,
         changeWaitMs: 0,
       });
       return { summary: await task.run(), acted };
     };
 
     it('clicks the irreversible target once when the first call already carries the confirmation', async () => {
-      const { summary, acted } = await startWith(true);
+      const { summary, acted } = await startWith(true, STAYLIST);
       expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
       expect(summary.status).not.toBe('needs_confirmation');
     });
@@ -442,7 +446,7 @@ describe('BrowserTask', () => {
       const task = new BrowserTask(asTab, ask, options);
 
       expect((await task.run()).status).toBe('needs_confirmation');
-      task.update({ confirmIrreversible: true });
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
       const summary = await task.run();
 
       expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
@@ -454,7 +458,7 @@ describe('BrowserTask', () => {
       const { asTab, acted } = fakeTab(pages());
       const task = new BrowserTask(asTab, ask, options);
 
-      task.update({ confirmIrreversible: true });
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
       const summary = await task.run();
 
       expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
@@ -467,7 +471,7 @@ describe('BrowserTask', () => {
       const task = new BrowserTask(asTab, ask, options);
 
       expect((await task.run()).status).toBe('uncertain');
-      task.update({ confirmIrreversible: true });
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
       const ignored = await task.run();
 
       expect(ignored.status).toBe('needs_confirmation');
@@ -484,12 +488,12 @@ describe('BrowserTask', () => {
       const task = new BrowserTask(asTab, ask, { ...options, maxSteps: 5 });
 
       expect((await task.run()).status).toBe('needs_confirmation');
-      task.update({ confirmIrreversible: true });
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
       const finished = await task.run();
       expect(finished.status).toBe('done');
       expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
 
-      task.update({ goal: 'Pay again', confirmIrreversible: true });
+      task.update({ goal: 'Pay again', confirmIrreversible: true, confirmTarget: STAYLIST });
       const again = await task.run();
 
       expect(again.status).toBe('needs_confirmation');
@@ -502,16 +506,255 @@ describe('BrowserTask', () => {
       const { asTab, acted } = fakeTab(pages());
       const task = new BrowserTask(asTab, ask, options);
 
-      task.update({ confirmIrreversible: true });
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
       const asked = await task.run();
       expect(asked).toMatchObject({ status: 'needs_input', reason: 'No supplied value fits the field "Email address"' });
       expect(acted).toEqual([]);
 
-      task.update({ values: { email: 'ada@example.com' }, confirmIrreversible: true });
+      task.update({ values: { email: 'ada@example.com' }, confirmIrreversible: true, confirmTarget: STAYLIST });
       const summary = await task.run();
 
       expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
       expect(summary.confirm_ignored).toBeUndefined();
+    });
+  });
+
+  describe('a confirmation must name its target in the user\'s words', () => {
+    const DELETE = 'Delete this repository';
+    const scratchPage = (fingerprint: string, overrides: Partial<PageState> = {}) =>
+      page({
+        url: 'http://fixture/ada/scratch/settings',
+        title: 'ada/scratch - Settings',
+        text: `Danger zone\n${DELETE}`,
+        actions: [{ id: 'e1', kind: 'click', node: 1, role: 'button', label: DELETE }],
+        fingerprint,
+        ...overrides,
+      });
+    const manyPages = (make: (fingerprint: string) => PageState) => Array.from({ length: 12 }, (_, i) => make(String(i)));
+    const deleteIt = { operation: 'CLICK', click_target: '1', commit_risk: 0.9 };
+    const options = { goal: 'Delete the repository ada/scratch', maxSteps: 1, changeWaitMs: 0 };
+    // The run has asked whether to delete, and waits for the calling agent's answer.
+    const askedToDelete = async (make = scratchPage) => {
+      const { ask } = scriptedJev([deleteIt]);
+      const { asTab, acted } = fakeTab(manyPages(make));
+      const task = new BrowserTask(asTab, ask, options);
+      expect((await task.run()).status).toBe('needs_confirmation');
+      return { task, acted };
+    };
+    const refusalFor = (target: string, title = 'ada/scratch - Settings') =>
+      `confirm_target "${target}" names nothing "${DELETE}" acts on here (page "${title}", its address, the visible text or the values typed on this page); ask the user which one they mean.`;
+
+    it.each(['ada/scratch', 'the repository ada/scratch', 'the repository named "ada/scratch"', '"Ada/Scratch".'])(
+      'clicks when the target is shown by the page title: %s',
+      async (confirmTarget) => {
+        const { task, acted } = await askedToDelete();
+        task.update({ confirmIrreversible: true, confirmTarget });
+        await task.run();
+        expect(acted).toEqual([{ label: DELETE }]);
+      },
+    );
+
+    it('refuses a confirmation that carries no target, and clicks nothing', async () => {
+      const { task, acted } = await askedToDelete();
+      task.update({ confirmIrreversible: true });
+      const summary = await task.run();
+      expect(summary.status).toBe('needs_confirmation');
+      expect(summary.reason).toBe(`confirm_irreversible needs confirm_target: the words from the user's request that name what "${DELETE}" acts on.`);
+      expect(acted).toEqual([]);
+    });
+
+    it('refuses a first call whose confirmation carries no target', async () => {
+      const { ask } = scriptedJev([deleteIt]);
+      const { asTab, acted } = fakeTab(manyPages(scratchPage));
+      const task = new BrowserTask(asTab, ask, options);
+      task.update({ confirmIrreversible: true });
+      const summary = await task.run();
+      expect(summary.reason).toContain('confirm_irreversible needs confirm_target');
+      expect(acted).toEqual([]);
+    });
+
+    it.each(['anything unused', 'anything that looks unused'])('refuses a category: %s names nothing on the page', async (confirmTarget) => {
+      const { task, acted } = await askedToDelete();
+      task.update({ confirmIrreversible: true, confirmTarget });
+      const summary = await task.run();
+      expect(summary.status).toBe('needs_confirmation');
+      expect(summary.reason).toBe(refusalFor(confirmTarget));
+      expect(acted).toEqual([]);
+    });
+
+    // The page's own text shows "Delete this repository" too, and still the action's words are not a target.
+    it.each(['delete', 'this repository', 'Delete this repository'])('refuses the action\'s own words: %s', async (confirmTarget) => {
+      const { task, acted } = await askedToDelete();
+      task.update({ confirmIrreversible: true, confirmTarget });
+      expect((await task.run()).reason).toBe(refusalFor(confirmTarget));
+      expect(acted).toEqual([]);
+    });
+
+    it('refuses the wrong target: another repository than the page is on', async () => {
+      const { task, acted } = await askedToDelete();
+      task.update({ confirmIrreversible: true, confirmTarget: 'ada/app' });
+      const summary = await task.run();
+      expect(summary.reason).toBe(refusalFor('ada/app'));
+      expect(acted).toEqual([]);
+    });
+
+    it('refuses a target when only some of its words are on the page', async () => {
+      const { task, acted } = await askedToDelete();
+      task.update({ confirmIrreversible: true, confirmTarget: 'ada/scratch and ada/app' });
+      expect((await task.run()).reason).toBe(refusalFor('ada/scratch and ada/app'));
+      expect(acted).toEqual([]);
+    });
+
+    it('refuses a target made only of words too short to name anything', async () => {
+      const { task, acted } = await askedToDelete();
+      task.update({ confirmIrreversible: true, confirmTarget: 'qq' });
+      expect((await task.run()).reason).toBe(refusalFor('qq'));
+      expect(acted).toEqual([]);
+    });
+
+    it('cuts the page title in the refusal to 80 characters, and leaves it out when the page has none', async () => {
+      const long = 'ada/scratch - Settings - ' + 'x'.repeat(200);
+      const titled = await askedToDelete((fingerprint) => scratchPage(fingerprint, { title: long }));
+      titled.task.update({ confirmIrreversible: true, confirmTarget: 'ada/app' });
+      expect((await titled.task.run()).reason).toBe(refusalFor('ada/app', long.slice(0, 80)));
+
+      const untitled = await askedToDelete((fingerprint) => scratchPage(fingerprint, { title: '' }));
+      untitled.task.update({ confirmIrreversible: true, confirmTarget: 'ada/app' });
+      expect((await untitled.task.run()).reason).toContain('here (its address, the visible text or the values typed on this page)');
+    });
+
+    it('matches the address when the title does not name the target', async () => {
+      const { task, acted } = await askedToDelete((fingerprint) => scratchPage(fingerprint, { title: '' }));
+      task.update({ confirmIrreversible: true, confirmTarget: 'ada/scratch' });
+      await task.run();
+      expect(acted).toEqual([{ label: DELETE }]);
+    });
+
+    it('matches the visible text when neither the title nor the address names the target', async () => {
+      const bare = (fingerprint: string) =>
+        scratchPage(fingerprint, { title: '', url: 'http://fixture/settings', text: 'Danger zone\nRemove ada/scratch for good' });
+      const { task, acted } = await askedToDelete(bare);
+      task.update({ confirmIrreversible: true, confirmTarget: 'remove ada/scratch' });
+      await task.run();
+      expect(acted).toEqual([{ label: DELETE }]);
+    });
+
+    it('matches an issue title for the Comment button, whose label says nothing of the issue', async () => {
+      const issuePage = (fingerprint: string) =>
+        page({
+          url: 'http://fixture/ada/app/issues/1',
+          title: 'Login fails on Safari · Issue #1',
+          text: 'Login fails on Safari\nWrite\nComment',
+          actions: [{ id: 'e1', kind: 'click', node: 1, role: 'button', label: 'Comment' }],
+          fingerprint,
+        });
+      const { ask } = scriptedJev([deleteIt]);
+      const { asTab, acted } = fakeTab(manyPages(issuePage));
+      const task = new BrowserTask(asTab, ask, options);
+      expect((await task.run()).status).toBe('needs_confirmation');
+
+      task.update({ confirmIrreversible: true, confirmTarget: 'Login fails on Safari' });
+      await task.run();
+
+      expect(acted).toEqual([{ label: 'Comment' }]);
+    });
+
+    describe('on a page that does not show the target outside what was typed', () => {
+      const field = (label: string, node: number): PageAction => ({ id: `e${node}`, kind: 'fill', node, role: 'textbox', label, value: '' });
+      const formPage = (fingerprint: string, url: string, title: string, fieldLabel: string, button: string) =>
+        page({
+          url,
+          title,
+          text: title,
+          actions: [field(fieldLabel, 1), { id: 'e2', kind: 'click', node: 2, role: 'button', label: button }],
+          fingerprint,
+        });
+      const typeInto = { operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: 'value' };
+      const submit = { operation: 'CLICK', click_target: '2', commit_risk: 0.9 };
+      const callWith = (value: string) => ({ goal: 'Fill the form with the value', values: { value }, maxSteps: 5, changeWaitMs: 0 });
+
+      describe('a sign-up page', () => {
+        const signUpPage = (fingerprint: string) =>
+          formPage(fingerprint, 'http://fixture/user/sign_up', 'Create account', 'Username', 'Register');
+        const withUsername = { goal: 'Create an account with the username in values', values: { username: 'signup-3-x7k2qa' }, maxSteps: 5, changeWaitMs: 0 };
+
+        it('matches the username value this task typed on the page', async () => {
+          const { ask } = scriptedJev([{ ...typeInto, value_for_1: 'username' }, submit]);
+          const { asTab, acted } = fakeTab(manyPages(signUpPage));
+          const task = new BrowserTask(asTab, ask, withUsername);
+          expect((await task.run()).status).toBe('needs_confirmation');
+
+          task.update({ confirmIrreversible: true, confirmTarget: 'signup-3-x7k2qa' });
+          await task.run();
+
+          expect(acted).toEqual([{ label: 'Username', text: 'signup-3-x7k2qa' }, { label: 'Register' }]);
+        });
+
+        it('does not count a supplied value that was never typed there', async () => {
+          const { ask } = scriptedJev([submit]);
+          const { asTab, acted } = fakeTab(manyPages(signUpPage));
+          const task = new BrowserTask(asTab, ask, withUsername);
+          expect((await task.run()).status).toBe('needs_confirmation');
+
+          task.update({ confirmIrreversible: true, confirmTarget: 'signup-3-x7k2qa' });
+          const summary = await task.run();
+
+          expect(summary.reason).toBe(
+            `confirm_target "signup-3-x7k2qa" names nothing "Register" acts on here (page "Create account", its address, the visible text or the values typed on this page); ask the user which one they mean.`,
+          );
+          expect(acted).toEqual([]);
+        });
+      });
+
+      it('matches the name typed into a new milestone', async () => {
+        const milestonePage = (fingerprint: string) =>
+          formPage(fingerprint, 'http://fixture/ada/app/milestones/new', 'New Milestone', 'Title', 'Create milestone');
+        const { ask } = scriptedJev([typeInto, submit]);
+        const { asTab, acted } = fakeTab(manyPages(milestonePage));
+        const task = new BrowserTask(asTab, ask, callWith('v1.2'));
+        expect((await task.run()).status).toBe('needs_confirmation');
+
+        task.update({ confirmIrreversible: true, confirmTarget: 'v1.2' });
+        await task.run();
+
+        expect(acted).toEqual([{ label: 'Title', text: 'v1.2' }, { label: 'Create milestone' }]);
+      });
+    });
+
+    it('clears a refused confirmation: the next risky click is handed back until the agent answers again', async () => {
+      const { task, acted } = await askedToDelete();
+      task.update({ confirmIrreversible: true, confirmTarget: 'anything that looks unused' });
+      expect((await task.run()).reason).toBe(refusalFor('anything that looks unused'));
+
+      const handedBack = await task.run();
+      expect(handedBack.status).toBe('needs_confirmation');
+      expect(handedBack.reason).toContain(`Clicking "${DELETE}" on "ada/scratch - Settings" looks irreversible`);
+      expect(acted).toEqual([]);
+    });
+
+    it('lets the agent answer a refusal with the words that do name the target', async () => {
+      const { task, acted } = await askedToDelete();
+      task.update({ confirmIrreversible: true, confirmTarget: 'anything that looks unused' });
+      expect((await task.run()).status).toBe('needs_confirmation');
+
+      task.update({ confirmIrreversible: true, confirmTarget: 'ada/scratch' });
+      await task.run();
+
+      expect(acted).toEqual([{ label: DELETE }]);
+    });
+
+    it('keeps the target a first call gave through a needs_input, and takes no new one from a call that is not answering', async () => {
+      const noValueForEmail = { operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: NO_SUPPLIED_VALUE };
+      const { ask } = scriptedJev([noValueForEmail, noValueForEmail, { operation: 'CLICK', click_target: '4', commit_risk: 0.9 }]);
+      const { asTab, acted } = fakeTab(manyPages((fingerprint) => page({ fingerprint })));
+      const task = new BrowserTask(asTab, ask, { goal: 'Pay', values: { name: 'Ada' }, maxSteps: 1, changeWaitMs: 0 });
+
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+      expect((await task.run()).status).toBe('needs_input');
+      task.update({ values: { email: 'ada@example.com' }, confirmIrreversible: true, confirmTarget: 'anything unused' });
+      await task.run();
+
+      expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
     });
   });
 
@@ -1103,7 +1346,7 @@ describe('Box in the task loop', () => {
     expect(acted).toEqual([]);
 
     // One confirmation covers one click: the same rescue on the next step is gated again.
-    task.update({ confirmIrreversible: true });
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
     const summary = await task.run();
     expect(acted).toEqual([{ label: 'Confirm booking and pay €412' }]);
     expect(summary.status).toBe('needs_confirmation');
@@ -1411,7 +1654,7 @@ describe('loop gotchas', () => {
       const { asTab, acted } = fakeTab([foldedPage('a', 'false'), foldedPage('b', 'false'), foldedPage('c', 'false')]);
       const task = new BrowserTask(asTab, ask, options);
       expect((await task.run()).status).toBe('needs_confirmation');
-      task.update({ confirmIrreversible: true });
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
       await task.run();
       expect(acted).toEqual([{ label: 'Show more details' }]);
     });
@@ -2422,7 +2665,7 @@ describe('a risky submit chosen again after the page answered it', () => {
     const { ask } = scriptedJev([type, submit, submit]);
     const { asTab, acted } = fakeTab([formPage('a', BEFORE), formPage('b', BEFORE), formPage('c', REJECTED)]);
     const task = new BrowserTask(asTab, ask, options);
-    task.update({ confirmIrreversible: true });
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
     const summary = await task.run();
     expect(summary.status).toBe('blocked');
     expect(summary.reason).toContain('"Create repository" was already submitted on this page');
@@ -2438,7 +2681,7 @@ describe('a risky submit chosen again after the page answered it', () => {
       formPage('c', `${REJECTED}\nPage:\n2ms`),
     ]);
     const task = new BrowserTask(asTab, ask, options);
-    task.update({ confirmIrreversible: true });
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
     const summary = await task.run();
     expect(summary.status).toBe('blocked');
     expect(summary.reason).toContain(`the page then said: "${BANNER}". Submitting it again`);
@@ -2448,7 +2691,7 @@ describe('a risky submit chosen again after the page answered it', () => {
     const { ask } = scriptedJev([type, submit, { operation: 'SCROLL_DOWN' }, submit]);
     const { asTab, acted } = fakeTab([formPage('a', BEFORE), formPage('b', BEFORE), formPage('c', REJECTED), formPage('d', BEFORE)]);
     const task = new BrowserTask(asTab, ask, options);
-    task.update({ confirmIrreversible: true });
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
     const summary = await task.run();
     expect(summary.status).toBe('blocked');
     expect(summary.reason).toContain(`the page then said: "${BANNER}"`);
@@ -2462,7 +2705,7 @@ describe('a risky submit chosen again after the page answered it', () => {
     const { ask } = scriptedJev([{ operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: 'name' }, submit, submit]);
     const { asTab, acted } = fakeTab([step1('a'), step1('b'), step2]);
     const task = new BrowserTask(asTab, ask, options);
-    task.update({ confirmIrreversible: true });
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
     const summary = await task.run();
     expect(summary.status).toBe('needs_confirmation');
     expect(summary.reason).toContain('"Continue" on "Staylist" looks irreversible');
@@ -2474,7 +2717,7 @@ describe('a risky submit chosen again after the page answered it', () => {
     const { ask } = scriptedJev([type, submit, submit]);
     const { asTab, acted } = fakeTab([formPage('a', BEFORE), formPage('b', BEFORE), created]);
     const task = new BrowserTask(asTab, ask, options);
-    task.update({ confirmIrreversible: true });
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
     const summary = await task.run();
     expect(summary.status).toBe('needs_confirmation');
     expect(summary.reason).toContain('"Create repository" on "Staylist" looks irreversible');
@@ -2487,7 +2730,7 @@ describe('a risky submit chosen again after the page answered it', () => {
     const task = new BrowserTask(asTab, ask, options);
     const first = await task.run();
     expect(first.status).toBe('needs_confirmation');
-    task.update({ confirmIrreversible: true });
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
     const second = await task.run();
     expect(second.status).toBe('blocked');
     expect(second.reason).toContain(`the page then said: "${BANNER}"`);
@@ -2499,7 +2742,7 @@ describe('a risky submit chosen again after the page answered it', () => {
     const { ask } = scriptedJev([type, type, submit, submit]);
     const { asTab } = fakeTab([search, formPage('a', BEFORE), formPage('b', BEFORE), formPage('c', REJECTED)]);
     const task = new BrowserTask(asTab, ask, options);
-    task.update({ confirmIrreversible: true });
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
     const summary = await task.run();
     expect(summary.status).toBe('blocked');
     expect(summary.reason).toContain(`the page then said: "${BANNER}"`);
@@ -2511,7 +2754,7 @@ describe('a risky submit chosen again after the page answered it', () => {
     const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1', commit_risk: 0.8 }]);
     const { asTab } = fakeTab([list('a', '2 items\nDelete'), list('b', '1 item\nItem deleted\nDelete')]);
     const task = new BrowserTask(asTab, ask, options);
-    task.update({ confirmIrreversible: true });
+    task.update({ confirmIrreversible: true, confirmTarget: 'items' });
     const summary = await task.run();
     expect(summary.status).toBe('needs_confirmation');
     expect(summary.reason).toContain('"Delete" on "Staylist" looks irreversible');
