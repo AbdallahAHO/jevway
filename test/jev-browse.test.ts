@@ -232,12 +232,25 @@ describe('Jev request', () => {
   });
 
   it('counts generic overflow labels as folds, and no other collapsed label', () => {
+    // One chip per page, so the cap on how many folds are returned does not hide a match.
+    const foldsOn = (chip: PageAction) => {
+      const clicks = buildActionSpace(overflowPage('a', [chip]).actions).targets.CLICK!;
+      const ids = Object.keys(clicks);
+      return overflowFolds({ click_target: answer(ids[0], ids) }, clicks).length;
+    };
     const labels = ['+1', 'Show 2 more tags', 'More', 'more options', '…', '⋯', '⋮', '...', 'ellipsis icon', 'Filters', 'Show more details', 'More details', 'Moreover'];
-    const state = overflowPage('a', [...labels.map((label, i) => overflowChip(50 + i, label)), overflowChip(80, 'More', 'true')]);
-    const clicks = buildActionSpace(state.actions).targets.CLICK!;
+    expect(labels.filter((label) => foldsOn(overflowChip(32, label)))).toEqual(labels.slice(0, 9));
+    expect(foldsOn(overflowChip(32, 'More', 'true'))).toBe(0);
+  });
+
+  it('counts a hover-only overflow control, whose label carries the hover suffix', () => {
+    const hoverChip = { ...overflowChip(32, 'More actions (appears on hover)'), hover: true };
+    const clicks = buildActionSpace(overflowPage('a', [hoverChip]).actions).targets.CLICK!;
     const ids = Object.keys(clicks);
-    const folds = overflowFolds({ click_target: answer(ids[0], ids) }, clicks);
-    expect(folds.map((fold) => fold.action.label)).toEqual(labels.slice(0, 9));
+    expect(overflowFolds({ click_target: answer(ids[0], ids) }, clicks)).toHaveLength(1);
+    // The suffix is only stripped where the snapshot added it.
+    const plain = buildActionSpace(overflowPage('a', [overflowChip(32, 'More actions (appears on hover)')]).actions).targets.CLICK!;
+    expect(overflowFolds({ click_target: answer(Object.keys(plain)[0], Object.keys(plain)) }, plain)).toHaveLength(0);
   });
 
   it('rejects malformed answers so nothing executes', () => {
@@ -619,6 +632,25 @@ describe('per-element commit risk', () => {
     const judged = ['Show 3 more tags', '⋯'].map((label) => clickTargetOf(state, label));
     expect(Object.keys(requests[1].questions)).toEqual(judged.map((index) => `risk_${index}`));
     expect(Object.keys(decision.elementRisks!)).toEqual(judged);
+  });
+
+  describe('with a collapsed "More actions" on each of five rows', () => {
+    const chips = [0, 1, 2, 3, 4].map((row) => overflowChip(32 + row, 'More actions'));
+    const state = overflowPage('a', chips);
+    // The two header menus take indexes 1 and 2, so row n's chip is element 3 + n.
+    const rowChip = (row: number) => String(3 + row);
+
+    it('judges only three of them by name when the operation is BLOCKED', async () => {
+      const { ask, requests } = scriptedJev([{ operation: 'BLOCKED', click_target: clickTargetOf(state, 'Open menu') }]);
+      await decide(ask, { ...input, page: state, elementRisk: 'chosen' });
+      expect(Object.keys(requests[1].questions)).toEqual([0, 1, 2].map((row) => `risk_${rowChip(row)}`));
+    });
+
+    it('picks the three the click head ranks highest', async () => {
+      const { ask, requests } = scriptedJev([{ operation: 'BLOCKED', click_target: rowChip(4) }]);
+      await decide(ask, { ...input, page: state, elementRisk: 'chosen' });
+      expect(Object.keys(requests[1].questions).sort()).toEqual([4, 0, 1].map((row) => `risk_${rowChip(row)}`).sort());
+    });
   });
 
   it('scores the ranked taps for the autopilot, and a malformed score counts as risky', async () => {

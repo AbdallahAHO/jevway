@@ -389,13 +389,16 @@ export const foldedFavourite = (answers: Record<string, any>, clicks: Record<str
   }
 };
 
+// At most this many overflow controls are tried or judged per BLOCKED step: more of them are rows of one list, not a fold.
+const MAX_OVERFLOW_FOLDS = 3;
 // "+1", "Show 2 more tags", "More actions", "⋯": the generic names of a chip that folds details away on a narrow screen.
 const OVERFLOW_LABEL = /^(\+\d+|show \d+ more\b.*|more( actions| options| items)?|…|⋯|⋮|\.\.\.)$/i;
 
 /**
- * While the model says BLOCKED: every collapsed overflow control ("+1", "More actions", an ellipsis icon), the click head's
- * higher-ranked ones first. Their labels say nothing about the goal, so the head scores them near 0 even when the target
- * sits behind one; the caller opens the first one not yet tried.
+ * While the model says BLOCKED: the collapsed overflow controls ("+1", "More actions", an ellipsis icon) the click head
+ * ranks highest, at most `MAX_OVERFLOW_FOLDS`. Their labels say nothing about the goal, so the head scores them near 0 even
+ * when the target sits behind one; the caller opens the first one not yet tried, so a list page with a "⋯" per row costs
+ * a few tries and a few risk questions, not one per row.
  */
 export const overflowFolds = (answers: Record<string, any>, clicks: Record<string, PageAction>) => {
   const ids = Object.keys(clicks);
@@ -403,15 +406,22 @@ export const overflowFolds = (answers: Record<string, any>, clicks: Record<strin
   try {
     const { probabilities } = validChoice(answers.click_target, ids);
     return ids
-      .filter((id) => clicks[id].expanded === 'false' && isOverflowLabel(clicks[id].label))
+      .filter((id) => clicks[id].expanded === 'false' && isOverflowLabel(clicks[id]))
       .sort((a, b) => probabilities[b] - probabilities[a])
+      .slice(0, MAX_OVERFLOW_FOLDS)
       .map((id) => ({ id, probability: probabilities[id], action: clicks[id] }));
   } catch {
     return [];
   }
 };
 
-const isOverflowLabel = (label: string) => OVERFLOW_LABEL.test(label.trim()) || /ellipsis/i.test(label);
+// A control shown only on hover is listed with this suffix on its label (see snapshot.js).
+const HOVER_SUFFIX = / \(appears on hover\)$/;
+
+const isOverflowLabel = ({ label, hover }: PageAction) => {
+  const name = (hover ? label.replace(HOVER_SUFFIX, '') : label).trim();
+  return OVERFLOW_LABEL.test(name) || /ellipsis/i.test(name);
+};
 
 // The chosen click and the element under the screenshot box first (a box rescue clicks it, so it is judged by name too),
 // then the collapsed controls a BLOCKED step may open (opening one is a click too), then (for the autopilot) the remaining
