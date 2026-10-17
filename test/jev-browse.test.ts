@@ -1314,6 +1314,72 @@ describe('per-element commit risk', () => {
         expect(acted).toEqual([]);
       });
     });
+
+    // The same form with its Labels list open: the page-level question still reads the Create button, not the row picked.
+    describe('picking from an open list', () => {
+      const openList = (row: { role: string; label: string }, listExpanded?: string) =>
+        page({
+          actions: [
+            { id: 'labels', kind: 'click', node: 10, role: 'combobox', label: 'Labels', ...(listExpanded && { expanded: listExpanded }) },
+            { id: 'row', kind: 'click', node: 12, ...row },
+            { id: 'other', kind: 'click', node: 13, role: row.role, label: 'help wanted' },
+            { id: 'create', kind: 'click', node: 11, role: 'button', label: 'Create issue' },
+            { id: 'wait', kind: 'wait', label: 'Wait for the page to update' },
+          ],
+        });
+      const picking = async (form: PageState, label: string, script: Record<string, any>) => {
+        const row = clickTargetOf(form, label);
+        const { ask } = scriptedJev([{ operation: 'CLICK', click_target: row, commit_risk: 0.55, [`risk_${row}`]: 0.01, ...script }]);
+        const { asTab, acted } = fakeTab([form]);
+        const options = { goal: 'Label the issue', maxSteps: 1, elementRisk: true, pageRisk: true, changeWaitMs: 0 };
+        const task = new BrowserTask(asTab, ask, options);
+        const summary = await task.run();
+        return { summary, acted, commitRisk: task.trace[0].decision.commitRisk };
+      };
+
+      it('is judged by its own name: the page-level question reads the Create button, not the row', async () => {
+        const form = openList({ role: 'option', label: 'bug' }, 'true');
+        const { summary, acted, commitRisk } = await picking(form, 'bug', {});
+        expect(commitRisk).toBe(0.01);
+        expect(acted).toEqual([{ label: 'bug' }]);
+        expect(summary.status).not.toBe('needs_confirmation');
+      });
+
+      it.each(['menuitemcheckbox', 'menuitemradio'])('judges a %s row the same way', async (role) => {
+        const form = openList({ role, label: 'bug' }, 'true');
+        const { summary, acted, commitRisk } = await picking(form, 'bug', {});
+        expect(commitRisk).toBe(0.01);
+        expect(acted).toEqual([{ label: 'bug' }]);
+        expect(summary.status).not.toBe('needs_confirmation');
+      });
+
+      it.each([
+        ['menuitem', 'Delete'],
+        ['checkbox', 'Subscribe'],
+      ])('keeps the higher of the two for a %s row, which performs an action', async (role, label) => {
+        const form = openList({ role, label }, 'true');
+        const { summary, acted, commitRisk } = await picking(form, label, {});
+        expect(commitRisk).toBe(0.55);
+        expect(summary.status).toBe('needs_confirmation');
+        expect(acted).toEqual([]);
+      });
+
+      it.each([undefined, 'false'])('keeps the higher of the two for an option when no list is open (expanded %s)', async (listExpanded) => {
+        const form = openList({ role: 'option', label: 'bug' }, listExpanded);
+        const { summary, acted, commitRisk } = await picking(form, 'bug', {});
+        expect(commitRisk).toBe(0.55);
+        expect(summary.status).toBe('needs_confirmation');
+        expect(acted).toEqual([]);
+      });
+
+      it('still asks for confirmation when the option name says irreversible', async () => {
+        const form = openList({ role: 'option', label: 'Delete project' }, 'true');
+        const { summary, acted, commitRisk } = await picking(form, 'Delete project', { commit_risk: 0.1, [`risk_${clickTargetOf(form, 'Delete project')}`]: 0.8 });
+        expect(commitRisk).toBe(0.8);
+        expect(summary.status).toBe('needs_confirmation');
+        expect(acted).toEqual([]);
+      });
+    });
   });
 });
 
