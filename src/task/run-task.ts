@@ -220,8 +220,8 @@ export class BrowserTask {
   #usedValues = new Set<string>();
   /** Menu options already sent back for an unpicked value, as `node:key`: each is sent back once. */
   #pickNoted = new Set<string>();
-  /** What this run's own clicks left each checkbox or switch showing, by path and label, and whether a repeat click was already told about it. */
-  #toggled = new Map<string, { label: string; checked: string; noted: boolean }>();
+  /** What this run's own clicks left each checkbox or switch showing, by path and label, whether a repeat click was already told about it, and the first click on that path since. */
+  #toggled = new Map<string, { label: string; checked: string; noted: boolean; clickedAfter?: string }>();
   /** Nodes of fields the model chose with no supplied value to type: each is refused once before the caller is asked. */
   #refusedForValue = new Set<number>();
   #tab: Tab;
@@ -405,10 +405,12 @@ export class BrowserTask {
             return stop('uncertain', `Jev chose DONE ${rejectedDone}× but "${doneWhen}" is not visible`, decision);
           }
           // Jev learns its DONE was premature, instead of proposing the same DONE on the same evidence.
+          const unsaved = this.#unsavedToggle(page);
+          const advice = unsaved ? `"${unsaved.label}" was changed and nothing on this page was clicked after it to save it` : 'keep working toward it';
           this.#history.push({
             operation: 'DONE',
             element: '',
-            not_executed: `rejected: "${doneWhen}" is not visible yet; keep working toward it`,
+            not_executed: `rejected: "${doneWhen}" is not visible yet; ${advice}`,
             confidence: round(decision.confidence),
           });
           await new Promise((resolve) => setTimeout(resolve, 300));
@@ -454,10 +456,14 @@ export class BrowserTask {
             return stop('blocked', `Jev chose "${undo.label}" again, which would undo this run's own change (it is now ${state}); say which state it should end in.`, decision);
           }
           undo.noted = true;
+          // Jev can't see whether a change was saved; the run knows whether anything was clicked after it, so the note says which, instead of asking it to guess.
+          const afterIt = undo.clickedAfter
+            ? `"${undo.clickedAfter}" was clicked after it; clicking it again undoes it. Answer DONE if the goal is met, or BLOCKED`
+            : 'nothing on this page was clicked after it to save it; clicking it again undoes it. Save it (a Save or Update button), or answer BLOCKED';
           this.#history.push({
             operation: decision.operation,
             element: '',
-            not_executed: `not accepted: "${undo.label}" is now ${state} because this run clicked it; clicking it again undoes that. Save the change (a Save or Update button) if it isn't saved yet, answer DONE if the goal is met, or BLOCKED`,
+            not_executed: `not accepted: "${undo.label}" is now ${state} because this run clicked it, and ${afterIt}`,
             confidence: round(decision.confidence),
           });
           page = await this.#tab.observe();
@@ -978,12 +984,30 @@ export class BrowserTask {
     return undefined;
   }
 
-  // What a click left a checkbox or switch showing, when it flipped it.
+  // What a click left a checkbox or switch showing, when it flipped it; any other click is the first one after the changes made on its path.
   #recordToggle(action: PageAction, pathBefore: string, page: PageState) {
-    if (!isToggle(action) || pathOf(page.url) !== pathBefore) return;
     const label = bareLabel(action.label);
-    const now = page.actions.find((listed) => listed.kind === 'click' && listed.checked && bareLabel(listed.label) === label);
-    if (now?.checked && now.checked !== action.checked) this.#toggled.set(toggleKey(pathBefore, label), { label, checked: now.checked, noted: false });
+    const now =
+      isToggle(action) && pathOf(page.url) === pathBefore
+        ? page.actions.find((listed) => listed.kind === 'click' && listed.checked && bareLabel(listed.label) === label)
+        : undefined;
+    if (now?.checked && now.checked !== action.checked) {
+      this.#toggled.set(toggleKey(pathBefore, label), { label, checked: now.checked, noted: false });
+      return;
+    }
+    for (const [key, toggle] of this.#toggled) {
+      if (key.startsWith(toggleKey(pathBefore, '')) && !toggle.clickedAfter) toggle.clickedAfter = label;
+    }
+  }
+
+  // A change this run made on this page that nothing was clicked after, still showing what the run left.
+  #unsavedToggle(page: PageState) {
+    return [...this.#toggled]
+      .filter(([key, toggle]) => key.startsWith(toggleKey(pathOf(page.url), '')) && !toggle.clickedAfter)
+      .map(([, toggle]) => toggle)
+      .find((toggle) =>
+        page.actions.some((listed) => listed.kind === 'click' && listed.checked === toggle.checked && bareLabel(listed.label) === toggle.label),
+      );
   }
 
   // A person who just flipped a box doesn't flip it back; they save, or they're done. A click on the same box (path and label), still
