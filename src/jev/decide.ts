@@ -385,6 +385,13 @@ const readValue = (answer: unknown, values: Record<string, string>) => {
 const targetIndexOf = (space: ActionSpace, operation: TargetOperation, action: PageAction) =>
   Object.entries(space.targets[operation]!).find(([, candidate]) => candidate === action)![0];
 
+// "Account menu", "User menu", "Open user navigation menu", "Profile menu": the signed-in user's own menu.
+const ACCOUNT_MENU = /\b(account|profile)\s+menu\b|\buser(\s+navigation)?\s+menu\b/i;
+
+// The account menu holds the signed-in user's own settings and sign-out, never the page's folded content, so a rescue
+// never opens it for the model; the model's own click still can.
+const isAccountMenu = (action: PageAction) => ACCOUNT_MENU.test(nameOf(action));
+
 /**
  * While the model says BLOCKED: the click head's top candidate when it is collapsed (`aria-expanded="false"`), the
  * control a person would open before giving up. The head was not the chosen one, so its answer is checked here.
@@ -395,7 +402,7 @@ export const foldedFavourite = (answers: Record<string, any>, clicks: Record<str
   try {
     const { probabilities } = validChoice(answers.click_target, ids);
     const [id, probability] = Object.entries(probabilities).sort(([, a], [, b]) => b - a)[0];
-    return clicks[id].expanded === 'false' ? { id, probability, action: clicks[id] } : undefined;
+    return clicks[id].expanded === 'false' && !isAccountMenu(clicks[id]) ? { id, probability, action: clicks[id] } : undefined;
   } catch {
     return undefined;
   }
@@ -421,7 +428,7 @@ export const overflowFolds = (answers: Record<string, any>, clicks: Record<strin
     const { probabilities } = validChoice(answers.click_target, ids);
     const counts = (id: string) => Number(COUNT_LABEL.test(nameOf(clicks[id])));
     return ids
-      .filter((id) => clicks[id].expanded === 'false' && isOverflowLabel(clicks[id]))
+      .filter((id) => clicks[id].expanded === 'false' && isOverflowLabel(clicks[id]) && !isAccountMenu(clicks[id]))
       .sort((a, b) => counts(b) - counts(a) || probabilities[b] - probabilities[a])
       .slice(0, MAX_OVERFLOW_FOLDS)
       .map((id) => ({ id, probability: probabilities[id], action: clicks[id] }));
