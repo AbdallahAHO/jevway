@@ -3486,3 +3486,174 @@ describe('what the page said after a submit stays in front of Jev while the run 
     });
   });
 });
+
+describe('a checkbox or switch the run flipped is not flipped back without a word', () => {
+  const WIKI = 'Enable repository wiki';
+  const UNITS = 'http://fixture/ada/app/settings/units';
+  const WEBHOOKS = 'http://fixture/ada/app/settings/hooks';
+  const NOTE =
+    'not accepted: "Enable repository wiki" is now unchecked because this run clicked it; clicking it again undoes that. Save the change (a Save or Update button) if it isn\'t saved yet, answer DONE if the goal is met, or BLOCKED';
+  const BLOCKED =
+    'Jev chose "Enable repository wiki" again, which would undo this run\'s own change (it is now unchecked); say which state it should end in.';
+  const options = { goal: 'Turn off the wiki for this repository', doneWhen: 'The wiki is off and saved', changeWaitMs: 0 };
+  const done = { operation: 'DONE', done_check: 0.9 };
+  const control = (node: number, label: string, role: string, checked?: string): PageAction => ({
+    id: `e${node}`,
+    kind: 'click',
+    node,
+    role,
+    label,
+    ...(checked && { checked }),
+  });
+  // The wiki settings: the box, Save and a link out; every page differs by fingerprint, so no step looks like a no-op.
+  const settings = (fingerprint: string, checked: string, { url = UNITS, node = 1, role = 'checkbox', extras = [] as PageAction[] } = {}) =>
+    page({ url, fingerprint, actions: [control(node, WIKI, role, checked), control(node + 1, 'Save settings', 'button'), ...extras] });
+  const pick = (state: PageState, label: string) => ({ operation: 'CLICK', click_target: clickTargetOf(state, label) });
+  const notes = (steps: { not_executed?: string }[]) => steps.filter((step) => step.not_executed).map((step) => step.not_executed);
+
+  it('feeds back a second pick of the box the run just unticked, and goes on with Save', async () => {
+    const [on, off, offAgain, saved] = [settings('a', 'true'), settings('b', 'false'), settings('c', 'false'), settings('d', 'false')];
+    const { ask, requests } = scriptedJev([pick(on, WIKI), pick(off, WIKI), pick(offAgain, 'Save settings'), done]);
+    const { asTab, acted } = fakeTab([on, off, offAgain, saved]);
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(summary.status).toBe('done');
+    expect(acted.map((a) => a.label)).toEqual([WIKI, 'Save settings']);
+    expect(summary.steps.map((step) => [step.operation, step.element, step.not_executed])).toEqual([
+      ['CLICK', WIKI, undefined],
+      ['CLICK', '', NOTE],
+      ['CLICK', 'Save settings', undefined],
+    ]);
+    expect(JSON.stringify(requests[2])).toContain('clicking it again undoes that');
+  });
+
+  it('still feeds it back after Save reloaded the page with new node ids: the key is path and label', async () => {
+    const [on, off] = [settings('a', 'true'), settings('b', 'false')];
+    const [reloaded, afterNote] = [settings('c', 'false', { node: 11 }), settings('d', 'false', { node: 11 })];
+    const { ask } = scriptedJev([pick(on, WIKI), pick(off, 'Save settings'), pick(reloaded, WIKI), done]);
+    const { asTab, acted } = fakeTab([on, off, reloaded, afterNote]);
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(summary.status).toBe('done');
+    expect(acted.map((a) => a.label)).toEqual([WIKI, 'Save settings']);
+    expect(notes(summary.steps)).toEqual([NOTE]);
+  });
+
+  it('hands the run back blocked when Jev picks the box again after the note, without clicking it', async () => {
+    const [on, off, offAgain, offThrice] = [settings('a', 'true'), settings('b', 'false'), settings('c', 'false'), settings('d', 'false')];
+    const { ask, requests } = scriptedJev([pick(on, WIKI), pick(off, WIKI), pick(offAgain, WIKI)]);
+    const { asTab, acted } = fakeTab([on, off, offAgain, offThrice]);
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(summary).toMatchObject({ status: 'blocked', reason: BLOCKED });
+    expect(acted.map((a) => a.label)).toEqual([WIKI]);
+    expect(notes(summary.steps)).toEqual([NOTE]);
+    expect(requests).toHaveLength(3);
+  });
+
+  it('describes a box the run ticked as checked', async () => {
+    const [off, on, onAgain] = [settings('a', 'false'), settings('b', 'true'), settings('c', 'true')];
+    const { ask } = scriptedJev([pick(off, WIKI), pick(on, WIKI), done]);
+    const { asTab } = fakeTab([off, on, onAgain]);
+    const summary = await new BrowserTask(asTab, ask, { ...options, goal: 'Turn on the wiki' }).run();
+    expect(notes(summary.steps)).toEqual([NOTE.replace('is now unchecked', 'is now checked')]);
+  });
+
+  it('runs a switch the same way as a checkbox', async () => {
+    const [on, off, offAgain] = [settings('a', 'true', { role: 'switch' }), settings('b', 'false', { role: 'switch' }), settings('c', 'false', { role: 'switch' })];
+    const { ask } = scriptedJev([pick(on, WIKI), pick(off, WIKI), done]);
+    const { asTab, acted } = fakeTab([on, off, offAgain]);
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(acted.map((a) => a.label)).toEqual([WIKI]);
+    expect(notes(summary.steps)).toEqual([NOTE]);
+  });
+
+  describe('says nothing', () => {
+    it('for a box the run never clicked', async () => {
+      const [off, on, onAgain] = [settings('a', 'false'), settings('b', 'true'), settings('c', 'true')];
+      const { ask } = scriptedJev([pick(off, WIKI), done]);
+      const { asTab, acted } = fakeTab([off, on, onAgain]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted.map((a) => a.label)).toEqual([WIKI]);
+      expect(notes(summary.steps)).toEqual([]);
+    });
+
+    it('for a different box on the page', async () => {
+      const issues = (checked: string) => control(7, 'Enable issue tracker', 'checkbox', checked);
+      const withIssues = (fingerprint: string, wiki: string, tracker: string) =>
+        page({ fingerprint, url: UNITS, actions: [control(1, WIKI, 'checkbox', wiki), issues(tracker), control(2, 'Save settings', 'button')] });
+      const [start, wikiOff, trackerOff] = [withIssues('a', 'true', 'true'), withIssues('b', 'false', 'true'), withIssues('c', 'false', 'false')];
+      const { ask } = scriptedJev([pick(start, WIKI), pick(wikiOff, 'Enable issue tracker'), done]);
+      const { asTab, acted } = fakeTab([start, wikiOff, trackerOff]);
+      const summary = await new BrowserTask(asTab, ask, { ...options, goal: 'Turn off the wiki and the issue tracker' }).run();
+      expect(acted.map((a) => a.label)).toEqual([WIKI, 'Enable issue tracker']);
+      expect(notes(summary.steps)).toEqual([]);
+    });
+
+    it('for a radio: picking it again changes nothing, and it is no undo', async () => {
+      const [first, second, third] = [settings('a', 'false', { role: 'radio' }), settings('b', 'true', { role: 'radio' }), settings('c', 'true', { role: 'radio' })];
+      const { ask } = scriptedJev([pick(first, WIKI), pick(second, WIKI), done]);
+      const { asTab, acted } = fakeTab([first, second, third]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted.map((a) => a.label)).toEqual([WIKI, WIKI]);
+      expect(notes(summary.steps)).toEqual([]);
+    });
+
+    it('for a box with the same label on another path', async () => {
+      const link = control(9, 'Webhooks', 'link');
+      const [on, off] = [settings('a', 'true', { extras: [link] }), settings('b', 'false', { extras: [link] })];
+      const hooks = settings('c', 'false', { url: WEBHOOKS });
+      const { ask } = scriptedJev([pick(on, WIKI), pick(off, 'Webhooks'), pick(hooks, WIKI), done]);
+      const { asTab, acted } = fakeTab([on, off, hooks, settings('d', 'true', { url: WEBHOOKS })]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted.map((a) => a.label)).toEqual([WIKI, 'Webhooks', WIKI]);
+      expect(notes(summary.steps)).toEqual([]);
+    });
+
+    it('for a box the page flipped since: its state no longer matches what the run left, so the click is no undo', async () => {
+      const reset = control(9, 'Reset form', 'button');
+      const [on, off] = [settings('a', 'true', { extras: [reset] }), settings('b', 'false', { extras: [reset] })];
+      const flipped = settings('c', 'true', { extras: [reset] });
+      const { ask } = scriptedJev([pick(on, WIKI), pick(off, 'Reset form'), pick(flipped, WIKI), done]);
+      const { asTab, acted } = fakeTab([on, off, flipped, settings('d', 'false')]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted.map((a) => a.label)).toEqual([WIKI, 'Reset form', WIKI]);
+      expect(notes(summary.steps)).toEqual([]);
+    });
+
+    it('for a click that left the box showing the same state (a filter row that selects only itself)', async () => {
+      const [all, only, onlyAgain] = [settings('a', 'true'), settings('b', 'true'), settings('c', 'true')];
+      const { ask } = scriptedJev([pick(all, WIKI), pick(only, WIKI), done]);
+      const { asTab, acted } = fakeTab([all, only, onlyAgain]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted.map((a) => a.label)).toEqual([WIKI, WIKI]);
+      expect(notes(summary.steps)).toEqual([]);
+    });
+  });
+
+  describe('when the caller gives a new goal', () => {
+    const pages = () => [settings('a', 'true'), settings('b', 'false'), settings('c', 'false'), settings('d', 'true')];
+
+    it('forgets what the run flipped, so turning it back on is not noted', async () => {
+      const [on, , offAgain] = pages();
+      const { ask } = scriptedJev([pick(on, WIKI), done, pick(offAgain, WIKI), done]);
+      const { asTab, acted } = fakeTab(pages());
+      const task = new BrowserTask(asTab, ask, options);
+      expect((await task.run()).status).toBe('done');
+      task.update({ goal: 'Turn the wiki back on' });
+      const summary = await task.run();
+      expect(summary.status).toBe('done');
+      expect(acted.map((a) => a.label)).toEqual([WIKI, WIKI]);
+      expect(notes(summary.steps)).toEqual([]);
+    });
+
+    it('keeps it when the goal is unchanged', async () => {
+      const [on, , offAgain] = pages();
+      const { ask } = scriptedJev([pick(on, WIKI), done, pick(offAgain, WIKI), done]);
+      const { asTab, acted } = fakeTab(pages());
+      const task = new BrowserTask(asTab, ask, options);
+      await task.run();
+      task.update({ goal: options.goal, maxSteps: 12 });
+      const summary = await task.run();
+      expect(acted.map((a) => a.label)).toEqual([WIKI]);
+      expect(notes(summary.steps)).toEqual([NOTE]);
+    });
+  });
+});
