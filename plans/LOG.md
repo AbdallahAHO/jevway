@@ -13,8 +13,10 @@ Newest first. Each entry: what changed, why, and the measured effect. Numbers co
     reader's `checked` is right (probed live). The same loop cost the R4 settings chore a re-plan in both runs.
   - **R4 triage re-plans → 082.** After the confirmed Comment posted, the next decision was Comment again: 063's
     hand-back in run 1, `uncertain` at 0.15 in run 2. The label was left to a new session both times.
-  - **Not planned:** Langfuse phone session-to-user #3 (the disclosure rescue opened the global "Account menu"; 1/48,
-    R5 met) stays a follow-up until a count shows it recurs; protect-main's 0.29 stays (Jev's 0.3 baseline).
+  - **Langfuse phone session-to-user → 083.** A count over every Langfuse report: the disclosure rescue opened "Account
+    menu" in 2 distinct runs (round 6 run 2, round 7 run 3), both the gate's phone miss, each followed by Settings at
+    0.31–0.32. The right fold, "Show 1 more session details", was opened 12 times elsewhere.
+  - **Not planned:** protect-main's 0.29 stays (Jev's 0.3 baseline).
 
 ## 2026-10-16 — Goal 2 round 7: the consent contract becomes structural; every gate met again on `1ddc592`
 

@@ -150,6 +150,7 @@ for automation, with throwaway data; never on a third-party production account.
 | 080 | An option picked from an open list is judged by its own name, not by the form around it | P1 | S | 072 | TODO |
 | 081 | A checkbox or switch this run flipped is not flipped back: fed back once, then handed back | P1 | S–M | 076, 077 | TODO |
 | 082 | A form already sent is fed back once ("do what's left, or DONE") before the repeat is handed back | P2 | S | 063, 077 | TODO |
+| 083 | The rescues never open the signed-in user's account menu | P3 | S | 033, 062 | TODO |
 | 027 | A control with no name, row or icon is named from its small container's text | P2 | S | — | DONE (`1be3212`) |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
@@ -173,7 +174,8 @@ suite (R1) and the SauceDemo checkout suite (R3) on top of 035; then sign-up (R2
 Goal 2, round 8 (planned at `d8b4fb5`, 2026-10-17, from the round-7 gate misses): 080 (decide.ts, red-team) runs in
 parallel with 081 and 082. 081 and 082 both add a feedback note in the same `run-task.ts` loop region, so they merge one
 after the other (081 first), each rebased on main. Forgejo measurements go one at a time behind the lock. R1 sits at
-90.9% against a 90% bar; 080 targets new-issue, 081 wiki-off and the R4 settings re-plans, 082 the R4 triage re-plans.
+90.9% against a 90% bar; 080 targets new-issue, 081 wiki-off and the R4 settings re-plans, 082 the R4 triage re-plans. 083 (rescue filter, Langfuse phone on 9333) joined after a count showed the account-menu
+rescue behind both phone session-to-user misses of rounds 6 and 7; it uses no Forgejo.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
