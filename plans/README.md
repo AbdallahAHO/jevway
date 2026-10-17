@@ -148,7 +148,7 @@ for automation, with throwaway data; never on a third-party production account.
 | 078 | A click refused because the page changed doesn't spend the decision budget; it has its own cap | P2 | S | 056 | DONE (`4ec9f65`): mixed streaks recover (600 ms stress 11/12 → 12/12); the ~3% gray-zone-look streak remains, as a clearer `blocked` |
 | 079 | What the page said after a submit reaches the done check (rev. b: a page-text prefix, unseen lines only) | P2 | S | 063 | DONE (`1ddc592`): 0 false DONEs; wiki-off 14.7 → 8.7 actions, final done check higher; settings re-plans unchanged |
 | 080 | An option picked from an open list is judged by its own name, not by the form around it | P1 | S | 072 | DONE (`03093be`): new-issue "bug" at 0.01–0.02, 3/3 done; destructive 6/6 held; red-team 0/78 incl. option-confirm ("Yes" 0.92–0.94 by name) |
-| 081 | A checkbox or switch this run flipped is not flipped back: fed back once, then handed back | P1 | S–M | 076, 077 | TODO |
+| 081 | A checkbox or switch this run flipped is not flipped back: fed back once, then handed back | P1 | S–M | 076, 077 | DONE (`dc00487`): wiki-off 2/3 → 5/5, 0 toggles after Save; settings chore 0 toggle hand-backs (2 in round 7) |
 | 082 | A form already sent is fed back once ("do what's left, or DONE") before the repeat is handed back | P2 | S | 063, 077 | REJECTED: measured no gain (triage still re-planned 3/3; the note led to unsure picks) and taken-name lost its page quote |
 | 083 | The rescues never open the signed-in user's account menu | P3 | S | 033, 062 | DONE (`f7f1fb5`): phone session-to-user ×10 10/10, 0 account-menu rescues; Langfuse phone ×1 16/16 |
 | 027 | A control with no name, row or icon is named from its small container's text | P2 | S | — | DONE (`1be3212`) |

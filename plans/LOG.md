@@ -4,6 +4,20 @@ Newest first. Each entry: what changed, why, and the measured effect. Numbers co
 
 ## 2026-10-17 — Goal 2 round 8: the last R1 misses and the R4 re-plans
 
+- **081 merged** (`d942212`, `dc00487`).
+  - **What changed:** a click that would flip back a checkbox or switch this run flipped (same path and label, still
+    showing what the run left) is fed back once ("save the change, answer DONE if the goal is met, or BLOCKED"); the
+    repeat ends `blocked` without clicking. A new goal clears the record.
+  - **Data check:** the only checkbox clicked 2+ times on one label in every report is "Enable repository wiki" (18
+    wiki-off runs, 7 settings chores), and every second click undid the run's own change: 0 corrections, so the repeat
+    never runs.
+  - **wiki-off ×5: 5/5** (round 7: 2/3), 6 executed actions each (thrash runs had 12–14). The note fired in 3 runs,
+    each right after Save; Jev then answered DONE. Toggles executed after a Save: 0.
+  - **Real-agent settings ×2: 2/2,** 0 toggle-caused hand-backs (round 7: 2 of 4). The two 076 beforeunload hand-backs
+    remain by design; one new `needs_input` on an unrelated "External issue tracker URL" after wandering.
+  - **description ×3:** 3/3. **protect-main ×3:** 2/3, run 1 `uncertain` on "Save rule" at 0.24 after 3 scrolls, no
+    checkbox clicked: the same miss as at `1ddc592`'s 079 run (0.29). R1's next margin item.
+  - **Checks:** tests 294 (6 red first), `pnpm verify` 8/8, red-team 0 violations, reader 58/58, gotchas 90/90.
 - **083 merged** (`40e515a`, `f7f1fb5`).
   - **What changed:** the fold rescues (the BLOCKED favourite and the overflow folds) never open the signed-in user's
     account menu ("Account menu", "User menu", "Open user navigation menu", "Profile menu"); the model's own click still
