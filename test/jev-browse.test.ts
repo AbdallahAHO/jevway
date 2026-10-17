@@ -7,7 +7,7 @@ import * as chrome from '../src/browser/chrome.ts';
 import { jpegSize, PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
 import { messageNames, showsTarget } from '../src/browser/words.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
-import { buildRequest, decide, NO_SUPPLIED_VALUE, overflowFolds, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
+import { buildRequest, decide, foldedFavourite, NO_SUPPLIED_VALUE, overflowFolds, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
 import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
 import * as model from '../src/jev/model.ts';
 import { resolveModel } from '../src/jev/model.ts';
@@ -350,6 +350,33 @@ describe('Jev request', () => {
     // The suffix is only stripped where the snapshot added it.
     const plain = buildActionSpace(overflowPage('a', [overflowChip(32, 'More actions (appears on hover)')]).actions).targets.CLICK!;
     expect(overflowFolds({ click_target: answer(Object.keys(plain)[0], Object.keys(plain)) }, plain)).toHaveLength(0);
+  });
+
+  describe('the signed-in user\'s account menu is no fold to open', () => {
+    // The click head puts all its weight on the last control on the page, collapsed.
+    const clicksWith = (label: string) => {
+      const clicks = buildActionSpace(overflowPage('a', [overflowChip(32, label)]).actions).targets.CLICK!;
+      return { clicks, ids: Object.keys(clicks) };
+    };
+    const favouriteOn = (label: string) => {
+      const { clicks, ids } = clicksWith(label);
+      return foldedFavourite({ click_target: answer(ids[ids.length - 1], ids) }, clicks) !== undefined;
+    };
+
+    it('does not favour a menu named for the account, user or profile', () => {
+      const accountMenus = ['Account menu', 'User menu', 'Open user navigation menu', 'Profile menu'];
+      expect(accountMenus.filter(favouriteOn)).toEqual([]);
+    });
+
+    it('still favours a collapsed control that only mentions a user, a session or an action', () => {
+      const folds = ['Show 1 more session details', 'User details', 'More actions', 'Filters 1'];
+      expect(folds.filter((label) => !favouriteOn(label))).toEqual([]);
+    });
+
+    it('is no overflow pick either, even one drawn as an ellipsis icon', () => {
+      const { clicks, ids } = clicksWith('User menu ellipsis');
+      expect(overflowFolds({ click_target: answer(ids[ids.length - 1], ids) }, clicks)).toHaveLength(0);
+    });
   });
 
   it('rejects malformed answers so nothing executes', () => {
@@ -2056,6 +2083,83 @@ describe('loop gotchas', () => {
       expect(summary).toMatchObject({ status: 'needs_confirmation' });
       expect(summary.reason).toContain(COUNT);
       expect(acted).toEqual([]);
+    });
+  });
+
+  describe('the rescues and the signed-in user\'s account menu', () => {
+    const options = { goal: 'Open the source observation', elementRisk: true, changeWaitMs: 0 };
+    const COUNT = 'Show 1 more session details';
+    const MENU: PageAction = { id: 'menu', kind: 'click', node: 30, role: 'button', label: 'Open menu' };
+    // A phone's session page: the global account menu and the session's own "+1" chip are both collapsed.
+    const phone = (fingerprint: string, countExpanded = 'false', extras: PageAction[] = []) =>
+      page({ actions: [MENU, overflowChip(31, 'Account menu'), overflowChip(32, COUNT, countExpanded), ...extras], fingerprint });
+    const closed = phone('a');
+    const opened = phone('b', 'true', [SOURCE_LINK]);
+    const [menu, account, count] = ['Open menu', 'Account menu', COUNT].map((label) => clickTargetOf(closed, label));
+    // The click head leans toward the account menu, as it did in the Langfuse runs (0.43 to 0.48).
+    const leansToAccount = { [menu]: 0.4, [account]: 0.45, [count]: 0.15 };
+    const link = clickTargetOf(opened, 'View source observation');
+
+    it('opens the "+1" chip, not the account menu the click head favours, when BLOCKED', async () => {
+      const script = scriptedJev([{ operation: 'BLOCKED' }, {}, { operation: 'CLICK', click_target: link }, {}, { operation: 'DONE' }]);
+      const { asTab, acted } = fakeTab([closed, opened, phone('c')]);
+      const task = new BrowserTask(asTab, withClickHead(script.ask, leansToAccount), options);
+      const summary = await task.run();
+      expect(acted).toEqual([{ label: COUNT }, { label: 'View source observation' }]);
+      expect(summary.status).toBe('done');
+      expect(task.trace[0]).toMatchObject({ executed: true, decision: { via: 'disclosure', action: COUNT } });
+      // No risk question is spent on a control the rescue would not open.
+      const asked = Object.keys(script.requests[1].questions);
+      expect(asked).toContain(`risk_${count}`);
+      expect(asked).not.toContain(`risk_${account}`);
+    });
+
+    it('opens the "+1" chip only once, and never falls back to the account menu', async () => {
+      const script = scriptedJev([{ operation: 'BLOCKED' }]);
+      const { asTab, acted } = fakeTab([closed, phone('b')]);
+      const summary = await new BrowserTask(asTab, withClickHead(script.ask, leansToAccount), options).run();
+      expect(acted).toEqual([{ label: COUNT }]);
+      expect(summary.status).toBe('blocked');
+    });
+
+    it('opens nothing when the account menu is the only collapsed control', async () => {
+      const alone = (fingerprint: string) => page({ actions: [MENU, overflowChip(31, 'Account menu')], fingerprint });
+      const [aloneMenu, aloneAccount] = ['Open menu', 'Account menu'].map((label) => clickTargetOf(alone('a'), label));
+      const script = scriptedJev([{ operation: 'BLOCKED' }]);
+      const head = { [aloneMenu]: 0.4, [aloneAccount]: 0.6 };
+      const { asTab, acted } = fakeTab([alone('a'), alone('b')]);
+      const summary = await new BrowserTask(asTab, withClickHead(script.ask, head), options).run();
+      expect(acted).toEqual([]);
+      expect(summary.status).toBe('blocked');
+    });
+
+    it('an unsure step opens the "+1" chip, never the account menu', async () => {
+      const unsure = { operation: 'CLICK', confidence: 0.22, click_target: account };
+      const script = scriptedJev([unsure, {}, { operation: 'CLICK', click_target: link }, {}, { operation: 'DONE' }]);
+      const { asTab, acted } = fakeTab([closed, opened, phone('c')]);
+      const summary = await new BrowserTask(asTab, withClickHead(script.ask, leansToAccount), options).run();
+      expect(acted).toEqual([{ label: COUNT }, { label: 'View source observation' }]);
+      expect(summary.status).toBe('done');
+    });
+
+    it('an unsure step with the account menu as the only collapsed control hands back uncertain', async () => {
+      const alone = page({ actions: [MENU, overflowChip(31, 'Account menu')], fingerprint: 'a' });
+      const { ask } = scriptedJev([{ operation: 'CLICK', confidence: 0.22, click_target: clickTargetOf(alone, 'Account menu') }]);
+      const { asTab, acted } = fakeTab([alone, { ...alone, fingerprint: 'b' }]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted).toEqual([]);
+      expect(summary.status).toBe('uncertain');
+    });
+
+    it('still acts on the account menu when the model itself chooses it', async () => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: account }, {}, { operation: 'DONE' }]);
+      const { asTab, acted } = fakeTab([closed, phone('b')]);
+      const task = new BrowserTask(asTab, ask, { ...options, goal: 'Open my profile settings' });
+      const summary = await task.run();
+      expect(acted).toEqual([{ label: 'Account menu' }]);
+      expect(summary.status).toBe('done');
+      expect(task.trace[0]).toMatchObject({ executed: true, decision: { action: 'Account menu' } });
+      expect(task.trace[0].decision).not.toHaveProperty('via');
     });
   });
 
