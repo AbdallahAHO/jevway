@@ -147,6 +147,9 @@ for automation, with throwaway data; never on a third-party production account.
 | 077 | With a menu the run opened still showing a supplied value, a risky submit elsewhere is fed back once | P2 | S | 067, 072, 070 | DONE (`048fa0d`): new-issue 0/3 → 3/3 (the note fired once per run, none elsewhere) |
 | 078 | A click refused because the page changed doesn't spend the decision budget; it has its own cap | P2 | S | 056 | DONE (`4ec9f65`): mixed streaks recover (600 ms stress 11/12 → 12/12); the ~3% gray-zone-look streak remains, as a clearer `blocked` |
 | 079 | What the page said after a submit reaches the done check (rev. b: a page-text prefix, unseen lines only) | P2 | S | 063 | DONE (`1ddc592`): 0 false DONEs; wiki-off 14.7 → 8.7 actions, final done check higher; settings re-plans unchanged |
+| 080 | An option picked from an open list is judged by its own name, not by the form around it | P1 | S | 072 | TODO |
+| 081 | A checkbox or switch this run flipped is not flipped back: fed back once, then handed back | P1 | S–M | 076, 077 | TODO |
+| 082 | A form already sent is fed back once ("do what's left, or DONE") before the repeat is handed back | P2 | S | 063, 077 | TODO |
 | 027 | A control with no name, row or icon is named from its small container's text | P2 | S | — | DONE (`1be3212`) |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
@@ -166,6 +169,11 @@ Phone track (planned at `f91840e`, 2026-10-16, from a diagnosis of all 27 failin
 
 Goal 2, round 6 (planned at `2c693dc`): 035 (runner support) and 036 (data aging) in parallel; then the Forgejo write
 suite (R1) and the SauceDemo checkout suite (R3) on top of 035; then sign-up (R2) and the real-agent suite (R4).
+
+Goal 2, round 8 (planned at `d8b4fb5`, 2026-10-17, from the round-7 gate misses): 080 (decide.ts, red-team) runs in
+parallel with 081 and 082. 081 and 082 both add a feedback note in the same `run-task.ts` loop region, so they merge one
+after the other (081 first), each rebased on main. Forgejo measurements go one at a time behind the lock. R1 sits at
+90.9% against a 90% bar; 080 targets new-issue, 081 wiki-off and the R4 settings re-plans, 082 the R4 triage re-plans.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

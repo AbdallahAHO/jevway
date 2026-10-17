@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what changed, why, and the measured effect. Numbers come from runs, not estimates.
 
+## 2026-10-17 — Goal 2 round 8: the last R1 misses and the R4 re-plans
+
+- **Planned at `d8b4fb5`** from the round-7 gate traces (R1 30/33 sits right at its 90% bar):
+  - **new-issue 1/3 → 080.** Both misses are the option "bug" held by the page-level commit risk (0.50/0.52) while its
+    own risk was 0.01: the form's "Create issue" (0.77) is the alternative candidate. The live reader lists the rows as
+    `role: 'option'` under an `expanded` combobox.
+  - **wiki-off 2/3 → 081.** The model re-ticks "Enable repository wiki" at about 0.6 with the box shown unchecked and Save
+    second (0.30–0.35). Run 1 never saved (A/B guard); run 3 re-ticked after its save and passed on an even count. The
+    reader's `checked` is right (probed live). The same loop cost the R4 settings chore a re-plan in both runs.
+  - **R4 triage re-plans → 082.** After the confirmed Comment posted, the next decision was Comment again: 063's
+    hand-back in run 1, `uncertain` at 0.15 in run 2. The label was left to a new session both times.
+  - **Not planned:** Langfuse phone session-to-user #3 (the disclosure rescue opened the global "Account menu"; 1/48,
+    R5 met) stays a follow-up until a count shows it recurs; protect-main's 0.29 stays (Jev's 0.3 baseline).
+
 ## 2026-10-16 — Goal 2 round 7: the consent contract becomes structural; every gate met again on `1ddc592`
 
 - **Pushed** round 6 as `ea9282f`. Killed the two orphaned headless Chromes (PIDs 94591 and 94759) on the user's
