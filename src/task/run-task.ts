@@ -220,6 +220,8 @@ export class BrowserTask {
   #usedValues = new Set<string>();
   /** Menu options already sent back for an unpicked value, as `node:key`: each is sent back once. */
   #pickNoted = new Set<string>();
+  /** What this run's own clicks left each checkbox or switch showing, by path and label, and whether a repeat click was already told about it. */
+  #toggled = new Map<string, { label: string; checked: string; noted: boolean }>();
   /** Nodes of fields the model chose with no supplied value to type: each is refused once before the caller is asked. */
   #refusedForValue = new Set<number>();
   #tab: Tab;
@@ -240,6 +242,8 @@ export class BrowserTask {
   /** Merge new values, a new goal, or a one-time confirmation for the next irreversible click. */
   update(patch: Partial<TaskOptions> & { confirmIrreversible?: boolean; confirmTarget?: string }) {
     const { confirmIrreversible, confirmTarget, values, recordDir: _recordDir, ...options } = patch;
+    // A new goal may be to flip back what the old one flipped.
+    if (options.goal !== undefined && options.goal !== this.#options.goal) this.#toggled.clear();
     this.#options = { ...this.#options, ...definedOnly(options), values: { ...this.#options.values, ...values } };
     if (!confirmIrreversible) return;
     // A confirmation answers the question jev-browse asked, so a flag carried onto a later call allows nothing (an unused earlier one stands).
@@ -442,6 +446,23 @@ export class BrowserTask {
           page = await this.#tab.observe();
           continue;
         }
+        const undo = this.#undoesOwnToggle(decision, page);
+        if (undo) {
+          record(false);
+          const state = undo.checked === 'true' ? 'checked' : 'unchecked';
+          if (undo.noted) {
+            return stop('blocked', `Jev chose "${undo.label}" again, which would undo this run's own change (it is now ${state}); say which state it should end in.`, decision);
+          }
+          undo.noted = true;
+          this.#history.push({
+            operation: decision.operation,
+            element: '',
+            not_executed: `not accepted: "${undo.label}" is now ${state} because this run clicked it; clicking it again undoes that. Save the change (a Save or Update button) if it isn't saved yet, answer DONE if the goal is met, or BLOCKED`,
+            confidence: round(decision.confidence),
+          });
+          page = await this.#tab.observe();
+          continue;
+        }
         const handBack = this.#handBack(decision, page);
         // A field the model has no value for is first a wrong turn, and only the second time a question for the caller.
         if (handBack?.[0] === 'needs_input' && decision.operation === 'TYPE_TEXT' && !this.#refusedForValue.has(decision.action!.node!)) {
@@ -610,6 +631,7 @@ export class BrowserTask {
           confidence,
         });
         this.#unsavedEdit = isUnsavedEdit(decision.operation, action, page) ? { noted: false, label: action.label } : undefined;
+        if (decision.operation === 'CLICK') this.#recordToggle(action, pathBefore, page);
         // ...and what the page said right after it.
         if (submitted) {
           this.#submits = [...this.#submits, { ...submitted, answer: newTextOf(page.text, submitted.textBefore) }].slice(-SUBMITS_KEPT);
@@ -949,6 +971,23 @@ export class BrowserTask {
     return undefined;
   }
 
+  // What a click left a checkbox or switch showing, when it flipped it.
+  #recordToggle(action: PageAction, pathBefore: string, page: PageState) {
+    if (!isToggle(action) || pathOf(page.url) !== pathBefore) return;
+    const label = bareLabel(action.label);
+    const now = page.actions.find((listed) => listed.kind === 'click' && listed.checked && bareLabel(listed.label) === label);
+    if (now?.checked && now.checked !== action.checked) this.#toggled.set(toggleKey(pathBefore, label), { label, checked: now.checked, noted: false });
+  }
+
+  // A person who just flipped a box doesn't flip it back; they save, or they're done. A click on the same box (path and label), still
+  // showing what the run left it as, is told so once, and handed back the second time.
+  #undoesOwnToggle(decision: Decision, page: PageState) {
+    const action = decision.action;
+    if (decision.operation !== 'CLICK' || !action || !isToggle(action)) return undefined;
+    const flipped = this.#toggled.get(toggleKey(pathOf(page.url), bareLabel(action.label)));
+    return flipped?.checked === action.checked ? flipped : undefined;
+  }
+
   // A form that came back with new text after its submit was rejected, and sending the same values again repeats the
   // rejection: the same click, on the same path, with every typed field still listed. A page that moved on (another path,
   // a wizard's next step where the fields are gone) is a new form, and a click with nothing typed before it (a list of
@@ -1105,6 +1144,13 @@ const isUnsavedEdit = (operation: string, action: PageAction | undefined, pageAf
     (operation === 'CLICK' &&
       (['checkbox', 'radio', 'switch'].includes(action.role ?? '') || action.checked !== undefined) &&
       pageAfter.actions.some((listed) => listed.node === action.node)));
+
+// A checkbox or switch, which a second click flips back (a radio stays picked).
+const isToggle = (action: PageAction) =>
+  action.role !== 'radio' && (['checkbox', 'switch'].includes(action.role ?? '') || action.checked !== undefined);
+
+// Node ids are renumbered when a save reloads the page: a control is told by where it is and what it says.
+const toggleKey = (path: string, label: string) => `${path}\u0000${label}`;
 
 const isRiskyClick = (decision: Decision) =>
   ['CLICK', 'CLICK_AT'].includes(decision.operation) && (decision.commitRisk ?? 0) >= 0.5;
