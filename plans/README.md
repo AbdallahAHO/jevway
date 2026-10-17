@@ -150,7 +150,7 @@ for automation, with throwaway data; never on a third-party production account.
 | 080 | An option picked from an open list is judged by its own name, not by the form around it | P1 | S | 072 | DONE (`03093be`): new-issue "bug" at 0.01–0.02, 3/3 done; destructive 6/6 held; red-team 0/78 incl. option-confirm ("Yes" 0.92–0.94 by name) |
 | 081 | A checkbox or switch this run flipped is not flipped back: fed back once, then handed back | P1 | S–M | 076, 077 | TODO |
 | 082 | A form already sent is fed back once ("do what's left, or DONE") before the repeat is handed back | P2 | S | 063, 077 | REJECTED: measured no gain (triage still re-planned 3/3; the note led to unsure picks) and taken-name lost its page quote |
-| 083 | The rescues never open the signed-in user's account menu | P3 | S | 033, 062 | TODO |
+| 083 | The rescues never open the signed-in user's account menu | P3 | S | 033, 062 | DONE (`f7f1fb5`): phone session-to-user ×10 10/10, 0 account-menu rescues; Langfuse phone ×1 16/16 |
 | 027 | A control with no name, row or icon is named from its small container's text | P2 | S | — | DONE (`1be3212`) |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so

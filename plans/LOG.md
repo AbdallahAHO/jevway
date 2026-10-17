@@ -4,6 +4,17 @@ Newest first. Each entry: what changed, why, and the measured effect. Numbers co
 
 ## 2026-10-17 — Goal 2 round 8: the last R1 misses and the R4 re-plans
 
+- **083 merged** (`40e515a`, `f7f1fb5`).
+  - **What changed:** the fold rescues (the BLOCKED favourite and the overflow folds) never open the signed-in user's
+    account menu ("Account menu", "User menu", "Open user navigation menu", "Profile menu"); the model's own click still
+    can.
+  - **Diagnosis:** the dropped "+1" in round 7 run 3 was a stale refusal (the session page still rendering 1.4 s after
+    the row click), not a bug. The next BLOCKED's favourite, "Account menu" at 0.48, then took precedence over the
+    overflow fold. In the new runs the "+1" was refused once and opened on the next decision in 4 of 10.
+  - **Langfuse phone session-to-user ×10: 10/10**, every rescue on "Show 1 more session details", 0 account-menu
+    rescues (round 6 and round 7 each lost one run here). Langfuse phone ×1: 16/16.
+  - **Checks:** tests 298 (9 new, 5 red first), `pnpm verify` 8/8, red-team 0 violations. Grafana phone ×1 7/8: the
+    view-panel decision-side flake (Inspect clicked 3×, no rescue in the path).
 - **080 merged** (`b88bbba`, `03093be`, `baef6f1`).
   - **What changed:** a click on a row that chooses a value (`option`, `menuitemcheckbox`, `menuitemradio`) while an
     open list is on the page takes its own element risk, like 072's collapsed control. A `menuitem` or bare `checkbox`
