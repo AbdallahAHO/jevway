@@ -3578,8 +3578,14 @@ describe('a checkbox or switch the run flipped is not flipped back without a wor
   const WIKI = 'Enable repository wiki';
   const UNITS = 'http://fixture/ada/app/settings/units';
   const WEBHOOKS = 'http://fixture/ada/app/settings/hooks';
-  const NOTE =
-    'not accepted: "Enable repository wiki" is now unchecked because this run clicked it; clicking it again undoes that. Save the change (a Save or Update button) if it isn\'t saved yet, answer DONE if the goal is met, or BLOCKED';
+  const UNSAVED_NOTE =
+    'not accepted: "Enable repository wiki" is now unchecked because this run clicked it, and nothing on this page was clicked after it to save it; clicking it again undoes it. Save it (a Save or Update button), or answer BLOCKED';
+  const savedNote = (clicked: string) =>
+    `not accepted: "Enable repository wiki" is now unchecked because this run clicked it, and "${clicked}" was clicked after it; clicking it again undoes it. Answer DONE if the goal is met, or BLOCKED`;
+  const REJECTED = 'rejected: "The wiki is off and saved" is not visible yet';
+  const UNSAVED_REJECTED = `${REJECTED}; "Enable repository wiki" was changed and nothing on this page was clicked after it to save it`;
+  const KEEP_WORKING = `${REJECTED}; keep working toward it`;
+  const SCROLL: PageAction = { id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: 600 };
   const BLOCKED =
     'Jev chose "Enable repository wiki" again, which would undo this run\'s own change (it is now unchecked); say which state it should end in.';
   const options = { goal: 'Turn off the wiki for this repository', doneWhen: 'The wiki is off and saved', changeWaitMs: 0 };
@@ -3597,6 +3603,8 @@ describe('a checkbox or switch the run flipped is not flipped back without a wor
     page({ url, fingerprint, actions: [control(node, WIKI, role, checked), control(node + 1, 'Save settings', 'button'), ...extras] });
   const pick = (state: PageState, label: string) => ({ operation: 'CLICK', click_target: clickTargetOf(state, label) });
   const notes = (steps: { not_executed?: string }[]) => steps.filter((step) => step.not_executed).map((step) => step.not_executed);
+  // Another path for a scroll to land on, as a client-side redirect would.
+  const hooks = (fingerprint: string) => page({ url: WEBHOOKS, fingerprint, actions: [control(1, 'Add webhook', 'button')] });
 
   it('feeds back a second pick of the box the run just unticked, and goes on with Save', async () => {
     const [on, off, offAgain, saved] = [settings('a', 'true'), settings('b', 'false'), settings('c', 'false'), settings('d', 'false')];
@@ -3607,10 +3615,10 @@ describe('a checkbox or switch the run flipped is not flipped back without a wor
     expect(acted.map((a) => a.label)).toEqual([WIKI, 'Save settings']);
     expect(summary.steps.map((step) => [step.operation, step.element, step.not_executed])).toEqual([
       ['CLICK', WIKI, undefined],
-      ['CLICK', '', NOTE],
+      ['CLICK', '', UNSAVED_NOTE],
       ['CLICK', 'Save settings', undefined],
     ]);
-    expect(JSON.stringify(requests[2])).toContain('clicking it again undoes that');
+    expect(JSON.stringify(requests[2])).toContain('nothing on this page was clicked after it to save it');
   });
 
   it('still feeds it back after Save reloaded the page with new node ids: the key is path and label', async () => {
@@ -3621,7 +3629,7 @@ describe('a checkbox or switch the run flipped is not flipped back without a wor
     const summary = await new BrowserTask(asTab, ask, options).run();
     expect(summary.status).toBe('done');
     expect(acted.map((a) => a.label)).toEqual([WIKI, 'Save settings']);
-    expect(notes(summary.steps)).toEqual([NOTE]);
+    expect(notes(summary.steps)).toEqual([savedNote('Save settings')]);
   });
 
   it('hands the run back blocked when Jev picks the box again after the note, without clicking it', async () => {
@@ -3631,7 +3639,7 @@ describe('a checkbox or switch the run flipped is not flipped back without a wor
     const summary = await new BrowserTask(asTab, ask, options).run();
     expect(summary).toMatchObject({ status: 'blocked', reason: BLOCKED });
     expect(acted.map((a) => a.label)).toEqual([WIKI]);
-    expect(notes(summary.steps)).toEqual([NOTE]);
+    expect(notes(summary.steps)).toEqual([UNSAVED_NOTE]);
     expect(requests).toHaveLength(3);
   });
 
@@ -3640,7 +3648,7 @@ describe('a checkbox or switch the run flipped is not flipped back without a wor
     const { ask } = scriptedJev([pick(off, WIKI), pick(on, WIKI), done]);
     const { asTab } = fakeTab([off, on, onAgain]);
     const summary = await new BrowserTask(asTab, ask, { ...options, goal: 'Turn on the wiki' }).run();
-    expect(notes(summary.steps)).toEqual([NOTE.replace('is now unchecked', 'is now checked')]);
+    expect(notes(summary.steps)).toEqual([UNSAVED_NOTE.replace('is now unchecked', 'is now checked')]);
   });
 
   it('runs a switch the same way as a checkbox', async () => {
@@ -3649,7 +3657,94 @@ describe('a checkbox or switch the run flipped is not flipped back without a wor
     const { asTab, acted } = fakeTab([on, off, offAgain]);
     const summary = await new BrowserTask(asTab, ask, options).run();
     expect(acted.map((a) => a.label)).toEqual([WIKI]);
-    expect(notes(summary.steps)).toEqual([NOTE]);
+    expect(notes(summary.steps)).toEqual([UNSAVED_NOTE]);
+  });
+
+  describe('says whether anything was clicked after the change', () => {
+    const tracker = (checked: string) => control(7, 'Enable issue tracker', 'checkbox', checked);
+    const withTracker = (fingerprint: string, wiki: string, issues: string) =>
+      page({ fingerprint, url: UNITS, actions: [control(1, WIKI, 'checkbox', wiki), tracker(issues), control(2, 'Save settings', 'button')] });
+
+    it('names the click that followed the change, on the same page', async () => {
+      const [on, off, saved, afterNote] = [settings('a', 'true'), settings('b', 'false'), settings('c', 'false'), settings('d', 'false')];
+      const { ask, requests } = scriptedJev([pick(on, WIKI), pick(off, 'Save settings'), pick(saved, WIKI), done]);
+      const { asTab, acted } = fakeTab([on, off, saved, afterNote]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('done');
+      expect(acted.map((a) => a.label)).toEqual([WIKI, 'Save settings']);
+      expect(notes(summary.steps)).toEqual([savedNote('Save settings')]);
+      expect(JSON.stringify(requests[3])).toContain('was clicked after it; clicking it again undoes it. Answer DONE if the goal is met, or BLOCKED');
+    });
+
+    it('does not count a scroll in between', async () => {
+      const extras = [SCROLL];
+      const [on, off, scrolled, offAgain] = ['a', 'b', 'c', 'd'].map((fingerprint, i) => settings(fingerprint, i === 0 ? 'true' : 'false', { extras }));
+      const { ask } = scriptedJev([pick(on, WIKI), { operation: 'SCROLL_DOWN' }, pick(scrolled, WIKI), done]);
+      const { asTab, acted } = fakeTab([on, off, scrolled, offAgain]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted.map((a) => a.label)).toEqual([WIKI, 'Scroll down']);
+      expect(notes(summary.steps)).toEqual([UNSAVED_NOTE]);
+    });
+
+    it('does not count flipping another box, which saves nothing', async () => {
+      const [start, wikiOff, bothOff, afterNote] = [withTracker('a', 'true', 'true'), withTracker('b', 'false', 'true'), withTracker('c', 'false', 'false'), withTracker('d', 'false', 'false')];
+      const { ask } = scriptedJev([pick(start, WIKI), pick(wikiOff, 'Enable issue tracker'), pick(bothOff, WIKI), done]);
+      const { asTab, acted } = fakeTab([start, wikiOff, bothOff, afterNote]);
+      const summary = await new BrowserTask(asTab, ask, { ...options, goal: 'Turn off the wiki and the issue tracker' }).run();
+      expect(acted.map((a) => a.label)).toEqual([WIKI, 'Enable issue tracker']);
+      expect(notes(summary.steps)).toEqual([UNSAVED_NOTE]);
+    });
+
+    it('does not count a click on another path', async () => {
+      const [on, off] = [settings('a', 'true', { extras: [SCROLL] }), settings('b', 'false', { extras: [SCROLL] })];
+      const [elsewhere, back, afterNote] = [hooks('c'), settings('d', 'false'), settings('e', 'false')];
+      const { ask } = scriptedJev([pick(on, WIKI), { operation: 'SCROLL_DOWN' }, pick(elsewhere, 'Add webhook'), pick(back, WIKI), done]);
+      const { asTab, acted } = fakeTab([on, off, elsewhere, back, afterNote]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(acted.map((a) => a.label)).toEqual([WIKI, 'Scroll down', 'Add webhook']);
+      expect(notes(summary.steps)).toEqual([UNSAVED_NOTE]);
+    });
+  });
+
+  describe('a rejected DONE', () => {
+    const rejected = { operation: 'DONE', done_check: 0.2 };
+
+    it('names a change nothing was clicked after to save, and goes on with Save', async () => {
+      const [on, off, offAgain, saved] = [settings('a', 'true'), settings('b', 'false'), settings('c', 'false'), settings('d', 'false')];
+      const { ask, requests } = scriptedJev([pick(on, WIKI), rejected, pick(offAgain, 'Save settings'), done]);
+      const { asTab, acted } = fakeTab([on, off, offAgain, saved]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary.status).toBe('done');
+      expect(acted.map((a) => a.label)).toEqual([WIKI, 'Save settings']);
+      expect(notes(summary.steps)).toEqual([UNSAVED_REJECTED]);
+      expect(JSON.stringify(requests[2])).toContain('was changed and nothing on this page was clicked after it to save it');
+    });
+
+    it('keeps its text once something was clicked after the change', async () => {
+      const [on, off, saved, afterNote] = [settings('a', 'true'), settings('b', 'false'), settings('c', 'false'), settings('d', 'false')];
+      const { ask } = scriptedJev([pick(on, WIKI), pick(off, 'Save settings'), rejected, done]);
+      const { asTab } = fakeTab([on, off, saved, afterNote]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(notes(summary.steps)).toEqual([KEEP_WORKING]);
+    });
+
+    it('keeps its text when the page no longer shows the state the run left', async () => {
+      const extras = [SCROLL];
+      const [on, off, flipped, afterNote] = [settings('a', 'true', { extras }), settings('b', 'false', { extras }), settings('c', 'true', { extras }), settings('d', 'true', { extras })];
+      const { ask } = scriptedJev([pick(on, WIKI), { operation: 'SCROLL_DOWN' }, rejected, done]);
+      const { asTab } = fakeTab([on, off, flipped, afterNote]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(notes(summary.steps)).toEqual([KEEP_WORKING]);
+    });
+
+    it('keeps its text on another path than the change', async () => {
+      const [on, off] = [settings('a', 'true', { extras: [SCROLL] }), settings('b', 'false', { extras: [SCROLL] })];
+      const [elsewhere, afterNote] = [hooks('c'), hooks('d')];
+      const { ask } = scriptedJev([pick(on, WIKI), { operation: 'SCROLL_DOWN' }, rejected, done]);
+      const { asTab } = fakeTab([on, off, elsewhere, afterNote]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(notes(summary.steps)).toEqual([KEEP_WORKING]);
+    });
   });
 
   describe('says nothing', () => {
@@ -3740,7 +3835,7 @@ describe('a checkbox or switch the run flipped is not flipped back without a wor
       task.update({ goal: options.goal, maxSteps: 12 });
       const summary = await task.run();
       expect(acted.map((a) => a.label)).toEqual([WIKI]);
-      expect(notes(summary.steps)).toEqual([NOTE]);
+      expect(notes(summary.steps)).toEqual([UNSAVED_NOTE]);
     });
   });
 });
