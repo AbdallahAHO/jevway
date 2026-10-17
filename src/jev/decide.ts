@@ -31,6 +31,8 @@ export const NO_SUPPLIED_VALUE = 'NO_SUPPLIED_VALUE';
 const MAX_SPECULATIVE_VALUE_FIELDS = 8;
 // Matches the autopilot's tap ranking depth, so every tap it may take has its own risk score.
 const MAX_RISK_TARGETS = 12;
+// Rows that choose a value; a plain `menuitem` performs an action and a bare `checkbox` may be a consent.
+const VALUE_ROLES = ['option', 'menuitemcheckbox', 'menuitemradio'];
 
 export interface StepRecord {
   operation: string;
@@ -196,8 +198,10 @@ export const decide = async (ask: Ask, input: DecisionInput): Promise<Decision> 
         if (decision.operation === 'CLICK') {
           const elementRisk = decision.elementRisks[targetIndexOf(space, 'CLICK', decision.action!)];
           // A collapsed control only opens something, and what it opens is judged when it's clicked: the page-level question reads the form, not the dropdown.
+          // Picking a value from an open list changes the form, not the server, and the page-level question reads the form's submit button.
           const collapsed = decision.action!.expanded === 'false';
-          decision.commitRisk = input.pageRisk && !collapsed ? Math.max(decision.commitRisk ?? 0, elementRisk) : elementRisk;
+          const choosesFromOpenList = VALUE_ROLES.includes(decision.action!.role ?? '') && input.page.actions.some((a) => a.expanded === 'true');
+          decision.commitRisk = input.pageRisk && !collapsed && !choosesFromOpenList ? Math.max(decision.commitRisk ?? 0, elementRisk) : elementRisk;
         }
       }),
     );
