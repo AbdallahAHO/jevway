@@ -103,6 +103,7 @@ mkdirSync(outDir, { recursive: true });
 process.stdout.write(`model: ${profile.name} (${profile.model}) · screenshots: ${screenshots} · ${runs} runs each\n`);
 
 // A bot check or captcha ends the run for the environment, not for the agent: reported apart from failures.
+// A challenge page says so in its title or at the top; the whole text also matches comments that merely discuss captchas.
 const BOT_WALL = /verify(ing)? you are (human|not a bot)|performing security verification|unusual traffic|captcha|are you a robot/i;
 
 interface RunResult {
@@ -135,7 +136,8 @@ for (const scenario of SCENARIOS.filter((s) => !only || only.includes(s.name))) 
       // Ground truth comes from a separate read of the page, not from the task's summary.
       const url = String(await tab.evaluate('location.href'));
       // Challenge pages can sit at the target URL itself (npm serves Cloudflare's at /package/zod).
-      const botWall = BOT_WALL.test(String(await tab.evaluate('document.body?.innerText ?? ""')));
+      const pageHead = String(await tab.evaluate('`${document.title}\\n${(document.body?.innerText ?? "").slice(0, 600)}`'));
+      const botWall = BOT_WALL.test(pageHead);
       const passed = !botWall && scenario.passes(new URL(url));
       result = { ...result, url, passed, summary, ...(botWall && { botWall }) };
       writeFileSync(new URL(`${scenario.name}-${run}.json`, outDir), JSON.stringify({ summary, trace: task.trace }, null, 1));
