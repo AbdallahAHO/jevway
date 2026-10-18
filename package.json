@@ -36,7 +36,9 @@
     "verify:signup": "node --env-file-if-exists=.env verify/signup.ts",
     "verify:agent": "node verify/agent.ts",
     "apps:forgejo:up": "docker compose -p jev-forgejo -f verify/apps/forgejo/compose.yml up -d --wait && node verify/apps/forgejo/seed.ts users",
-    "apps:forgejo:down": "docker compose -p jev-forgejo -f verify/apps/forgejo/compose.yml down -v"
+    "apps:forgejo:down": "docker compose -p jev-forgejo -f verify/apps/forgejo/compose.yml down -v",
+    "apps:vikunja:up": "docker compose -p jev-vikunja -f verify/apps/vikunja/compose.yml up -d --wait && node verify/apps/vikunja/seed.ts users",
+    "apps:vikunja:down": "docker compose -p jev-vikunja -f verify/apps/vikunja/compose.yml down -v"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

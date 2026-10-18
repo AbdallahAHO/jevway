@@ -1,0 +1,33 @@
+# A throwaway Vikunja (SQLite) for jev-browse's held-back suite. Started with `pnpm apps:vikunja:up`, removed with its
+# data by `pnpm apps:vikunja:down`. Local test data only: nothing here is a real secret.
+name: jev-vikunja
+
+services:
+  vikunja:
+    image: vikunja/vikunja:2.7.0
+    environment:
+      VIKUNJA_SERVICE_PUBLICURL: http://127.0.0.1:3312/
+      VIKUNJA_SERVICE_ENABLEREGISTRATION: 'true'
+      # A fixed, public value: this instance only ever holds local test data.
+      VIKUNJA_SERVICE_JWTSECRET: jev-vikunja-local-test-secret
+      VIKUNJA_DATABASE_TYPE: sqlite
+      VIKUNJA_DATABASE_PATH: /db/vikunja.db
+      VIKUNJA_FILES_BASEPATH: /db/files
+      VIKUNJA_LOG_LEVEL: WARNING
+      # The default allows 10 logins a minute per address; a suite signs in once per run, and quick runs outpace that.
+      VIKUNJA_RATELIMIT_NOAUTHLIMIT: '1000'
+    # The named volume is created owned by root, and the image runs as 1000.
+    user: '0:0'
+    ports:
+      - '127.0.0.1:3312:3456'
+    volumes:
+      - vikunja-data:/db
+    # The image has no shell, curl or wget: its own `healthcheck` command is the only probe it can run.
+    healthcheck:
+      test: ['CMD', '/app/vikunja/vikunja', 'healthcheck']
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+volumes:
+  vikunja-data:
