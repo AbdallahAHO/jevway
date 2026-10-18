@@ -4,6 +4,13 @@ Newest first. Each entry: what changed, why, and the measured effect. Numbers co
 
 ## 2026-10-17 — Goal 2 round 8: the last R1 misses and the R4 re-plans
 
+- **Round-8 gates at `a5fab89` (code as `dc00487`), first half.** G5, G7, R2–R5 still running.
+  - **G1:** reader 58/58. **G8:** 311 tests, `pnpm verify` 8/8, typecheck clean.
+  - **G3/G4:** gotchas strict 90/90, 0 crashes.
+  - **G6:** Langfuse desktop ×10 **159/160** (99.4%), every job ≥ 9/10. The miss: trace-to-prompt run 1, `uncertain`.
+  - **R1:** Forgejo ×3 **32/33** (97.0%, round 7: 30/33). new-issue 3/3 (round 7: 1/3), and delete-repo and delete-label
+    `needs_confirmation` 6/6 with nothing deleted. The miss: wiki-off run 3, `uncertain`. 081's note fired before any
+    save, then Jev answered DONE 3×, with done checks 0.15–0.40, and never saved. That is plan 084.
 - **081 merged** (`d942212`, `dc00487`).
   - **What changed:** a click that would flip back a checkbox or switch this run flipped (same path and label, still
     showing what the run left) is fed back once ("save the change, answer DONE if the goal is met, or BLOCKED"); the
