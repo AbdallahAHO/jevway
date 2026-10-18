@@ -23,6 +23,9 @@ const daysFromNow = (days: number) =>
     year: 'numeric',
   });
 
+// The same day as a URL parameter ("2026-11-01"), in local time like the calendar labels above.
+const isoDaysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toLocaleDateString('en-CA');
+
 interface Scenario {
   name: string;
   url: string;
@@ -79,8 +82,25 @@ const SCENARIOS: Scenario[] = [
     // Without dates Booking shows its city landing page instead of search results.
     goal: `Search for stays in Lisbon from ${daysFromNow(14)} to ${daysFromNow(16)} and show the search results. Do not sign in, book, or reserve anything.`,
     values: { destination: 'Lisbon' },
-    doneWhen: "Booking.com's search results page for Lisbon is showing, with a count of properties found.",
-    passes: (url) => url.pathname.includes('/searchresults') && /lisbon|lisboa/i.test(url.searchParams.get('ss') ?? ''),
+    doneWhen: `Booking.com's search results for Lisbon are showing for ${daysFromNow(14)} to ${daysFromNow(16)}, with a count of properties found.`,
+    // The city landing page drops the dates from its URL, so they are part of the check.
+    passes: (url) =>
+      url.pathname.includes('/searchresults') &&
+      /lisbon|lisboa/i.test(url.searchParams.get('ss') ?? '') &&
+      url.searchParams.get('checkin') === isoDaysFromNow(14) &&
+      url.searchParams.get('checkout') === isoDaysFromNow(16),
+  },
+  {
+    name: 'airbnb',
+    url: 'https://www.airbnb.com/',
+    goal: `Search for stays in Lisbon from ${daysFromNow(14)} to ${daysFromNow(16)} and show the search results. Do not sign in, book, or reserve anything.`,
+    values: { destination: 'Lisbon' },
+    doneWhen: `Airbnb search results for stays in Lisbon are listed for ${daysFromNow(14)} to ${daysFromNow(16)}.`,
+    passes: (url) =>
+      url.pathname.startsWith('/s/') &&
+      /lisbon|lisboa/i.test(url.pathname) &&
+      url.searchParams.get('checkin') === isoDaysFromNow(14) &&
+      url.searchParams.get('checkout') === isoDaysFromNow(16),
   },
   {
     name: 'google-flights',
