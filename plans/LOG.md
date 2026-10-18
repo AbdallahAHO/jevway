@@ -4,6 +4,21 @@ Newest first. Each entry: what changed, why, and the measured effect. Numbers co
 
 ## 2026-10-18 — Goal 2 rounds 9–10 planned: generalization gates
 
+- **087 merged** (`349b865`, `be71c77`).
+  - **What changed:** when a target is covered, the 2nd-miss note and the 3rd-miss reason name up to 3 listed controls
+    of the covering layer: the hit element's nearest fixed, sticky or modal ancestor. Only action labels already in
+    Jev's list are named, never page text.
+  - **Checks:** tests 318 (4 red first), `pnpm verify` 8/8, red-team 0 violations.
+  - **Fixtures** (scratch, launched Chrome): a fixed banner names "Decline", "Accept", "Manage settings"; a role=dialog
+    names "Close dialog", "Allow" (its Escape still runs first); a sticky bar names "Got it". A plain absolute overlay
+    names nothing and keeps the old text.
+  - **Live: unmeasured.** Booking ×10 had 0 covered misses: Jev clicked "Decline" before opening the dates in every
+    run, so the banner timing varies. All 10 ended `done` on the dateless city page, which is 086's question.
+  - **Gotchas churn 28/30 twice:** wizard "Finish" refused as stale 31× (plan 078's flake). The diff runs only after a
+    click is found covered, never on the stale path, and base `be82c49` failed the same way (4/5) under the same load:
+    4–5 suites were running at once.
+  - **Follow-up:** if the hit element sits inside the same fixed layer as the target (a tooltip in a modal), the note
+    names the modal's controls. That is harmless (labels only), but imprecise.
 - **Public sites baseline ×3 at `ef49de1`** (`verify/out/real-2026-10-18T08-24-16-820Z/`; the suite last ran
   2026-10-15).
   - **Passes:** wikipedia, mdn and google-flights 3/3.

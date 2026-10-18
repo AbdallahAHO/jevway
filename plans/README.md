@@ -156,7 +156,7 @@ for automation, with throwaway data; never on a third-party production account.
 | 084 | The toggle note says whether anything was clicked to save it, and a rejected DONE says so too | P1 | S | 081 | TODO |
 | 085 | A held-back app (Vikunja) measures how well jev-browse does on an app no fix was tuned on | P1 | M–L | — | TODO |
 | 086 | Public sites become a gate: fix the suite's judging, add Airbnb, and triage every failure | P1 | S–M | — | TODO |
-| 087 | A covered target's note names the controls of the layer covering it | P2 | S | — | TODO |
+| 087 | A covered target's note names the controls of the layer covering it | P2 | S | — | DONE (`be71c77`): fixtures name the fixed/sticky/modal layer's controls (banner → Decline, Accept, Manage settings); live effect unmeasured, since 0 covered misses in 10 Booking runs (Jev declined the banner first) |
 | 027 | A control with no name, row or icon is named from its small container's text | P2 | S | — | DONE (`1be3212`) |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
