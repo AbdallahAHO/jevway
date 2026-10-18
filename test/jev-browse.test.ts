@@ -155,6 +155,8 @@ const fakeTab = (pages: PageState[] = [page()]) => {
     calls: [] as { kind: string; forced: boolean }[],
     /** Misses left before the target can be reached (covered by a popover). */
     unreachable: 0,
+    /** The nodes of the layer covering the target, as the tab names them with each miss. */
+    coverNodes: [] as number[],
     screenshots: 0,
     recorded: 0,
     clicksAt: [] as { x: number; y: number }[],
@@ -208,7 +210,7 @@ const fakeTab = (pages: PageState[] = [page()]) => {
       }
       if (tab.unreachable > 0) {
         tab.unreachable--;
-        throw new TargetUnreachable('covered');
+        throw new TargetUnreachable('covered', false, tab.coverNodes);
       }
       acted.push({ label: action.label, ...(text && { text }) });
       if (tab.dialogOnAct) tab.dialogs.push(tab.dialogOnAct);
@@ -1674,6 +1676,91 @@ describe('loop gotchas', () => {
     expect(requests).toHaveLength(3);
     expect(JSON.stringify(requests[2])).toContain('another layer covers it');
     expect(acted).toEqual([]);
+  });
+
+  describe('a covered target', () => {
+    const DATE = 'Sunday, November 1, 2026';
+    const BANNER = 'could not be reached: it is covered by a layer listing "Decline", "Accept", "Manage settings"; close that layer first (one of those), then try again';
+    const TODAYS_NOTE = 'could not be reached: another layer covers it; close that layer first';
+    const control = (node: number, label: string): PageAction => ({ id: `n${node}`, kind: 'click', node, role: 'button', label });
+    const cookieBanner = (extras: PageAction[] = []) =>
+      page({
+        actions: [control(21, DATE), control(114, 'Decline'), control(115, 'Accept'), control(116, 'Manage settings'), ...extras],
+        text: 'Cookies on this site: we use them to remember your choices',
+      });
+    const noteOf = (summary: { steps: { not_executed?: string }[] }) => summary.steps.find((step) => step.not_executed)?.not_executed;
+
+    it('names the controls of the covering layer on the 2nd miss, and a pick among them is acted on', async () => {
+      const state = cookieBanner();
+      const date = { operation: 'CLICK', click_target: clickTargetOf(state, DATE) };
+      const { ask, requests } = scriptedJev([date, date, { operation: 'CLICK', click_target: clickTargetOf(state, 'Decline') }, { operation: 'DONE' }]);
+      const { tab, asTab, acted } = fakeTab([state]);
+      tab.unreachable = 2;
+      tab.coverNodes = [114, 115, 116];
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Pick the date', changeWaitMs: 0 }).run();
+      expect(noteOf(summary)).toBe(BANNER);
+      expect(requests[2].state.recent_actions.at(-1).not_executed).toBe(BANNER);
+      expect(acted).toEqual([{ label: 'Decline' }]);
+    });
+
+    it('names them in the reason when the third miss hands the run back', async () => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: clickTargetOf(cookieBanner(), DATE) }]);
+      const { tab, asTab, acted } = fakeTab([cookieBanner()]);
+      tab.unreachable = 10;
+      tab.coverNodes = [114, 115, 116];
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Pick the date' }).run();
+      expect(summary.status).toBe('blocked');
+      expect(summary.reason).toBe(`"${DATE}" could not be reached 3 times: it is covered by a layer listing "Decline", "Accept", "Manage settings"`);
+      expect(acted).toEqual([]);
+    });
+
+    it('names at most 3 controls, in list order, each cut at 40 characters', async () => {
+      const state = cookieBanner([control(117, 'Reject non-essential'), control(118, 'Close')]);
+      state.actions[1] = control(114, 'Accept all cookies and share your data with our partners');
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: clickTargetOf(state, DATE) }]);
+      const { tab, asTab } = fakeTab([state]);
+      tab.unreachable = 10;
+      tab.coverNodes = [118, 117, 116, 115, 114];
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Pick the date' }).run();
+      expect(noteOf(summary)).toContain('covered by a layer listing "Accept all cookies and share your data w", "Accept", "Manage settings";');
+      expect(summary.reason).toContain('covered by a layer listing "Accept all cookies and share your data w", "Accept", "Manage settings"');
+      expect(summary.reason).not.toContain('Reject');
+    });
+
+    it.each([
+      ['no cover nodes', []],
+      ['cover nodes no listed control has', [900, 901]],
+    ])('keeps today\'s texts with %s', async (_name, coverNodes) => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: clickTargetOf(cookieBanner(), DATE) }]);
+      const { tab, asTab } = fakeTab([cookieBanner()]);
+      tab.unreachable = 10;
+      tab.coverNodes = coverNodes;
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Pick the date' }).run();
+      expect(noteOf(summary)).toBe(TODAYS_NOTE);
+      expect(summary.reason).toBe(`"${DATE}" could not be reached 3 times: something on the page covers it`);
+    });
+
+    it('keeps today\'s texts when the covering controls carry no label', async () => {
+      const state = page({ actions: [control(21, DATE), control(114, ''), control(115, '  ')] });
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: clickTargetOf(state, DATE) }]);
+      const { tab, asTab } = fakeTab([state]);
+      tab.unreachable = 10;
+      tab.coverNodes = [114, 115];
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Pick the date' }).run();
+      expect(noteOf(summary)).toBe(TODAYS_NOTE);
+      expect(summary.reason).toBe(`"${DATE}" could not be reached 3 times: something on the page covers it`);
+    });
+
+    it('skips a cover node that is not a listed control, and never quotes page text', async () => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: clickTargetOf(cookieBanner(), DATE) }]);
+      const { tab, asTab } = fakeTab([cookieBanner()]);
+      tab.unreachable = 10;
+      tab.coverNodes = [114, 777, 116];
+      const summary = await new BrowserTask(asTab, ask, { goal: 'Pick the date' }).run();
+      expect(noteOf(summary)).toBe(BANNER.replace(', "Accept"', ''));
+      expect(noteOf(summary)).not.toContain('Cookies on this site');
+      expect(summary.reason).not.toContain('Cookies on this site');
+    });
   });
 
   it('closes an open popup covering the target with Escape by itself, then retries the choice', async () => {
