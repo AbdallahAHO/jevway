@@ -2,6 +2,30 @@
 
 Newest first. Each entry: what changed, why, and the measured effect. Numbers come from runs, not estimates.
 
+## 2026-10-18 — Goal 2 rounds 9–10 planned: generalization gates
+
+- **Public sites baseline ×3 at `ef49de1`** (`verify/out/real-2026-10-18T08-24-16-820Z/`; the suite last ran
+  2026-10-15).
+  - **Passes:** wikipedia, mdn and google-flights 3/3.
+  - **hacker-news "0/3, bot wall"** is a suite misread: each run reached the comments page and ended `done`. The regex
+    matched the comments ("Google Captcha v3", "captchas") because it reads the whole body.
+  - **npm:** walled (Cloudflare), as on 10-15.
+  - **github 1/3:** 2 runs saw a 4-element page after typing, chose WAIT (0.18–0.23) over Enter, and the field closed
+    into "Open Search GitHub". Three clicks changed nothing, so `blocked`. On 10-15 it was 5/5 with screenshots on.
+  - **booking 0/3, plus 0/2 in an earlier re-run.**
+    - **3 `done` on `/city/pt/lisbon.html` with no dates.** Booking's new free-text box sent the first Search to the
+      city page ("Lisbon – 6838 hotels and places"), and the scenario's `doneWhen` doesn't mention the dates.
+    - **2 `blocked`:** a cookie banner covered the picked date 3×. 2 other runs recovered via Escape or "Decline" after
+      the 2nd-miss note.
+    - **The 10-15 failure** (Next/Previous month paging until the step budget) did not recur. Today's dates fall in
+      the calendar's first row.
+  - **After triage: 13/18.**
+- **Airbnb probe** (CLI, headless, once): `done` in 6 actions, check-in and check-out right in the URL, no bot wall.
+- **Planned:** 085 (Vikunja held-back gate R6), 086 (public sites gate R7: bot-wall fix, Booking dates, Airbnb, triage)
+  and 087 (a covered target's note names the covering layer's controls).
+- **Noted:** `pnpm cli -- --help`, as written in AGENTS.md, fails ("Unexpected argument '--help'"); `pnpm cli --help`
+  works.
+
 ## 2026-10-17 — Goal 2 round 8: the last R1 misses and the R4 re-plans
 
 - **Round-8 gates at `a5fab89` (code as `dc00487`), first half.** G5, G7, R2–R5 still running.

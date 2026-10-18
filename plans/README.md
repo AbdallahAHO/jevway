@@ -45,6 +45,8 @@ ground truth is the app's own state (its API, mailbox or URL), never the agent's
 | R3 Checkout to the gate | messy shop pages; stops before paying | `pnpm verify:checkout` (SauceDemo, a site built for automation) | reaches the order overview ≥ 90%; clicks Finish unconfirmed 0 times | **met**: 18/18; overview 6/6, Finish unconfirmed 0 (`1ddc592`) |
 | R4 A real agent drives it | the hand-back contract (`needs_input`, `needs_confirmation`, `stuck`, `steps`) is enough for an agent to finish real chores | `pnpm verify:agent` (Claude Code headless with jev-browse as an MCP server, chores on Forgejo and Langfuse) | ≥ 80% of chores done end to end; 0 unconfirmed destructive actions; hand-backs the agent couldn't act on ≤ 10% | **met**: 26/26 chores (`1ddc592`); 0 unconfirmed destructive; 0 unusable hand-backs of 15; every confirm target from the prompt and matched; tidy-vague 0/29 deleted since 059 |
 | R5 Phones | the same jobs on an iPhone 15 layout | `JEV_LANGFUSE_DEVICE=iphone-15 pnpm verify:langfuse`, `JEV_GRAFANA_DEVICE=iphone-15 pnpm verify:grafana` | Langfuse ≥ 80%, Grafana ≥ 90% | **met**: Langfuse 47/48 (97.9%), Grafana 23/24 (`1ddc592`) |
+| R6 An app nothing was tuned on | jev-browse on an app with jobs frozen before the first run, and no fix ever measured on it before the gate | `pnpm apps:vikunja:up` then `pnpm verify:vikunja` (plan 085; Vikunja 2.7.0, ground truth from its API) | ≥ 80% strict on the **first** ×3 measurement; 0 unconfirmed destructive actions | not built yet (plan 085). After its first gate run Vikunja becomes a tuned suite, and the next release needs a new held-back app |
+| R7 Live public sites | real sites that change under us: banners, new layouts, date pickers | `JEV_REAL_RUNS=5 pnpm verify:real` (plan 086; 8 sites incl. Airbnb) | ≥ 90% of runs that hit no bot wall; every failure triaged (bot wall, site-changed, suite, jev-browse); a site-changed scenario is suspended in this index until its job is rewritten | baseline ×3 at `ef49de1` (2026-10-18), after triage: 13/18. wikipedia, mdn, google-flights 3/3; hacker-news 3/3 (the suite misread the comments as a bot wall); github 1/3; booking 0/3 (2 `done` on the dateless city page, 1 covered by a cookie banner); npm walled |
 
 **Round 7 (2026-10-16, `1ddc592`, plans 069–079): every Goal 2 gate and G1–G8 met again on one commit.** R1 30/33,
 R2 15/15, R3 18/18, R4 26/26, R5 Langfuse 47/48 and Grafana 23/24, G6 160/160 at ×10.
@@ -152,6 +154,9 @@ for automation, with throwaway data; never on a third-party production account.
 | 082 | A form already sent is fed back once ("do what's left, or DONE") before the repeat is handed back | P2 | S | 063, 077 | REJECTED: measured no gain (triage still re-planned 3/3; the note led to unsure picks) and taken-name lost its page quote |
 | 083 | The rescues never open the signed-in user's account menu | P3 | S | 033, 062 | DONE (`f7f1fb5`): phone session-to-user ×10 10/10, 0 account-menu rescues; Langfuse phone ×1 16/16 |
 | 084 | The toggle note says whether anything was clicked to save it, and a rejected DONE says so too | P1 | S | 081 | TODO |
+| 085 | A held-back app (Vikunja) measures how well jev-browse does on an app no fix was tuned on | P1 | M–L | — | TODO |
+| 086 | Public sites become a gate: fix the suite's judging, add Airbnb, and triage every failure | P1 | S–M | — | TODO |
+| 087 | A covered target's note names the controls of the layer covering it | P2 | S | — | TODO |
 | 027 | A control with no name, row or icon is named from its small container's text | P2 | S | — | DONE (`1be3212`) |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
@@ -177,6 +182,19 @@ parallel with 081 and 082. 081 and 082 both add a feedback note in the same `run
 after the other (081 first), each rebased on main. Forgejo measurements go one at a time behind the lock. R1 sits at
 90.9% against a 90% bar; 080 targets new-issue, 081 wiki-off and the R4 settings re-plans, 082 the R4 triage re-plans. 083 (rescue filter, Langfuse phone on 9333) joined after a count showed the account-menu
 rescue behind both phone session-to-user misses of rounds 6 and 7; it uses no Forgejo.
+
+Goal 2, round 9 (planned at `a5fab89`/`ef49de1`, 2026-10-17/18): 084 (the toggle note, R1 wiki-off) and 087 (the
+covered-target note, from Booking's cookie banner) both edit `run-task.ts` in different places and merge one after the
+other. 087 measures on live Booking, with no Forgejo.
+
+Goal 2, round 10 (planned at `ef49de1`, 2026-10-18): two new gates measure generalization, not tuning.
+- **R6 (085):** Vikunja's 11 jobs are frozen in the plan. The builder makes one smoke run, and the first ×3 is the
+  gate number.
+- **R7 (086):** public sites as a gate. Fix the suite's bot-wall misread, state Booking's dates, add Airbnb (probed
+  1/1 by hand), and triage every failure.
+
+085 and 086 share nothing with the Forgejo stack or the Chromes on 9333 and 9444, so they can run beside the round-9
+work.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
