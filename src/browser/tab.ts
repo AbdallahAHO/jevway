@@ -84,9 +84,12 @@ export class StalePage extends Error {}
 export class TargetUnreachable extends StalePage {
   /** True when what sits on top is a popup layer (suggestions, a menu, a popover) that Escape can close. */
   readonly byPopup: boolean;
-  constructor(message: string, byPopup = false) {
+  /** Observed node ids inside the fixed, sticky or modal layer on top of the target, so the run can name its controls. */
+  readonly coverNodes: number[];
+  constructor(message: string, byPopup = false, coverNodes: number[] = []) {
     super(message);
     this.byPopup = byPopup;
+    this.coverNodes = coverNodes;
   }
 }
 
@@ -469,7 +472,7 @@ export class Tab {
     });
     if (!target || target.covered) {
       if (action.kind === 'select') throw new Error('Dropdown execution was not confirmed; inspect before retrying.');
-      throw new TargetUnreachable('Target changed or is covered', Boolean(target?.byPopup));
+      throw new TargetUnreachable('Target changed or is covered', Boolean(target?.byPopup), target?.coverNodes ?? []);
     }
     if (action.kind === 'select') return;
     // Focused in the page already: a press on the field's plain decoration would only take the focus away again.
@@ -719,7 +722,14 @@ const RESOLVE_TARGET = `action => {
   if (!at) {
     // Say what covers it: a popup layer can be closed with Escape, anything else can't be helped from here.
     const r=window.__jevFast.clickRect(e), hit=(${DEEP_HIT})(r.x+r.width/2, r.y+r.height/2);
-    return {covered:true, byPopup:Boolean(hit?.closest('[role="listbox"],[role="menu"],[role="dialog"]:not([aria-modal="true"]),[role="tooltip"],[data-radix-popper-content-wrapper],[cmdk-list]'))};
+    // The layer on top (fixed, sticky or modal, like a cookie banner): the ids of the observed nodes inside it, the target's own excluded.
+    const isLayer=n=>['fixed','sticky'].includes(getComputedStyle(n).position) ||
+      ['dialog','alertdialog'].includes(n.getAttribute('role')) || n.getAttribute('aria-modal')==='true';
+    let layer=hit;
+    while (layer && layer!==document.body && !isLayer(layer)) layer=layer.parentElement;
+    const coverNodes=layer && layer!==document.body
+      ? [...window.__jevFast.nodes].filter(([,n])=>n!==e && layer.contains(n)).map(([id])=>id) : [];
+    return {covered:true, coverNodes, byPopup:Boolean(hit?.closest('[role="listbox"],[role="menu"],[role="dialog"]:not([aria-modal="true"]),[role="tooltip"],[data-radix-popper-content-wrapper],[cmdk-list]'))};
   }
   const {x,y,focused}=at;
   if (action.kind==='select') {

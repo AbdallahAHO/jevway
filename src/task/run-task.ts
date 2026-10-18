@@ -569,14 +569,21 @@ export class BrowserTask {
           }
           const misses = this.#unreachable.node === action.node ? this.#unreachable.count + 1 : 1;
           this.#unreachable = { node: action.node, count: misses };
+          // The run knows what covers the target; naming that layer's controls (already in Jev's list) lets Jev close it
+          // instead of retrying the covered target.
+          const covering = coveringLabels(error.coverNodes, page);
+          const layer = covering.map((label) => `"${label}"`).join(', ');
           if (misses >= GUARDS.maxUnreachable) {
-            return stop('blocked', `"${action.label}" could not be reached ${misses} times: something on the page covers it`, decision);
+            const cause = layer ? `it is covered by a layer listing ${layer}` : 'something on the page covers it';
+            return stop('blocked', `"${action.label}" could not be reached ${misses} times: ${cause}`, decision);
           }
           if (misses === 2) {
             this.#history.push({
               operation: decision.operation,
               element: action.label,
-              not_executed: 'could not be reached: another layer covers it; close that layer first',
+              not_executed: layer
+                ? `could not be reached: it is covered by a layer listing ${layer}; close that layer first (one of those), then try again`
+                : 'could not be reached: another layer covers it; close that layer first',
               confidence: round(decision.confidence),
             });
           }
@@ -1102,6 +1109,15 @@ const decoded = (url: string) => {
 };
 
 const bareLabel = (label: string) => label.replace(/ \(appears on hover\)$/, '');
+
+/** Up to 3 labels, in list order and cut at 40 characters, of the listed controls inside the layer covering a target; none when nothing usable names it. */
+const coveringLabels = (coverNodes: number[], page: PageState) =>
+  page.actions
+    .filter((listed) => listed.node !== undefined && coverNodes.includes(listed.node))
+    .map((listed) => bareLabel(listed.label))
+    .filter((label) => label.trim())
+    .slice(0, 3)
+    .map((label) => label.slice(0, 40));
 
 // The keys of the supplied values a control's label names (case-insensitive, three characters at least, not a page-wide label).
 const valueKeysIn = (label: string, values: Record<string, string>) =>
