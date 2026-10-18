@@ -34,6 +34,7 @@
     "verify:gotchas": "node --env-file-if-exists=.env verify/gotchas.ts",
     "verify:forgejo": "node --env-file-if-exists=.env verify/forgejo.ts",
     "verify:signup": "node --env-file-if-exists=.env verify/signup.ts",
+    "verify:vikunja": "node --env-file-if-exists=.env verify/vikunja.ts",
     "verify:agent": "node verify/agent.ts",
     "apps:forgejo:up": "docker compose -p jev-forgejo -f verify/apps/forgejo/compose.yml up -d --wait && node verify/apps/forgejo/seed.ts users",
     "apps:forgejo:down": "docker compose -p jev-forgejo -f verify/apps/forgejo/compose.yml down -v",
