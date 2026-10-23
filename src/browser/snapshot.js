@@ -409,6 +409,8 @@
   // row each sits in, as a person reads the page: "Add to cart — Sauce Labs Bike Light". Only colliding labels change;
   // a nameless control (its label is its bare role) has nothing to share, and members whose cards read the same stay as is.
   const squash = (text) => text.replace(/\s+/g, ' ').trim();
+  // an SVG element (a diagram's link or label) has no innerText, only its text content
+  const textOf = (e) => e.innerText ?? e.textContent;
   const bareLabel = (a) => (a.hover ? a.label.slice(0, -hoverSuffix.length) : a.label);
   const alone = (list, value) => list.indexOf(value) === list.lastIndexOf(value);
   // The biggest ancestor (up to 4 levels) holding this control and none of the other members: its card or row.
@@ -424,11 +426,11 @@
   const headings = 'h1,h2,h3,h4,h5,h6,[role="heading"]';
   const apart = (members) => (el) => visible(el) && !members.some((m) => m.contains(el) || el.contains(m));
   const cardReadings = [
-    (card, members) => [...card.querySelectorAll(headings)].filter(apart(members)).map((h) => squash(h.innerText)),
+    (card, members) => [...card.querySelectorAll(headings)].filter(apart(members)).map((h) => squash(textOf(h))),
     (card, members) =>
       [...card.querySelectorAll('a[href]')]
         .filter(apart(members))
-        .map((a) => squash(a.innerText))
+        .map((a) => squash(textOf(a)))
         .filter((text) => text.length <= 60),
     (card, members) => {
       const walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SVG links</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  .grid { display: grid; grid-template-columns: repeat(2, 220px); gap: 12px; }
+  .card { border: 1px solid #bbb; padding: 10px; }
+</style>
+</head>
+<body>
+<!-- A diagram's nodes as links inside an SVG, as on an architecture overview: an SVG <a> has no innerText, so a card
+     read through its links must fall back to the link's text content. No heading, so the links are what the card reads. -->
+<div class="grid">
+  <div class="card"><svg width="200" height="40"><a href="#web"><rect width="200" height="40" fill="#eef"></rect><text x="8" y="25">Web server</text></a></svg><button type="button">Open</button></div>
+  <div class="card"><svg width="200" height="40"><a href="#worker"><rect width="200" height="40" fill="#efe"></rect><text x="8" y="25">Worker</text></a></svg><button type="button">Open</button></div>
+</div>
+<script>
+  window.__fixture = { opened: [] };
+  for (const button of document.querySelectorAll('.card button')) {
+    button.addEventListener('click', () => window.__fixture.opened.push(button.closest('.card').querySelector('text').textContent));
+  }
+</script>
+</body>
+</html>
