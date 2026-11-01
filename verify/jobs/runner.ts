@@ -32,7 +32,7 @@ import { execFile } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { connectChrome, type BrowserSource } from '../../src/browser/chrome.ts';
 import { DEVICES, type DeviceName } from '../../src/browser/devices.ts';
-import { Tab } from '../../src/browser/tab.ts';
+import { StalePage, Tab } from '../../src/browser/tab.ts';
 import { createAsk, profileOptions, resolveModel } from '../../src/jev/model.ts';
 import { shownValues } from '../../src/jev/secrets.ts';
 import type { Check } from '../../src/task/checks.ts';
@@ -97,6 +97,48 @@ const runCall = async (task: BrowserTask, { confirms, confirmTarget }: Pick<Job,
     confirmed.add(label);
     task.update({ confirmIrreversible: true, confirmTarget });
     summaries.push(await task.run());
+  }
+};
+
+// Clears storage only on a loaded http(s) page, and says where the tab was. A new tab starts on about:blank, whose
+// readyState is already complete, so the load wait can return before the start page commits; localStorage throws there.
+const CLEAR_STORAGE = `(() => {
+  const at = location.href;
+  try {
+    if (!/^https?:$/.test(location.protocol) || document.readyState !== 'complete') return { cleared: false, at };
+    localStorage.clear();
+    sessionStorage.clear();
+    return { cleared: true, at };
+  } catch {
+    return { cleared: false, at };
+  }
+})()`;
+
+/**
+ * Clears the start page's local and session storage once it has loaded, so each run starts clean (apps remember date
+ * ranges and views there, which leaked one run's choices into the next). Login cookies stay. Polls until the clear ran
+ * on an http(s) page: a document that changes mid-call is "not yet", any other error (a closed connection, a timed-out
+ * call) is thrown at once, and past the deadline it throws, which costs that run its setup like any other setup error.
+ *
+ * @example
+ * const tab = await Tab.open(chrome.cdp, startUrl, { device });
+ * await clearStorageWhenSettled(tab); // 'http://localhost:3312/' (where it cleared)
+ */
+export const clearStorageWhenSettled = async (tab: Pick<Tab, 'evaluate'>, { deadlineMs = 15_000, pollMs = 100 } = {}) => {
+  const deadline = Date.now() + deadlineMs;
+  let last = 'nothing';
+  for (;;) {
+    try {
+      const { cleared, at } = await tab.evaluate(CLEAR_STORAGE);
+      if (cleared) return at as string;
+      last = at;
+    } catch (error) {
+      // tab.evaluate wraps a closed connection in StalePage too: that one ends the setup at once.
+      if (!(error instanceof StalePage) || error.message.includes(CONNECTION_CLOSED)) throw error;
+      last = `a document that changed (${error.message})`;
+    }
+    if (Date.now() >= deadline) throw new Error(`could not clear storage: the start page did not settle (last at ${last})`);
+    await sleep(pollMs);
   }
 };
 
@@ -181,10 +223,9 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
             throw new Error(`reset failed: ${error.message}`);
           });
           tab = await Tab.open(chrome.cdp, startUrl, { device });
-          // Each run starts clean: apps remember date ranges and views in storage, which leaked one run's choices into
-          // the next. Cleared from inside the page because the browser-level Storage.clearDataForOrigin fails with
-          // "Internal error" on launched headless Chrome. Login cookies stay.
-          await tab.evaluate('localStorage.clear(); sessionStorage.clear()');
+          // Each run starts clean. Cleared from inside the page because the browser-level Storage.clearDataForOrigin fails
+          // with "Internal error" on launched headless Chrome.
+          await clearStorageWhenSettled(tab);
           await tab.navigate(startUrl);
           await before?.(tab, job);
           ready = true;
