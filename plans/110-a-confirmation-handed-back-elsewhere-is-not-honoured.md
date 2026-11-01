@@ -58,8 +58,10 @@ call right after a `needs_confirmation`). So such a call counts as honoured, and
    `confirmCounts().honoured`, is corrected without editing `verify/agent.ts`. A new `confirmUse(calls, call)` returns
    `'honoured' | 'not used' | 'ignored'`.
 4. **`ConfirmCounts` gains `notUsed`**; `ignored` stays "not accepted". **`ConfirmTarget` gains `notUsed: boolean`**.
-   `describeConfirmTarget` prints `not used: handed back on another control` for it, and leaves the target details as
-   they are (only honoured calls are judged, so a not-used target is shown, not judged).
+   `describeConfirmTarget` prints `not used: handed back on another control` for it. Its last part says
+   `not checked by jevway` for any call that is not honoured (not used or ignored), since jevway never checked their
+   `confirm_target`; it used to say `matched by jevway` for those. (Added during the fix, after the red tests: an
+   assertion for it sits in the fix commit.)
 5. **`confirmsOffTarget`** (any flagged call in a session about another target) is unchanged: it is the deletion
    chore's broader warning and already counts ignored flags too.
 6. **Not changed here:** `verify/agent.ts` totals derive "ignored" as `!honoured`, so a not-used call is counted under

@@ -100,8 +100,8 @@ const runCall = async (task: BrowserTask, { confirms, confirmTarget }: Pick<Job,
   }
 };
 
-// Clears storage only on a loaded http(s) page, and says where the tab was. A new tab starts on about:blank, whose
-// readyState is already complete, so the load wait can return before the start page commits; localStorage throws there.
+// Clears storage only on a loaded http(s) page, and says where the tab was: localStorage throws on a document without
+// storage access (about:blank before the start page commits, a browser error page), which the old bare clear hit.
 const CLEAR_STORAGE = `(() => {
   const at = location.href;
   try {

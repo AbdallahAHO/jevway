@@ -23,17 +23,21 @@ In round 11's Vikunja gate, 2 of 33 runs (mark-done #3, missing-project #2) fail
 Since `bd2549c` that costs the run, not the suite, but it still counts as a failed run of the held-back app, so the
 gate measures the harness instead of jevway.
 
-**The mechanism (consistent with the message and the code; not measured live, and Vikunja is not run for this plan):**
-- `#evaluate` (`src/browser/tab.ts:763`) throws that exact message only when the evaluated script itself threw
+**What is known, and what is not (offline only; Vikunja is not run for this plan):**
+- Known: `#evaluate` (`src/browser/tab.ts:763`) throws that exact message only when the evaluated script itself threw
   (`exceptionDetails`). A protocol error mid-navigation ("Execution context was destroyed") becomes a `StalePage` with
-  the protocol's own message instead. So in both runs `localStorage.clear()` threw.
-- `localStorage` throws a `SecurityError` on a document with an opaque origin, such as `about:blank`.
-- `Tab.open` (`src/browser/tab.ts:148`) creates the target at `about:blank`, then `navigate(url)` calls `#waitForLoad`,
-  which returns as soon as `document.readyState` is `'complete'`. `about:blank` is already complete, so a poll that
-  lands before the new document commits returns at once, and the runner clears storage on `about:blank`.
+  the protocol's own message instead. So in both runs `localStorage.clear()` ran on a document without storage access
+  (`localStorage` throws a `SecurityError` on an opaque origin).
+- Not known: which document that was. Three candidates, each consistent with the message:
+  1. **`about:blank` before the start page commits.** `Tab.open` (`src/browser/tab.ts:148`) creates the target at
+     `about:blank`, then `navigate(url)` polls `document.readyState` until `'complete'`; `about:blank` is already
+     complete, so if `Page.navigate` answers before the new document commits, the wait returns at once.
+  2. **A document being replaced right after load** (a reload on a service worker taking control, or a full redirect).
+  3. **A browser error page** (`chrome-error://chromewebdata/`: opaque origin, `readyState` complete) if the app was
+     briefly unreachable. Less likely here: Vikunja's `resetDemo` works through the REST API and restarts nothing.
 
-A same-origin SPA redirect after load can't produce this message (it would be a protocol error, or no error at all), so
-the fix is about *when the start document is there*, not about redirects.
+The fix doesn't depend on which: it clears only once an http(s) document has loaded, and otherwise says where the tab
+was, so a repeat names the culprit.
 
 ## Current state
 
@@ -72,9 +76,9 @@ A throw anywhere here lands in the `catch` with `ready === false`: one is that r
    `could not clear storage: the start page did not settle (last at <href>)`, which is that run's setup error, so
    `bd2549c`'s "one setup failure is that run's error, two in a row stop the suite" is unchanged.
 4. **Home: an exported function in `verify/jobs/runner.ts`**, `clearStorageWhenSettled(tab, { deadlineMs, pollMs })`,
-   taking `Pick<Tab, 'evaluate'>` so a test can pass a fake. No change in `src/`: the early return in `#waitForLoad`
-   touches every `tab.navigate` caller (agents too, where `observe()` happens to recover), so it is a follow-up for
-   `src/browser/tab.ts`, which other executors edit now.
+   taking `Pick<Tab, 'evaluate'>` so a test can pass a fake. No change in `src/`. Follow-up, not a known bug: check
+   whether `Page.navigate` can answer before the new document commits; if so, `#waitForLoad` returns early for every
+   `tab.navigate` caller (agents too, where `observe()` recovers).
 
 ## Scope
 
