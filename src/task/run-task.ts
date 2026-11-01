@@ -373,7 +373,7 @@ export class BrowserTask {
         if (halt) return stop(halt.status, halt.reason);
         // Never a decision on a page outside the hosts: a start page, a redirect or a late navigation that left them ends the run.
         const outside = outsideHosts(page.url, hosts);
-        if (outside) return stop('blocked', `Left the allowed hosts: ${outside}; the run stopped without going back`);
+        if (outside) return stop('blocked', `The page is outside this run's hosts: ${outside}; the run stopped without going back`);
         // The arm belongs to one step: a click that never reached the page leaves none for the next decision.
         this.#tab.disarmConfirm();
         if (++decisions > maxSteps * 2) return stop('step_budget', `Made ${maxSteps * 2} decisions without finishing`);
@@ -680,7 +680,7 @@ export class BrowserTask {
         });
         // A click can leave the site as surely as a navigation: nothing else runs on a page outside the hosts (no guard, look or Escape).
         const left = outsideHosts(page.url, hosts);
-        if (left) return stop('blocked', `After "${element}" the page left the allowed hosts: ${left}; the run stopped without going back`, decision);
+        if (left) return stop('blocked', `After "${element}" the page is outside this run's hosts: ${left}; the run stopped without going back`, decision);
         this.#unsavedEdit = isUnsavedEdit(decision.operation, action, page) ? { noted: false, label: action.label } : undefined;
         if (decision.operation === 'CLICK') this.#recordToggle(action, pathBefore, page);
         // ...and what the page said right after it.

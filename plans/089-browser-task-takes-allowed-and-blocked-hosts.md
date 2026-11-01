@@ -61,8 +61,8 @@ network layer with `Fetch` (later step, out of scope).
    - `page.url` right after every executed step (after its observe and change-wait, before any guard, last look or
      automatic Escape), because a click can leave the site; an explicit navigation is not the only way out.
 5. **Leaving ends the run `blocked`**, the reason naming the host and the list it broke:
-   - before a decision: `Left the allowed hosts: localhost is outside the allowed hosts (127.0.0.1); the run stopped without going back`
-   - after a step: `After "Partner offer" the page left the allowed hosts: localhost is outside …; the run stopped without going back`
+   - before a decision: `The page is outside this run's hosts: localhost is outside the allowed hosts (127.0.0.1); the run stopped without going back`
+   - after a step: `After "Partner offer" the page is outside this run's hosts: localhost is outside …; the run stopped without going back`
    - blocked host: `… evil.example is a blocked host (*.example) …`
    The run never navigates back by itself; the caller decides (the session stays usable).
 6. **Journeys keep `stay_within`** unchanged.

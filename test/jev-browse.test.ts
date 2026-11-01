@@ -3944,7 +3944,7 @@ describe('a run stays on the allowed hosts and off the blocked ones', () => {
     const summary = await new BrowserTask(asTab, ask, { goal: 'Claim the offer', hosts: ON_SITE, changeWaitMs: 0 }).run();
     expect(summary.status).toBe('blocked');
     expect(summary.reason).toBe(
-      'After "Open Full name" the page left the allowed hosts: partner.example is outside the allowed hosts (fixture); the run stopped without going back',
+      "After \"Open Full name\" the page is outside this run's hosts: partner.example is outside the allowed hosts (fixture); the run stopped without going back",
     );
     expect(summary.url).toBe('https://partner.example/offer');
     expect(acted).toEqual([{ label: 'Open Full name' }]);
@@ -3957,7 +3957,7 @@ describe('a run stays on the allowed hosts and off the blocked ones', () => {
     const summary = await new BrowserTask(asTab, ask, { goal: 'Open', hosts: ON_SITE, changeWaitMs: 0 }).run();
     expect(summary).toMatchObject({
       status: 'blocked',
-      reason: 'Left the allowed hosts: sso.example is outside the allowed hosts (fixture); the run stopped without going back',
+      reason: "The page is outside this run's hosts: sso.example is outside the allowed hosts (fixture); the run stopped without going back",
     });
     expect(requests).toHaveLength(0);
     expect(acted).toEqual([]);
@@ -3968,7 +3968,7 @@ describe('a run stays on the allowed hosts and off the blocked ones', () => {
     const { asTab } = fakeTab([page(), offSite('https://ads.tracker.io/r')]);
     const summary = await new BrowserTask(asTab, ask, { goal: 'Open', hosts: { blocked: ['*.tracker.io'] }, changeWaitMs: 0 }).run();
     expect(summary.reason).toBe(
-      'After "Open Full name" the page left the allowed hosts: ads.tracker.io is a blocked host (*.tracker.io); the run stopped without going back',
+      "After \"Open Full name\" the page is outside this run's hosts: ads.tracker.io is a blocked host (*.tracker.io); the run stopped without going back",
     );
   });
 
@@ -3986,7 +3986,7 @@ describe('a run stays on the allowed hosts and off the blocked ones', () => {
     expect(() => task.update({ allowedHosts: ['*.fixture'] })).toThrow(/a call can only narrow them/);
     task.update({ allowedHosts: ['other.example'] });
     const summary = await task.run();
-    expect(summary.reason).toBe('Left the allowed hosts: fixture is outside the allowed hosts (other.example); the run stopped without going back');
+    expect(summary.reason).toBe("The page is outside this run's hosts: fixture is outside the allowed hosts (other.example); the run stopped without going back");
     expect(requests).toHaveLength(0);
   });
 
