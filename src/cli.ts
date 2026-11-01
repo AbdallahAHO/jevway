@@ -7,6 +7,7 @@ const USAGE = `jev-browse --goal "<outcome>" (--url <url> | --tab <url part>) [o
 
   --values '{"city":"Lisbon"}'   text values Jev may type
   --secret-keys token,otp         keys of --values that are secrets: Jev sees the key only, output shows [secret:<key>]
+  --files '{"avatar":"/abs/me.png"}'   files Jev may upload (absolute paths; Jev sees names, never paths)
   --done-when "<evidence>"        visible evidence of success
   --checks '[{"type":"url_contains","text":"/issues/"}]'   facts checked by code on the final page
   --browser auto|launch|launch-headless|http://127.0.0.1:9222   (default: auto, or $JEV_BROWSER)
@@ -30,6 +31,7 @@ const { values: args } = parseArgs({
     tab: { type: 'string' },
     values: { type: 'string' },
     'secret-keys': { type: 'string' },
+    files: { type: 'string' },
     'done-when': { type: 'string' },
     checks: { type: 'string' },
     browser: { type: 'string' },
@@ -78,6 +80,7 @@ try {
     tab: args.tab,
     values: args.values ? JSON.parse(args.values) : undefined,
     secretKeys: args['secret-keys']?.split(',').map((key) => key.trim()).filter(Boolean),
+    files: args.files ? JSON.parse(args.files) : undefined,
     doneWhen: args['done-when'],
     checks,
     maxSteps: args['max-steps'] ? Number(args['max-steps']) : undefined,

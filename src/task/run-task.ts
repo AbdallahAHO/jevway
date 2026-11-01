@@ -11,6 +11,7 @@ import { describeFailure, runChecks, type Check, type CheckResult } from './chec
 import { deepLink, quoteSpans } from './evidence.ts';
 import { Recording } from './recording.ts';
 import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
+import { checkUploadFiles, fileNames } from './upload-files.ts';
 
 export interface TaskOptions {
   goal: string;
@@ -21,6 +22,11 @@ export interface TaskOptions {
    * value is replaced by that marker in every summary, trace and recording, wherever the page echoes it. Typed as given.
    */
   secretKeys?: string[];
+  /**
+   * Files the caller declares for upload, by key: absolute paths (checked before the run). Kept apart from `values`:
+   * Jev picks a key for a file field and sees the file's name, never its path; nothing else is ever uploaded.
+   */
+  files?: Record<string, string>;
   /** Visible evidence that the task is finished; checked by a separate Jev judgment on DONE. */
   doneWhen?: string;
   /** Maximum executed browser actions per call. */
@@ -297,7 +303,7 @@ export class BrowserTask {
     this.#tab = tab;
     this.#tabs = [tab];
     this.#ask = ask;
-    this.#options = { ...DEFAULTS, values: {}, secretKeys: [], ...definedOnly(options) };
+    this.#options = { ...DEFAULTS, values: {}, secretKeys: [], ...definedOnly(options), files: checkUploadFiles(options.files) };
     if (recordDir) this.#recording = new Recording(recordDir, (text) => this.#scrub(text));
   }
 
@@ -356,7 +362,7 @@ export class BrowserTask {
   update(
     patch: Partial<Omit<TaskOptions, 'hosts'>> & { confirmIrreversible?: boolean; confirmTarget?: string; allowedHosts?: string[]; blockedHosts?: string[] },
   ) {
-    const { confirmIrreversible, confirmTarget, values, secretKeys, recordDir: _recordDir, allowedHosts, blockedHosts, ...options } = patch;
+    const { confirmIrreversible, confirmTarget, values, secretKeys, files, recordDir: _recordDir, allowedHosts, blockedHosts, ...options } = patch;
     // First, so a list that would widen the hosts throws before anything else changes.
     const hosts = narrowHosts(this.#options.hosts, { allowed: allowedHosts, blocked: blockedHosts });
     // A new goal may be to flip back what the old one flipped.
@@ -368,6 +374,7 @@ export class BrowserTask {
       values: { ...this.#options.values, ...values },
       // Once secret, always secret in this session.
       secretKeys: [...new Set([...this.#options.secretKeys, ...(secretKeys ?? [])])],
+      files: { ...this.#options.files, ...checkUploadFiles(files) },
     };
     if (!confirmIrreversible) return;
     // A confirmation answers the question jev-browse asked, so a flag carried onto a later call allows nothing (an unused earlier one stands).
@@ -402,7 +409,10 @@ export class BrowserTask {
 
   async #loop(signal?: AbortSignal): Promise<TaskSummary> {
     // The page's own scripts can read what it is told to look for, so a secret reaches the page only when typed into its field.
-    this.#tab.want(Object.entries(this.#options.values).filter(([key]) => !this.#options.secretKeys.includes(key)).map(([, value]) => value));
+    this.#tab.want(
+      Object.entries(this.#options.values).filter(([key]) => !this.#options.secretKeys.includes(key)).map(([, value]) => value),
+      { files: Object.keys(this.#options.files).length > 0 },
+    );
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
     const { maxSteps, maxSeconds, values, doneWhen, screenshots, hosts } = this.#options;
@@ -670,15 +680,17 @@ export class BrowserTask {
           continue;
         }
         const handBack = this.#handBack(decision, page);
-        // A field the model has no value for is first a wrong turn, and only the second time a question for the caller.
-        if (handBack?.[0] === 'needs_input' && decision.operation === 'TYPE_TEXT' && !this.#refusedForValue.has(decision.action!.node!)) {
+        // A field the model has no value (or file) for is first a wrong turn, and only the second time a question for the caller.
+        if (handBack?.[0] === 'needs_input' && ['TYPE_TEXT', 'UPLOAD'].includes(decision.operation) && !this.#refusedForValue.has(decision.action!.node!)) {
           this.#refusedForValue.add(decision.action!.node!);
           record(false);
           this.#history.push({
             operation: decision.operation,
             element: decision.action!.label,
             not_executed:
-              'no supplied value fits this field; type nothing here — choose another step, or BLOCKED if the goal needs a value you were not given',
+              decision.operation === 'UPLOAD'
+                ? 'no supplied file fits this field; upload nothing here — choose another step, or BLOCKED if the goal needs a file you were not given'
+                : 'no supplied value fits this field; type nothing here — choose another step, or BLOCKED if the goal needs a value you were not given',
             confidence: round(decision.confidence),
           });
           page = await this.#tab.observe();
@@ -747,7 +759,11 @@ export class BrowserTask {
             // A page whose text never stops changing (a ticking clock) would refuse a page-level key forever, while one refusal is
             // enough to wait out an animation: the third try runs even though the page changed.
             const forced = PAGE_LEVEL_KINDS.includes(action.kind) && this.#pageLevelStale >= 2;
-            const outcome = await this.#tab.act(action, page, text, forced ? { evenIfChanged: true } : undefined);
+            // A file comes only from the caller's declared files, by the key Jev chose; never from values.
+            const outcome =
+              action.kind === 'upload'
+                ? await this.#tab.upload(action, page, this.#options.files[decision.fileKey!])
+                : await this.#tab.act(action, page, text, forced ? { evenIfChanged: true } : undefined);
             // A scroll that moved nothing says so, or Jev keeps asking for it.
             element = outcome?.scrolled === 0 ? `${action.label} (nothing moved: there is no more to scroll this way)` : action.label;
           }
@@ -836,6 +852,7 @@ export class BrowserTask {
           operation: decision.operation,
           element,
           ...(decision.valueKey && { value_key: decision.valueKey }),
+          ...(decision.fileKey && { file_key: decision.fileKey }),
         };
         const confidence = round(Math.min(decision.confidence, decision.targetConfidence ?? 1));
         let switched: 'opened' | 'closed' | undefined;
@@ -1099,6 +1116,7 @@ export class BrowserTask {
         goal,
         values,
         secretKeys,
+        files: fileNames(this.#options.files),
         history: this.#history.slice(-10),
         doneWhen,
         checkCommitRisk: true,
@@ -1414,6 +1432,9 @@ export class BrowserTask {
     if (isRiskyClick(decision) && this.#confirmedCommit && confirmed && !sameControl(confirmed, controlOf(decision, page))) {
       const given = `The confirmation given was for ${confirmed.coordinate ? 'a click by on-screen position' : `"${confirmed.label}"`} on ${confirmed.path}, a different control, so it was not used.`;
       return ['needs_confirmation', irreversibleReason(decision, page, given)];
+    }
+    if (decision.operation === 'UPLOAD' && !decision.fileKey) {
+      return ['needs_input', `No supplied file fits the file field "${decision.action!.label}"`];
     }
     if (isRiskyClick(decision) && this.#confirmedCommit) {
       const refusal = this.#targetRefusal(decision, page);

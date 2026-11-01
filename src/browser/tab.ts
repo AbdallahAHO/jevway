@@ -30,7 +30,7 @@ const COUNT_PLACEHOLDERS = `(() => {
   return count;
 })()`;
 
-export type ActionKind = 'click' | 'fill' | 'select' | 'scroll' | 'wait' | 'enter' | 'escape';
+export type ActionKind = 'click' | 'fill' | 'select' | 'upload' | 'scroll' | 'wait' | 'enter' | 'escape';
 /** Actions that target no element and are reversible: the loop may run them on a page that changed since the decision. */
 export const PAGE_LEVEL_KINDS: ActionKind[] = ['wait', 'escape', 'scroll', 'enter'];
 
@@ -110,6 +110,8 @@ export class InputNotDelivered extends Error {}
 export class Tab {
   #afterInput: PageAction | undefined;
   #wanted: string[] = [];
+  /** The caller declared files to upload: file inputs are listed, and a native file picker is intercepted. */
+  #files = false;
   #touch = false;
   #dialogs: DialogRecord[] = [];
   /** The phrases the next confirm dialog must name to get OK; set only around a click the caller confirmed. */
@@ -322,6 +324,7 @@ export class Tab {
   async follow(targetId: string): Promise<Tab> {
     const next = await Tab.attach(this.cdp, targetId);
     if (this.#device) await next.emulate(this.#device);
+    next.want([], { files: this.#files });
     next.#wanted = this.#wanted;
     next.#confirmArm = this.#confirmArm;
     // A popup is created on about:blank and then navigates: wait for its URL, then for it to load.
@@ -389,8 +392,29 @@ export class Tab {
    * @example
    * tab.want(['u-Gy8s1dJcpm18C2qmaNcN8']); // the user link below the fold is listed on the next observe()
    */
-  want(texts: string[]) {
+  want(texts: string[], { files = false }: { files?: boolean } = {}) {
     this.#wanted = texts.map((t) => t.trim().toLowerCase()).filter((t) => t.length >= 3);
+    // jev-browse: with files declared, a click on a styled "Upload" button must never open an OS dialog in the user's
+    // Chrome: the picker is intercepted (and left unanswered); UPLOAD sets the file on the field instead.
+    if (files && !this.#files) void this.#call('Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => undefined);
+    this.#files = files;
+  }
+
+  /**
+   * Sets a declared file on an observed file input (hidden ones too), after the same element-level freshness check
+   * as a click. The path comes from the caller's `files`, never from the model or `values`.
+   *
+   * @example
+   * await tab.upload(page.actions.find((a) => a.kind === 'upload')!, page, '/Users/ada/me.png');
+   */
+  async upload(action: PageAction, page: PageState, path: string) {
+    if (!(await this.fresh(page, action))) throw new StalePage('Page changed since this decision');
+    const { result } = await this.#call('Runtime.evaluate', {
+      expression: `(() => { const e = window.__jevFast?.nodes.get(${Number(action.node)}); return e?.isConnected && e.matches('input[type=file]:not(:disabled)') ? e : null; })()`,
+    });
+    if (!result?.objectId) throw new TargetUnreachable('The file field is gone or disabled');
+    await this.#call('DOM.setFileInputFiles', { files: [path], objectId: result.objectId });
+    this.#afterInput = action;
   }
 
   async observe(): Promise<PageState> {
@@ -401,7 +425,7 @@ export class Tab {
     const started = Date.now();
     for (let attempt = 0; attempt < 25 && Date.now() - started < OBSERVE_DEADLINE_MS; attempt++) {
       try {
-        const state = await this.#evaluate(`window.__jevWanted=${JSON.stringify(this.#wanted)};${READ_STATE}`);
+        const state = await this.#evaluate(`window.__jevWanted=${JSON.stringify(this.#wanted)};window.__jevFiles=${this.#files};${READ_STATE}`);
         if (state) {
           const named = placeholders ? { ...state, text: `Loading: ${placeholders} placeholder blocks on screen\n${state.text}` } : state;
           return { ...named, fingerprint: fingerprint(named) };
@@ -439,7 +463,7 @@ export class Tab {
   /** Clicks/selects compare the target's own guard; everything else compares the whole-page marker. */
   async fresh(page: PageState, action?: PageAction): Promise<boolean> {
     // Element-level for targeted input: busy pages (rotating banners) change the page marker constantly.
-    if (action && ['click', 'select', 'fill'].includes(action.kind)) {
+    if (action && ['click', 'select', 'fill', 'upload'].includes(action.kind)) {
       const current = await this.#evaluate(
         `(() => { const c=window.__jevFast; return c ? [c.pageKey(), c.guard(c.nodes.get(${Number(action.node)}))] : null; })()`,
       ).catch(() => null);

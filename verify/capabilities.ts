@@ -100,7 +100,6 @@ const TASKS: CapabilityTask[] = [
     doneWhen: 'The page says the profile picture is set to avatar.png.',
     expect: ['done'],
     passes: `window.__fixture.uploaded === 'avatar.png'`,
-    gap: 'plan 097',
     solve: `(() => {
       const picker = document.getElementById('picker'), files = new DataTransfer();
       files.items.add(new File(['png'], 'avatar.png', { type: 'image/png' }));
@@ -329,8 +328,7 @@ const runOnce = async (ask: ReturnType<typeof createAsk>, options: Partial<TaskO
   const tab = await Tab.open(chrome.cdp, `${origin}${task.path}`);
   try {
     if (task.prepare) await evaluateIn(tab.targetId, task.prepare);
-    // `files` is the caller's upload map (plan 097); a build without it ignores the option.
-    const taskOptions: TaskOptions & { files?: Record<string, string> } = {
+    const taskOptions: TaskOptions = {
       ...options,
       goal: task.goal,
       values: task.values,

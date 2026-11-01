@@ -28,6 +28,7 @@ import type { ImageTransport } from './model.ts';
 import { scrubberFor, shownValues } from './secrets.ts';
 
 export const NO_SUPPLIED_VALUE = 'NO_SUPPLIED_VALUE';
+export const NO_SUPPLIED_FILE = 'NO_SUPPLIED_FILE';
 // Speculative value heads ride along with the operation request; beyond this, TYPE_TEXT costs one follow-up.
 const MAX_SPECULATIVE_VALUE_FIELDS = 8;
 // Matches the autopilot's tap ranking depth, so every tap it may take has its own risk score.
@@ -39,6 +40,8 @@ export interface StepRecord {
   operation: string;
   element: string;
   value_key?: string;
+  /** For UPLOAD: the declared file's key. */
+  file_key?: string;
   page_changed?: boolean;
   /** For TYPE_TEXT: false when the field no longer holds the typed text (a popup swallowed it, a reset). */
   value_kept?: boolean;
@@ -52,6 +55,8 @@ export interface DecisionInput {
   values: Record<string, string>;
   /** Keys of `values` the caller marked secret: Jev sees their key in place of the value, and never the value anywhere in the request. */
   secretKeys?: string[];
+  /** Files the caller declared, by key: the file's name only, never its path. UPLOAD exists only with at least one. */
+  files?: Record<string, string>;
   history: StepRecord[];
   doneWhen?: string;
   checkCommitRisk: boolean;
@@ -107,6 +112,8 @@ export interface Decision {
   /** For TYPE_TEXT: the chosen `values` key, or null when no supplied value fits the field. */
   valueKey?: string | null;
   valueConfidence?: number;
+  /** For UPLOAD: the chosen declared file's key, or null when none fits the field. */
+  fileKey?: string | null;
   commitRisk?: number;
   doneProbability?: number;
   /** Empty text fields that none of the supplied values fits: what to ask for when Jev is BLOCKED. */
@@ -176,6 +183,15 @@ export const decide = async (ask: Ask, input: DecisionInput): Promise<Decision> 
       }),
     );
   }
+  // The chosen file field had no speculative file head: ask once more with the field known.
+  if (decision.operation === 'UPLOAD' && decision.fileKey === undefined) {
+    const target = targetIndexOf(space, 'UPLOAD', decision.action!);
+    followUps.push(
+      followUp({ file: fileQuestion(input, space, target) }).then((answers) => {
+        decision.fileKey = readFile(answers.file, input.files ?? {});
+      }),
+    );
+  }
   // Is the chosen click target visibly unobstructed, and does the model see it where the DOM says it is?
   if (input.box && input.screenshot && decision.operation === 'CLICK') {
     const index = decision.target!;
@@ -231,6 +247,7 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
       TYPE_TEXT: 'Enter or replace text in an editable field, using one of the supplied values.',
     }),
     ...(targets.SELECT && { SELECT: 'Select an observed dropdown value.' }),
+    ...(targets.UPLOAD && { UPLOAD: 'Choose a file for a file field, using one of the supplied files.' }),
     ...Object.fromEntries(Object.entries(controls).map(([id, action]) => [id, action.label])),
     DONE: 'Every requirement is visibly satisfied.',
     BLOCKED: 'No supported operation can progress.',
@@ -254,6 +271,12 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
       questions[`value_for_${index}`] = valueQuestion(input, space, index);
     }
   }
+  // jev-browse: like values, a declared file is picked per field by key; the model sees each key's file name, never its path.
+  if (Object.keys(input.files ?? {}).length) {
+    for (const index of Object.keys(targets.UPLOAD ?? {}).slice(0, MAX_SPECULATIVE_VALUE_FIELDS)) {
+      questions[`file_for_${index}`] = fileQuestion(input, space, index);
+    }
+  }
   if (input.checkCommitRisk && targets.CLICK && (!input.elementRisk || input.pageRisk)) questions.commit_risk = noul({ goal: input.goal, rules: COMMIT_RISK });
   if (input.doneWhen) questions.done_check = noul({ completion_condition: input.doneWhen, rules: DONE_CHECK });
   if (input.box && input.screenshot) {
@@ -269,6 +292,7 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
     ...(input.page.passwordFields?.length && { password_fields: input.page.passwordFields }),
     elements,
     supplied_values: shownValues(input.values, input.secretKeys),
+    ...(Object.keys(input.files ?? {}).length && { supplied_files: input.files }),
     recent_actions: input.history.slice(-10),
     ...(input.screenshot && { screenshot: SCREENSHOT_NOTE }),
   };
@@ -309,6 +333,17 @@ const valueQuestion = (input: DecisionInput, space: ActionSpace, index: string) 
     },
   );
 };
+
+const fileQuestion = (input: DecisionInput, space: ActionSpace, index: string) =>
+  choice(
+    { goal: input.goal, field: describeTarget(index, space.targets.UPLOAD![index]), rules: FILE },
+    {
+      ...Object.fromEntries(Object.entries(input.files ?? {}).map(([key, name]) => [key, `${key}: ${name}`])),
+      [NO_SUPPLIED_FILE]: 'None of the supplied files belongs in this field.',
+    },
+  );
+
+const FILE = 'Choose the supplied file this field is for. If none of them belongs in it, choose NO_SUPPLIED_FILE.';
 
 export const readDecision = (
   input: DecisionInput,
@@ -365,6 +400,11 @@ export const readDecision = (
       if (valueAnswer) Object.assign(decision, readValue(valueAnswer, input.values));
       else if (!Object.keys(input.values).length) decision.valueKey = null;
     }
+    if (operation === 'UPLOAD') {
+      const fileAnswer = answers[`file_for_${targetAnswer.choice}`];
+      if (fileAnswer) decision.fileKey = readFile(fileAnswer, input.files ?? {});
+      else if (!Object.keys(input.files ?? {}).length) decision.fileKey = null;
+    }
   } else if (space.controls[operation]) {
     decision.action = space.controls[operation];
   }
@@ -380,6 +420,12 @@ const fieldsWithoutValue = (input: DecisionInput, space: ActionSpace, answers: R
       return answer?.choice === NO_SUPPLIED_VALUE;
     })
     .map(([, field]) => field.label);
+
+// Only a declared key counts: an answer naming anything else (a values key) is malformed and executes nothing.
+const readFile = (answer: unknown, files: Record<string, string>) => {
+  const { choice: key } = validChoice(answer, [...Object.keys(files), NO_SUPPLIED_FILE]);
+  return key === NO_SUPPLIED_FILE ? null : key;
+};
 
 const readValue = (answer: unknown, values: Record<string, string>) => {
   const valueAnswer = validChoice(answer, [...Object.keys(values), NO_SUPPLIED_VALUE]);

@@ -14,7 +14,7 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 | --- | --- |
 | Get to a page state: search, forms, filters, pagination, open a result | `browser_task` |
 | Look at it: console, network, performance, Lighthouse, screenshots, DOM details | chrome-devtools (same Chrome; `list_pages` → `select_page` by the summary's `url`) |
-| Iframes, shadow DOM, canvas, uploads, drag | chrome-devtools directly |
+| Iframes, shadow DOM, canvas, drag | chrome-devtools directly |
 
 ## Call it well
 
@@ -25,8 +25,9 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 5. Add `checks` for the facts you can state exactly: `{"type":"url_contains","text":"/issues/"}`, `{"type":"text_contains","text":"Footer links overlap"}`, `{"type":"checked","label":"Enable wiki","state":false}`, `{"type":"value_equals","label":"Description","value":"…"}`. Code checks them on the final page: a failed one turns `done` into `uncertain`, and all passing (with `done_when`) can finish a run Jev handed back. Text checks read only the visible text, so prefer the URL or title for "a page is open". Never a CSS selector: elements are matched by `role` and `name`.
 6. Jev picks elements; it doesn't compare numbers. For "the most expensive", "the one with errors" and the like, call once to reach the list, read it yourself (chrome-devtools or the summary's `page_text`), then continue the same `session` with the chosen value in `values`.
 7. Text Jev needs to type, even a filter word like `ERROR`, must be in `values`.
-8. In the user's own signed-in Chrome, pass `allowed_hosts` with the sites the task belongs to (e.g. `["github.com"]`, `["*.atlassian.net"]`; `*.x.com` excludes `x.com` itself). A click or redirect elsewhere ends the call `blocked`, naming the host; decide yourself whether going there is part of the task.
-9. Passwords: jev-browse never sees or types password fields. Type them yourself (chrome-devtools `fill`), then say so in the goal: "I typed the password; sign in." A typed field jev-browse can't see only counts once you mention it.
+8. Uploads: pass `files` with an absolute path per key (`{"cv":"/Users/ada/cv.pdf"}`), only for files the user asked to upload. Jev picks the file field and key; it never sees the path. A needs_input naming a file field means no declared file fits it.
+9. In the user's own signed-in Chrome, pass `allowed_hosts` with the sites the task belongs to (e.g. `["github.com"]`, `["*.atlassian.net"]`; `*.x.com` excludes `x.com` itself). A click or redirect elsewhere ends the call `blocked`, naming the host; decide yourself whether going there is part of the task.
+10. Passwords: jev-browse never sees or types password fields. Type them yourself (chrome-devtools `fill`), then say so in the goal: "I typed the password; sign in." A typed field jev-browse can't see only counts once you mention it.
 
 ## Read the status
 

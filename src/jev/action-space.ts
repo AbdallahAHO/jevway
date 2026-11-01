@@ -1,6 +1,6 @@
 import type { PageAction } from '../browser/tab.ts';
 
-export type TargetOperation = 'CLICK' | 'TYPE_TEXT' | 'SELECT';
+export type TargetOperation = 'CLICK' | 'TYPE_TEXT' | 'SELECT' | 'UPLOAD';
 
 export interface IndexedElement {
   index: string;
@@ -31,7 +31,7 @@ export interface ElementMark {
   rect: NonNullable<PageAction['rect']>;
 }
 
-const OPERATION_BY_KIND = { click: 'CLICK', fill: 'TYPE_TEXT', select: 'SELECT' } as const;
+const OPERATION_BY_KIND = { click: 'CLICK', fill: 'TYPE_TEXT', select: 'SELECT', upload: 'UPLOAD' } as const;
 
 /**
  * Turns a snapshot's flat action list into Jev's dynamic action space:

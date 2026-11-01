@@ -405,6 +405,40 @@
       if (editable) actions.push({ ...base, kind: 'click', value, label: 'Open ' + base.label });
     }
   }
+  // jev-browse: only when the caller declared files, each enabled file input is a field Jev may upload one to. A hidden one
+  // (display:none behind a styled button, a drop zone) is reached the way a person does: through its visible label, else
+  // the one visible button in its nearest container, else that visible container. With nothing visible it is left out.
+  if (window.__jevFiles === true) {
+    const fileInputs = queried.filter((e) => e.tagName === 'INPUT' && e.type === 'file');
+    const shows = (e) => e.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && e.getBoundingClientRect().width > 0;
+    const standInFor = (input) => {
+      if (shows(input) && visible(input)) return input;
+      const label = [...(input.labels || [])].find(shows);
+      if (label) return label;
+      for (let p = input.parentElement, up = 0; p && up < 3 && p !== document.body; p = p.parentElement, up++) {
+        if (fileInputs.some((other) => other !== input && p.contains(other))) break;
+        const buttons = [...p.querySelectorAll('button,[role="button"],label')].filter(shows);
+        if (buttons.length === 1) return buttons[0];
+        if (shows(p) && !buttons.length) return p;
+      }
+      return null;
+    };
+    for (const input of fileInputs) {
+      if (input.matches(':disabled') || input.closest('[aria-disabled="true"],[inert]')) continue;
+      const anchor = standInFor(input);
+      if (!anchor || outOfView(anchor.getBoundingClientRect())) continue;
+      const r = cache.clickRect(anchor),
+        own = (anchor === input ? name(input) : name(input) || name(anchor)).replace(/\s+/g, ' ').trim();
+      actions.push({
+        node: identity(input),
+        role: 'file',
+        kind: 'upload',
+        label: cap(own || input.getAttribute('accept') || 'file', 180) + ' (file field)',
+        value: [...(input.files || [])].map((file) => file.name).join(', '),
+        rect: { x: r.x, y: r.y, w: r.width, h: r.height },
+      });
+    }
+  }
   // jev-browse: controls sharing a role and label (a product grid's "Add to cart" buttons) are told apart by the card or
   // row each sits in, as a person reads the page: "Add to cart — Sauce Labs Bike Light". Only colliding labels change;
   // a nameless control (its label is its bare role) has nothing to share, and members whose cards read the same stay as is.
