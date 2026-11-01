@@ -14,7 +14,7 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 | --- | --- |
 | Get to a page state: search, forms, filters, pagination, open a result | `browser_task` |
 | Look at it: console, network, performance, Lighthouse, screenshots, DOM details | chrome-devtools (same Chrome; `list_pages` → `select_page` by the summary's `url`) |
-| Iframes, shadow DOM, canvas, drag | chrome-devtools directly |
+| Closed shadow DOM, canvas, drag (iframes are read like the page) | chrome-devtools directly |
 
 ## Call it well
 
