@@ -5027,3 +5027,55 @@ describe('a secret never reaches Jev through the keys other features add', () =>
     expect(leaked(request)).toEqual([]);
   });
 });
+
+describe('a secret is scrubbed from the page as soon as it is read, before anything cuts it short', () => {
+  // 98 characters: longer than every cut a label, value, description or page text gets.
+  const LONG = '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';
+  const secret = { values: { token: LONG }, secretKeys: ['token'] };
+  // A cut copy is a prefix: 20 characters of it are enough to give the secret away.
+  const PREFIX = LONG.slice(0, 20).toLowerCase();
+  const recordingText = (dir: string) => readdirSync(dir).filter((file) => !file.endsWith('.jpg')).map((file) => readFileSync(join(dir, file), 'utf8')).join('\n');
+  const leaks = (...outputs: unknown[]) => outputs.map((output) => (typeof output === 'string' ? output : JSON.stringify(output)).toLowerCase().includes(PREFIX));
+  const MENU: PageAction = { id: 'menu', kind: 'click', node: 31, role: 'button', label: 'Filters', expanded: 'true' };
+
+  it('keeps it out of a link label cut at 80 characters (history) and in the recording', async () => {
+    const LINK: PageAction = { id: 'copy', kind: 'click', node: 30, role: 'link', label: `Copy ${LONG}` };
+    const tokens = (fingerprint: string) => page({ url: 'http://fixture/tokens', title: 'Tokens', text: 'Your tokens', actions: [LINK, MENU], fingerprint });
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'BLOCKED' }]);
+    const { tab, asTab } = fakeTab([tokens('a'), tokens('b')]);
+    tab.unreachable = 1;
+    const recordDir = mkdtempSync(join(tmpdir(), 'jev-secret-'));
+    const task = new BrowserTask(asTab, ask, { goal: 'Copy my token', ...secret, recordDir, changeWaitMs: 0 });
+    const summary = await task.run();
+    // The cut happened: the popup note names the link by its first 80 characters.
+    expect(summary.steps.some((step) => step.element?.startsWith('closed the open popup covering "Copy '))).toBe(true);
+    expect(leaks(requests, summary, task.trace, recordingText(recordDir))).toEqual([false, false, false, false]);
+  });
+
+  it('keeps it out of a field value cut at 40 characters (last_change) and in the recording', async () => {
+    const FIELD: PageAction = { id: 't1', kind: 'fill', node: 7, role: 'textbox', label: 'API token', value: '' };
+    const tokens = (value: string, fingerprint: string) => page({ url: 'http://fixture/tokens', title: 'Tokens', text: 'Your tokens', actions: [{ ...FIELD, value }], fingerprint });
+    const { ask, requests } = scriptedJev([{ operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: 'token' }, { operation: 'BLOCKED' }]);
+    const recordDir = mkdtempSync(join(tmpdir(), 'jev-secret-'));
+    const task = new BrowserTask(fakeTab([tokens('', 'a'), tokens(LONG, 'b')]).asTab, ask, { goal: 'Paste my token', ...secret, recordDir, changeWaitMs: 0 });
+    const summary = await task.run();
+    expect(requests[1].state.last_change.changed[0]).toMatch(/^textbox "API token": value "" -> "/);
+    expect(leaks(requests, summary, task.trace, recordingText(recordDir))).toEqual([false, false, false, false]);
+  });
+
+  it('keeps it out of the title it is echoed in, and out of page_text cut at 2500 characters', async () => {
+    const echoed = page({
+      url: 'http://fixture/tokens',
+      title: `Token ${LONG} created`,
+      text: `${'Your tokens are listed below. '.repeat(82)}${LONG} is your new token.`,
+      fingerprint: 'a',
+    });
+    const { ask, requests } = scriptedJev([{ operation: 'BLOCKED' }]);
+    const recordDir = mkdtempSync(join(tmpdir(), 'jev-secret-'));
+    const task = new BrowserTask(fakeTab([echoed]).asTab, ask, { goal: 'Create a token', ...secret, recordDir, changeWaitMs: 0 });
+    const summary = await task.run();
+    // The cut happened: page_text ends inside the secret's place.
+    expect(summary.page_text).toMatch(/more characters not shown\]$/);
+    expect(leaks(requests, summary, task.trace, recordingText(recordDir))).toEqual([false, false, false, false]);
+  });
+});
