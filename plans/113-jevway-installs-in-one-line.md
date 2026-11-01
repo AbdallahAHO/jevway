@@ -58,7 +58,7 @@ Our own code:
 - `src/task/start-task.ts`: the decision model's client is made on first use, not in `createRunner`.
 - `src/mcp.ts`: loads the env file.
 - `src/cli.ts`: the `doctor` subcommand, loading the env file, and the usage text.
-- `src/browser/chrome.ts`: exports `chromeExecutable` and `devToolsActivePort` (no change in behaviour).
+- `src/browser/chrome.ts`: exports `findChrome` and `devToolsActivePort` (no change in behaviour).
 - New `src/setup/` (`env-file.ts`, `doctor.ts`), new tests.
 - `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`.
 - `INSTALL-FOR-AGENTS.md`, the README install section, `skill/jevway/SKILL.md` (D5), and `AGENTS.md` (commands and
