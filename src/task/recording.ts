@@ -111,9 +111,12 @@ export class Recording {
   #dir: string;
   #frames: Frame[] = [];
   #stopListening: (() => void) | undefined;
+  /** Takes the caller's secret values out of what is written (labels and addresses can echo them); screenshots are pixels and show what the page shows. */
+  #scrub: (text: string) => string;
 
-  constructor(dir: string) {
+  constructor(dir: string, scrub: (text: string) => string = (text) => text) {
     this.#dir = dir;
+    this.#scrub = scrub;
     mkdirSync(dir, { recursive: true });
   }
 
@@ -136,9 +139,9 @@ export class Recording {
     this.steps.push({
       file,
       operation: intent.operation,
-      description: describeStep(intent),
+      description: this.#scrub(describeStep(intent)),
       ...(intent.confidence !== undefined && { confidence: intent.confidence }),
-      url: page.url,
+      url: this.#scrub(page.url),
       at: Date.now() / 1000,
     });
   }

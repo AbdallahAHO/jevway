@@ -6,6 +6,7 @@ import { centerOf, contains } from '../jev/box.ts';
 import { decide, foldedFavourite, overflowFolds, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
 import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
 import { ANY_HOST, narrowHosts, outsideHosts, type HostRules } from './hosts.ts';
+import { scrubberFor } from '../jev/secrets.ts';
 import { Recording } from './recording.ts';
 import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
 
@@ -13,6 +14,11 @@ export interface TaskOptions {
   goal: string;
   /** Named field values the agent already knows. Jev picks which one to type; nothing else is ever typed. */
   values?: Record<string, string>;
+  /**
+   * Keys of `values` that are secrets (an API token, a one-time code): Jev sees `[secret:<key>]` in place of the value, and the
+   * value is replaced by that marker in every summary, trace and recording, wherever the page echoes it. Typed as given.
+   */
+  secretKeys?: string[];
   /** Visible evidence that the task is finished; checked by a separate Jev judgment on DONE. */
   doneWhen?: string;
   /** Maximum executed browser actions per call. */
@@ -79,6 +85,8 @@ export interface TaskSummary {
   confirm_ignored?: string;
   /** Present when the run ended `blocked` on a wall the caller must get past itself (a person passes a bot check). */
   wall?: TaskWall;
+  /** On `needs_input`: each field that wants a value, with its role and the URL pathname it is on. */
+  missing?: { label: string; role?: string; path: string }[];
 }
 
 export interface TraceEntry {
@@ -254,6 +262,8 @@ export class BrowserTask {
   #toggled = new Map<string, { label: string; checked: string; noted: boolean; clickedAfter?: string }>();
   /** Nodes of fields the model chose with no supplied value to type: each is refused once before the caller is asked. */
   #refusedForValue = new Set<number>();
+  /** Trace entries before this index are already scrubbed of secret values. */
+  #traceScrubbed = 0;
   #tab: Tab;
   #ask: Ask;
   #recording: Recording | undefined;
@@ -263,8 +273,13 @@ export class BrowserTask {
   constructor(tab: Tab, ask: Ask, { recordDir, ...options }: TaskOptions) {
     this.#tab = tab;
     this.#ask = ask;
-    this.#options = { ...DEFAULTS, values: {}, ...definedOnly(options) };
-    if (recordDir) this.#recording = new Recording(recordDir);
+    this.#options = { ...DEFAULTS, values: {}, secretKeys: [], ...definedOnly(options) };
+    if (recordDir) this.#recording = new Recording(recordDir, (text) => this.#scrub(text));
+  }
+
+  /** Replaces every value the caller marked secret with its marker, in a string or a plain object's strings. */
+  #scrub<T>(value: T): T {
+    return scrubberFor(this.#options.values, this.#options.secretKeys)(value);
   }
 
   get tab() {
@@ -275,12 +290,19 @@ export class BrowserTask {
   update(
     patch: Partial<Omit<TaskOptions, 'hosts'>> & { confirmIrreversible?: boolean; confirmTarget?: string; allowedHosts?: string[]; blockedHosts?: string[] },
   ) {
-    const { confirmIrreversible, confirmTarget, values, recordDir: _recordDir, allowedHosts, blockedHosts, ...options } = patch;
+    const { confirmIrreversible, confirmTarget, values, secretKeys, recordDir: _recordDir, allowedHosts, blockedHosts, ...options } = patch;
     // First, so a list that would widen the hosts throws before anything else changes.
     const hosts = narrowHosts(this.#options.hosts, { allowed: allowedHosts, blocked: blockedHosts });
     // A new goal may be to flip back what the old one flipped.
     if (options.goal !== undefined && options.goal !== this.#options.goal) this.#toggled.clear();
-    this.#options = { ...this.#options, ...definedOnly(options), hosts, values: { ...this.#options.values, ...values } };
+    this.#options = {
+      ...this.#options,
+      ...definedOnly(options),
+      hosts,
+      values: { ...this.#options.values, ...values },
+      // Once secret, always secret in this session.
+      secretKeys: [...new Set([...this.#options.secretKeys, ...(secretKeys ?? [])])],
+    };
     if (!confirmIrreversible) return;
     // A confirmation answers the question jev-browse asked, so a flag carried onto a later call allows nothing (an unused earlier one stands).
     if (this.#lastStatus === undefined || this.#lastStatus === 'needs_confirmation') {
@@ -303,7 +325,8 @@ export class BrowserTask {
   }
 
   async #loop(signal?: AbortSignal): Promise<TaskSummary> {
-    this.#tab.want(Object.values(this.#options.values));
+    // The page's own scripts can read what it is told to look for, so a secret reaches the page only when typed into its field.
+    this.#tab.want(Object.entries(this.#options.values).filter(([key]) => !this.#options.secretKeys.includes(key)).map(([, value]) => value));
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
     const { maxSteps, maxSeconds, values, doneWhen, screenshots, hosts } = this.#options;
@@ -332,7 +355,9 @@ export class BrowserTask {
       const confirmIgnored = this.#confirmIgnored;
       this.#confirmIgnored = undefined;
       this.#lastStatus = status;
-      return {
+      // A secret never leaves in a summary or a trace, wherever the page echoed it.
+      for (; this.#traceScrubbed < this.trace.length; this.#traceScrubbed++) this.trace[this.#traceScrubbed] = this.#scrub(this.trace[this.#traceScrubbed]);
+      return this.#scrub({
         status,
         reason,
         url: page.url,
@@ -350,7 +375,8 @@ export class BrowserTask {
         ...(decision?.doneProbability !== undefined && { done_probability: round(decision.doneProbability) }),
         ...(status !== 'done' && decision && { stuck: stuckOn(decision) }),
         ...(confirmIgnored && { confirm_ignored: `the previous call ended ${confirmIgnored}, not needs_confirmation` }),
-      };
+        ...(status === 'needs_input' && decision && { missing: missingFields(decision, page) }),
+      } satisfies TaskSummary);
     };
 
     // Many pickers apply a choice only when they close, and a person closes the menu they opened before calling it done:
@@ -883,7 +909,7 @@ export class BrowserTask {
 
   // One decision per step; `fallback` takes a second, screenshot-backed look at a shaky or stalled one.
   async #decide(page: PageState, { lastLook = false } = {}): Promise<Decision> {
-    const { goal, values, doneWhen, screenshots, compactRules, elementRisk, pageRisk, imageTransport, box, minConfidence } = this.#options;
+    const { goal, values, secretKeys, doneWhen, screenshots, compactRules, elementRisk, pageRisk, imageTransport, box, minConfidence } = this.#options;
     // No request starts after a stop.
     const halt = this.#limit?.stopped();
     if (halt) throw halt;
@@ -899,6 +925,7 @@ export class BrowserTask {
         page: this.#withSaid(this.#withKeys(page)),
         goal,
         values,
+        secretKeys,
         history: this.#history.slice(-10),
         doneWhen,
         checkCommitRisk: true,
@@ -1253,6 +1280,15 @@ const controlOf = (decision: Decision, page: PageState): Control => ({
   label: decision.operation === 'CLICK_AT' ? '' : bareLabel(decision.action?.label ?? ''),
   coordinate: decision.operation === 'CLICK_AT',
 });
+
+// The fields a needs_input wants: the one Jev chose to type into, or every empty field a BLOCKED found no value for, in page order.
+const missingFields = (decision: Decision, page: PageState) => {
+  const fields: Pick<PageAction, 'label' | 'role'>[] =
+    decision.operation === 'TYPE_TEXT' && decision.action
+      ? [decision.action]
+      : decision.fieldsWithoutValue.map((label) => page.actions.find((action) => action.kind === 'fill' && action.label === label) ?? { label });
+  return fields.map((field) => ({ label: bareLabel(field.label), ...(field.role && { role: field.role }), path: pathnameOf(page.url) }));
+};
 
 const sameControl = (a: Control, b: Control) => a.path === b.path && a.label === b.label && a.coordinate === b.coordinate;
 

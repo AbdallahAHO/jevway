@@ -1,5 +1,6 @@
 // The jobs report: one self-contained page next to the run folders it links to.
 import type { Tab } from '../../src/browser/tab.ts';
+import { shownValues } from '../../src/jev/secrets.ts';
 import { escapeHtml as escape, type RecordedStep } from '../../src/task/recording.ts';
 import type { TaskStatus, TaskSummary } from '../../src/task/run-task.ts';
 
@@ -39,6 +40,8 @@ export interface Job {
   /** How a busy engineer would type the goal: only the jobs that have one run under `terse` phrasing. */
   terseGoal?: string;
   values?: Record<string, string>;
+  /** Keys of `values` the calling agent marks secret (`secret_keys`). */
+  secretKeys?: string[];
   doneWhen: string;
   /** Two-call jobs: what the first call's success looks like (it only gets the agent to the page to read). */
   firstDoneWhen?: string;
@@ -190,7 +193,7 @@ const jobSection = (
 <p class="jtbd">${escape(job.job)}</p>
 <dl>
   <dt>Goal given to Jev</dt><dd>${escape(goalFor(job, phrasing))}</dd>
-  ${job.values ? `<dt>Values</dt><dd><code>${escape(JSON.stringify(job.values))}</code></dd>` : ''}
+  ${job.values ? `<dt>Values</dt><dd><code>${escape(JSON.stringify(shownValues(job.values, job.secretKeys)))}</code></dd>` : ''}
   <dt>Done when</dt><dd>${escape(job.doneWhen)}</dd>
   ${job.confirms ? `<dt>Confirmation</dt><dd>The calling agent confirms only the click the user asked for: <code>${escape(String(job.confirms))}</code>${job.confirmTarget ? ` for <code>${escape(job.confirmTarget)}</code>` : ''}${featured?.confirmations?.length ? `. Run ${featured.run}: ${featured.confirmations.map((c) => `${c.given ? 'confirmed' : 'handed back'} <code>${escape(c.label)}</code>`).join(', ')}` : ''}.</dd>` : ''}
   ${job.followUp ? `<dt>Second call</dt><dd>The calling agent reads what the first call left behind (a table, a mailbox) and continues the same session${followUp ? ` with <code>${escape(JSON.stringify(followUp))}</code>` : ''}.</dd>` : ''}

@@ -89,20 +89,23 @@ Every model judges commit risk **per click candidate by name**, in one follow-up
 
 ## Tools
 
-**`browser_task`** takes `goal`, `url` | `tab`, `values`, `done_when`, `session`, `confirm_irreversible`, `confirm_target`, `max_steps`, `max_seconds`, `allowed_hosts`, `blocked_hosts`, and, for new sessions only, `allow_coordinate_clicks` and `record_dir`. It returns:
+**`browser_task`** takes `goal`, `url` | `tab`, `values`, `secret_keys`, `done_when`, `session`, `confirm_irreversible`, `confirm_target`, `max_steps`, `max_seconds`, `allowed_hosts`, `blocked_hosts`, and, for new sessions only, `allow_coordinate_clicks` and `record_dir`. It returns:
 
 ```json
 { "session": "be63210d", "status": "needs_input", "reason": "Blocked: no supplied value for \"Email address\"",
   "url": "…", "title": "…", "page_text": "…", "elapsed_ms": 899,
   "steps": [{ "operation": "TYPE_TEXT", "element": "Full name", "value_key": "full_name", "page_changed": true, "confidence": 0.9 }],
   "jev": { "requests": 3, "input_tokens": 7534, "median_latency_ms": 284 },
-  "stuck": { "operation": "BLOCKED", "candidates": [] } }
+  "stuck": { "operation": "BLOCKED", "candidates": [] },
+  "missing": [{ "label": "Email address", "role": "textbox", "path": "/stays" }] }
 ```
+
+`secret_keys` names the keys of `values` that are secrets (an API token, a one-time code). Jev sees `[secret:<key>]` in place of such a value and never reads it; it is typed as given, and wherever the page echoes it, `page_text`, `steps`, reasons, traces and `record_dir`'s `summary.json` and `index.html` show the marker instead. Recorded screenshots and video are pixels of the page and are not masked. Mark only real secrets: every occurrence of the value is replaced, even inside other words.
 
 | Status | Meaning |
 | --- | --- |
 | `done` | Jev chose DONE **and** a separate `done_when` check passed, or that check alone scored ≥ 0.9 once or ≥ 0.75 on 3 decisions in a row. A rejected DONE waits and re-decides, up to 3 times. |
-| `needs_input` | A field needs a value that isn't in `values`. Nothing is invented. |
+| `needs_input` | A field needs a value that isn't in `values`. Nothing is invented. `missing` lists each field (label, role, page path). |
 | `needs_confirmation` | The next click looks irreversible (pay, send, delete, submit). `confirm_irreversible: true` allows exactly one such click, and an agent should set it only for the action and target the user's own request names (a category such as "anything unused" names no target: it lists the candidates and asks the user); otherwise it asks the user. It allows only the control that needs_confirmation named (same label, same page path); a different irreversible control is handed back as a new needs_confirmation. It counts only on the call that answers a needs_confirmation (or a new session's first call, which has no flagged control and allows any one); anywhere else it is ignored. Pass `confirm_target` with the user's words that name the target; jev-browse checks the page shows them (the control's own words, like "delete", do not count) and refuses otherwise. |
 | `uncertain` | Operation or target confidence was below the model threshold (Jev 0.3; per model in `src/jev/model.ts`), 6 actions in a row ran under 0.5 confidence (exploring, not progressing), or DONE could not be verified. |
 | `blocked` | No supported operation can progress, 3 actions in a row changed nothing, the same target was covered 3 times, one action only toggled the page back and forth 4 times, or the same element was used 6 times in 7 actions. Also a bot check (a Cloudflare challenge, a reCAPTCHA, hCaptcha or Turnstile page, an "unusual traffic" page) that did not clear by itself within 8 s: the reason names it, the summary carries `wall: { kind: 'bot_check', origin, name }` (name: cloudflare, recaptcha, hcaptcha, turnstile or unusual-traffic), no Jev request is spent on it, and jev-browse never tries to get past one. |

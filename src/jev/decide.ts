@@ -25,6 +25,7 @@ import {
   VALUE,
 } from './instructions.ts';
 import type { ImageTransport } from './model.ts';
+import { scrubberFor, shownValues } from './secrets.ts';
 
 export const NO_SUPPLIED_VALUE = 'NO_SUPPLIED_VALUE';
 // Speculative value heads ride along with the operation request; beyond this, TYPE_TEXT costs one follow-up.
@@ -49,6 +50,8 @@ export interface DecisionInput {
   page: PageState;
   goal: string;
   values: Record<string, string>;
+  /** Keys of `values` the caller marked secret: Jev sees their key in place of the value, and never the value anywhere in the request. */
+  secretKeys?: string[];
   history: StepRecord[];
   doneWhen?: string;
   checkCommitRisk: boolean;
@@ -157,7 +160,7 @@ export const decide = async (ask: Ask, input: DecisionInput): Promise<Decision> 
   let inputTokens = response.usage.input_tokens ?? 0;
 
   const followUp = async (questions: Record<string, Question>) => {
-    const answer = await ask({ state: request.state, questions });
+    const answer = await ask({ state: request.state, questions: scrubberFor(input.values, input.secretKeys)(questions) });
     requests++;
     inputTokens += answer.usage.input_tokens ?? 0;
     return answer.answers;
@@ -260,15 +263,17 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
   }
   Object.assign(questions, input.extraQuestions);
 
-  const state = {
+  // A secret the page echoes (a field holding it, a "token created" line) is scrubbed before the screenshot is attached.
+  const scrub = scrubberFor(input.values, input.secretKeys);
+  const state = scrub({
     page: pick(input.page, ['url', 'title', 'text']),
     // Password fields are never in `elements`; this says only whether each visible one is filled, never its value.
     ...(input.page.passwordFields?.length && { password_fields: input.page.passwordFields }),
     elements,
-    supplied_values: input.values,
+    supplied_values: shownValues(input.values, input.secretKeys),
     recent_actions: input.history.slice(-10),
     ...(input.screenshot && { screenshot: SCREENSHOT_NOTE }),
-  };
+  });
   // TypeSafe takes the image as an asset in place under `screenshot`; OpenRouter vision models read image parts
   // only from a top-level state array, ahead of the JSON state.
   // Interfaces lack index signatures, so the plain JSON state needs one cast for the SDK's EntryType.
@@ -277,7 +282,7 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
     : input.imageTransport === 'assets'
       ? { ...state, screenshot: Image.fromBase64(input.screenshot), screenshot_note: SCREENSHOT_NOTE }
       : [imagePart(input.screenshot), state];
-  return { state: withImage as unknown as NonNullable<EntryType>, questions };
+  return { state: withImage as unknown as NonNullable<EntryType>, questions: scrub(questions) };
 };
 
 const SCREENSHOT_NOTE =
@@ -299,7 +304,7 @@ const valueQuestion = (input: DecisionInput, space: ActionSpace, index: string) 
   return choice(
     { goal: input.goal, field: describeTarget(index, field), rules: VALUE },
     {
-      ...Object.fromEntries(Object.entries(input.values).map(([key, value]) => [key, `${key}: ${value}`])),
+      ...Object.fromEntries(Object.entries(shownValues(input.values, input.secretKeys)).map(([key, value]) => [key, `${key}: ${value}`])),
       [NO_SUPPLIED_VALUE]: 'None of the supplied values belongs in this field.',
     },
   );

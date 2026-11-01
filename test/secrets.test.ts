@@ -20,7 +20,10 @@ describe('scrubbing secret values', () => {
 
   it('walks objects and arrays, leaving keys, numbers and class instances alone', () => {
     class Image {
-      constructor(readonly data: string) {}
+      data: string;
+      constructor(data: string) {
+        this.data = data;
+      }
     }
     const image = new Image('k3y');
     const scrub = scrubberFor({ token: 'k3y' }, ['token']);

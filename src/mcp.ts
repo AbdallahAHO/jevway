@@ -29,10 +29,10 @@ Jev picks each click/type/select in ~200ms per step and returns ONE short summar
 Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards (same Chrome, the tab stays open; select it by url).
 
 - Start \`url\` on the page where the change is made (e.g. /owner/repo/milestones/new), not a parent page: Jev follows the links it sees, and a same-named global link can win. After a hand-back on the wrong page, fix \`url\`.
-- Pass every text value the goal needs in \`values\` (e.g. {"city":"Lisbon","email":"a@b.co"}). Jev only types supplied values.
+- Pass every text value the goal needs in \`values\` (e.g. {"city":"Lisbon","email":"a@b.co"}). Jev only types supplied values. Name the keys that hold secrets (an API token, a one-time code) in \`secret_keys\`: Jev then sees only the key, and the value is replaced by \`[secret:<key>]\` in everything returned.
 - Pass \`done_when\`: visible evidence of success on the page the call ends on; check another page in a second call. It is checked independently before status "done".
 - Statuses that hand control back — continue with the same \`session\`:
-  needs_input → add the missing value to \`values\`;
+  needs_input → add the missing value to \`values\` (\`missing\` lists each field that wants one: label, role, page path);
   needs_confirmation → the next click looks irreversible (delete, pay, send). Set \`confirm_irreversible: true\` only when the user's own request names this action and its target (e.g. "delete the repository X" → the clicks that delete X); for anything else, stop and ask the user. A kind of thing ("anything unused", "old branches", "all drafts") does not name a target: list what you would delete or send and ask the user first. Each confirmation covers one click: the control that needs_confirmation named (same label, same page path); if Jev picks a different irreversible control, it is handed back as a new needs_confirmation. It counts only on the call that answers a needs_confirmation (or a new session's first call, which allows any one); anywhere else it is ignored. Pass \`confirm_target\` with the user's words that name the target; jev-browse checks the page shows them (the control's own words, like "delete", do not count) and refuses otherwise.
   uncertain / blocked → inspect \`stuck\` (candidates) and \`page_text\`, rephrase \`goal\`, or finish the step with chrome-devtools.
   step_budget → \`max_steps\` or \`max_seconds\` (default 300) ran out; the reason says which. Continue on the same session with a narrower goal.
@@ -49,6 +49,12 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
         .optional()
         .describe('Instead of url: drive an open tab whose URL contains this text (new session).'),
       values: z.record(z.string(), z.string()).optional().describe('Named text values Jev may type.'),
+      secret_keys: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Keys of `values` that are secrets (API token, one-time code, card number). Jev sees the key, never the value; the value is typed as given and shows as [secret:<key>] in page_text, steps, reasons and recordings. Kept for the session.',
+        ),
       done_when: z.string().optional().describe('Visible evidence, on the page the call ends on, that the goal is complete.'),
       session: z.string().optional().describe('Continue a previous session (same tab, history kept).'),
       confirm_irreversible: z
@@ -93,7 +99,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
         .string()
         .optional()
         .describe(
-          'New session only: save a sharp screenshot before every action (target outlined), the final page, summary.json and an index.html viewer in this folder.',
+          'New session only: save a sharp screenshot before every action (target outlined), the final page, summary.json and an index.html viewer in this folder. The screenshots and video show the page as it is, including a secret typed into a visible field; the text files are scrubbed.',
         ),
     },
   },
@@ -103,6 +109,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
       url,
       tab,
       values,
+      secret_keys,
       done_when,
       session,
       confirm_irreversible,
@@ -125,6 +132,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
         entry.task.update({
           goal,
           values,
+          secretKeys: secret_keys,
           doneWhen: done_when,
           maxSteps: max_steps,
           maxSeconds: max_seconds,
@@ -139,6 +147,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
           url,
           tab,
           values,
+          secretKeys: secret_keys,
           doneWhen: done_when,
           maxSteps: max_steps,
           maxSeconds: max_seconds,

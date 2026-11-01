@@ -34,6 +34,7 @@ import { connectChrome, type BrowserSource } from '../../src/browser/chrome.ts';
 import { DEVICES, type DeviceName } from '../../src/browser/devices.ts';
 import { Tab } from '../../src/browser/tab.ts';
 import { createAsk, profileOptions, resolveModel } from '../../src/jev/model.ts';
+import { shownValues } from '../../src/jev/secrets.ts';
 import { BrowserTask, type TaskSummary } from '../../src/task/run-task.ts';
 import { goalFor, isFlaky, renderReport, wilson, type Confirmation, type Job, type JobResult, type Phrasing } from './report.ts';
 
@@ -185,6 +186,7 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
             ...profileOptions(profile),
             goal: goalFor(job, phrasing),
             values: job.values,
+            secretKeys: job.secretKeys,
             doneWhen: job.firstDoneWhen ?? job.doneWhen,
             maxSteps: 20,
             screenshots,
@@ -260,7 +262,9 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
     report,
     renderReport({ title: title(results.length), results, model: `${profile.name} (${profile.model})`, screenshots, device: device.name, phrasing, readRecording: readSteps }),
   );
-  writeFileSync(new URL('results.json', outDir), JSON.stringify({ device: device.name, phrasing, runsPerJob: runs, results }, null, 1));
+  // A value the job marks secret is written as the marker, as jev-browse itself would show it.
+  const written = results.map((result) => ({ ...result, job: { ...result.job, values: result.job.values && shownValues(result.job.values, result.job.secretKeys) } }));
+  writeFileSync(new URL('results.json', outDir), JSON.stringify({ device: device.name, phrasing, runsPerJob: runs, results: written }, null, 1));
   const passed = results.flatMap((r) => r.runs).filter((r) => r.passed).length;
   const total = results.flatMap((r) => r.runs).length;
   const { low, high } = wilson(passed, total);

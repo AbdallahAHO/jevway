@@ -5,6 +5,7 @@ import { createRunner } from './task/start-task.ts';
 const USAGE = `jev-browse --goal "<outcome>" (--url <url> | --tab <url part>) [options]
 
   --values '{"city":"Lisbon"}'   text values Jev may type
+  --secret-keys token,otp         keys of --values that are secrets: Jev sees the key only, output shows [secret:<key>]
   --done-when "<evidence>"        visible evidence of success
   --browser auto|launch|launch-headless|http://127.0.0.1:9222   (default: auto, or $JEV_BROWSER)
   --model jev|pplx-decider|clef-omni|clef|clef-flash|gpt-6-luna   decision model (default: jev, or $JEV_MODEL)
@@ -26,6 +27,7 @@ const { values: args } = parseArgs({
     url: { type: 'string' },
     tab: { type: 'string' },
     values: { type: 'string' },
+    'secret-keys': { type: 'string' },
     'done-when': { type: 'string' },
     browser: { type: 'string' },
     model: { type: 'string' },
@@ -64,6 +66,7 @@ try {
     url: args.url,
     tab: args.tab,
     values: args.values ? JSON.parse(args.values) : undefined,
+    secretKeys: args['secret-keys']?.split(',').map((key) => key.trim()).filter(Boolean),
     doneWhen: args['done-when'],
     maxSteps: args['max-steps'] ? Number(args['max-steps']) : undefined,
     maxSeconds: args['max-seconds'] ? Number(args['max-seconds']) : undefined,
