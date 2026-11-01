@@ -1022,6 +1022,42 @@ const checks: Check[] = [
       await assert.rejects(next.observe(), StalePage);
     },
   },
+  {
+    name: 'file inputs are not listed when the caller declared no files',
+    file: 'file-upload.html',
+    run: async (tab) => {
+      const actions = await listed(tab);
+      assert.ok(!actions.some((action) => action.kind === 'upload' || action.role === 'file'), `file fields listed: ${labelsOf(actions)}`);
+    },
+  },
+  {
+    name: 'with declared files, a hidden file input is listed at its styled button and takes the file',
+    file: 'file-upload.html',
+    run: async (tab) => {
+      tab.want([], { files: true });
+      const page = await tab.observe();
+      const fields = page.actions.filter((action) => action.kind === 'upload');
+      assert.deepEqual(fields.map((field) => field.label), ['Upload a profile picture (file field)', 'CV (file field)'], labelsOf(page.actions));
+      const button = await tab.evaluate(`(() => { const r = document.getElementById('choose').getBoundingClientRect(); return { x: r.x, y: r.y }; })()`);
+      assert.deepEqual({ x: fields[0].rect?.x, y: fields[0].rect?.y }, button, 'the hidden field is not marked where its button is');
+      await tab.upload(fields[0], page, new URL('./fixture/capabilities/avatar.png', import.meta.url).pathname);
+      assert.equal((await fixtureState(tab)).uploaded, 'avatar.png');
+      const after = await tab.observe();
+      assert.equal(after.actions.find((action) => action.kind === 'upload')?.value, 'avatar.png', 'the chosen file is not shown');
+    },
+  },
+  {
+    name: 'with declared files, a click on the styled upload button opens no file picker and the page stays readable',
+    file: 'file-upload.html',
+    run: async (tab) => {
+      tab.want([], { files: true });
+      const page = await tab.observe();
+      const button = find(page.actions, 'button', /^Upload a profile picture$/);
+      assert.ok(button, labelsOf(page.actions));
+      await tab.act(button, page);
+      assert.ok((await tab.observe()).actions.length > 0);
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port.

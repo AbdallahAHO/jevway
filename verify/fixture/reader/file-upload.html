@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>File fields</title>
+<style>
+  #picker { display: none; }
+  .row { margin: 16px; }
+</style>
+</head>
+<body>
+<div class="row">
+  <input type="file" id="picker" accept="image/*">
+  <button type="button" id="choose">Upload a profile picture</button>
+</div>
+<div class="row"><label for="cv">CV</label> <input type="file" id="cv"></div>
+<div class="row"><label for="off">Old attachments</label> <input type="file" id="off" disabled></div>
+<script>
+  window.__fixture = { uploaded: null, cv: null };
+  const picker = document.getElementById('picker');
+  document.getElementById('choose').addEventListener('click', () => picker.click());
+  picker.addEventListener('change', () => (window.__fixture.uploaded = picker.files[0]?.name ?? null));
+  document.getElementById('cv').addEventListener('change', (event) => (window.__fixture.cv = event.target.files[0]?.name ?? null));
+</script>
+</body>
+</html>
