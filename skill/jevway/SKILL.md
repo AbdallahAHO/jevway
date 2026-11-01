@@ -39,6 +39,12 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 | `uncertain` / `blocked` | A reason starting "Jev reported done, but" means your `checks` failed: read their `detail` in `checks`. Otherwise read `stuck.candidates` and `page_text`. Rephrase `goal` for the same `session`, or do the step with chrome-devtools and then continue. A `reason` saying the browser dropped a click means nothing was clicked and rephrasing cannot help: call again or check the browser. A reason quoting a page error ("The page shows an error after …") is the page's answer: tell the user or call again with other `values`. A `wall: { kind: 'sign_in', origin }` means the user signs in there (or you pass the values), then call again. |
 | `step_budget` | `max_steps` or `max_seconds` (default 300 s per call) ran out; the reason says which. Split the goal into smaller calls on the same `session`. |
 
+## Before calling again
+
+- Before repeating a write (submit, post, create, save), check whether it already happened: read `page_text` or call `jevway_look` on the session. A hand-back after the click can still mean it went through, and a second call makes a duplicate.
+- Continue a session that made progress (same `session`, the goal that is left) instead of starting a new one from `url`: a new session redoes the steps already done.
+- A call failing with "No API key" or a browser connection error is setup, not the page: run `npx -y jevway doctor` and tell the user its fix (never ask for the key in the chat).
+
 To see a page again without acting (after a hand-back, or to check a result), call `jevway_look` with the `session` (or `tab`, or a `url` it opens and closes): it returns `url`, `title`, `page_text` and the listed controls with their state, with no Jev call.
 
 A link that opens a new tab is followed: the step says `new tab opened: <url>`, the session continues there (the summary's `url` is that tab), and it returns to the opener if that tab closes.
