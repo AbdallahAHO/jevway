@@ -271,8 +271,10 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   the start page still navigates): 2 of 33 Vikunja runs. Since `bd2549c` it costs that run, not the suite.
 - (from round 11) Forgejo wiki-off flakes on main (7/10 at `39f5928`: DONE ×3 after the toggle note), so a single
   wiki-off miss is not a regression signal.
-- (from round 11) Langfuse off-topic-answer 0/3 (was 3/3 on 10-18): on the fresh account content search returns the
-  same ~103K traces for any phrase. Demo-data drift or a search change; unresolved.
+- (from round 11) Langfuse off-topic-answer 0/3 (was 3/3 on 10-18) is not data drift: the trace (Oct 15) still
+  exists and content search finds it (Total 3), but only after 10–20 s; until then the page shows the unfiltered list
+  and runs opened a row from it. A slow search that keeps showing stale rows is a jevway miss to plan (wait while a
+  filter or search is pending). Checked by hand 2026-11-01; the job is unchanged.
 - (from 100) Evidence recall is low (no quote cleared 0.6 in verify at integration); measure recall before raising
   its use.
 - (from 103) The sign-in wall threshold 0.70 sits on the lowest real wall seen (0.70); provisional until more walls.
