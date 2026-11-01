@@ -21,6 +21,8 @@ import {
   NEXT_CLICK_PRESENT,
   PAGE_ERROR,
   SIGN_IN_WALL,
+  STUCK,
+  STUCK_MEANING,
   TARGET,
   TARGET_BOX,
   TARGET_VISIBLE,
@@ -283,6 +285,7 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
   if (input.doneWhen) questions.done_check = noul({ completion_condition: input.doneWhen, rules: DONE_CHECK });
   questions.page_error = noul({ goal: input.goal, rules: PAGE_ERROR });
   questions.sign_in_wall = noul({ goal: input.goal, rules: SIGN_IN_WALL });
+  questions.stuck = noul({ goal: input.goal, rules: STUCK }, STUCK_MEANING);
   if (input.box && input.screenshot) {
     questions.next_click_box = { type: 'box', instructions: NEXT_CLICK_BOX(input.goal) };
     questions.next_click_present = noul(NEXT_CLICK_PRESENT(input.goal));

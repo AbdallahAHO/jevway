@@ -315,6 +315,7 @@ describe('Jev request', () => {
       'commit_risk',
       'page_error',
       'sign_in_wall',
+      'stuck',
     ]);
     const withValues = buildRequest({ ...input, values: { email: 'a@b.co' }, doneWhen: 'Confirmed' }, space);
     expect(withValues.questions).toHaveProperty('value_for_1');
