@@ -37,9 +37,10 @@ can check `done` in one glance, and a quote the page doesn't hold is impossible 
 1. **When.** Once per call, only when the final status is `done` (from the loop or from 099's checks) and `done_when`
    was given. Never on a hand-back. A request error or a malformed answer means no evidence; it never fails the run.
 2. **Spans, cut by code** (`src/task/evidence.ts`) from the final page's lines, without the reader's own lines:
-   - a line that continues the previous one (starts lowercase, with a digit or punctuation, and the previous one doesn't
-     end a sentence) joins it, up to 200 characters: `245` + `properties found` is one span;
-   - a line over 200 characters is cut at sentence ends, and a sentence over 200 characters at word breaks;
+   - each line is cut at sentence ends (`.`, `!` or `?` before a capital or digit), and a sentence over 200 characters
+     at word breaks;
+   - a piece that continues the previous one (starts lowercase or with punctuation, and the previous one doesn't end a
+     sentence) joins it, up to 200 characters: `245 ` + `properties found` is one span;
    - spans are joined with single spaces, so a quote is the page's words in the page's order;
    - **cap: 100 spans** (plus `absent`, 101 options, under Jev's 255). Past 100, adjacent spans are merged in equal
      groups, so the whole visible text stays offered. The span count per page is reported from the step 3 runs.
