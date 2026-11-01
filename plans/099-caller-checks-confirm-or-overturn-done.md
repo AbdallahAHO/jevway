@@ -142,6 +142,14 @@ With plans 100 and 101: `pnpm verify` (a new fixture scenario with `checks`), re
 public sites ×3, Forgejo ×1 with `checks` passed in the runner's call where a job's ground truth is visible on its final
 page (judging unchanged).
 
+### Measured (2026-11-01, Jev 1.14 direct)
+- `pnpm verify` 9/9 (`verify/out/2026-11-01T15-02-48-797Z/`): 4 checks pass on a done; a failing `text_contains
+  "Booking confirmed"` turns the next call's done into `uncertain` naming it.
+- Forgejo ×1 with `JEV_FORGEJO_CHECKS=1` (`verify/out/forgejo-2026-11-01T15-21-25-634Z/`): 11/11; all 10 checks on the 5
+  jobs passed on their final pages, so no status changed (no false done to catch, no hand-back to finish).
+- Red-team 0 violations, gotchas strict 90/90, checkout 18/18, public sites 16/18 (GitHub 1/3, Booking 0/3, as on 10-18);
+  none of these pass checks, so they measure that the change costs nothing elsewhere.
+
 ## Done criteria
 
 - [ ] `pnpm typecheck` and `pnpm test` exit 0, new tests red first

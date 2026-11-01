@@ -117,6 +117,13 @@ Lowercase conventional commits, no AI attribution, no push.
 - **`absent` on the 3 false Booking dones** (city page, no dates): `absent` 0.59 and 0.65, and a generic line at 0.44.
   `absent` also came on true dones (Wikipedia #1, Airbnb #2, gotchas' list conditions), so it stays out of the status.
 - **Threshold `EVIDENCE_SURE` = 0.6**: right spans scored 0.67–0.96 in runs, "Edit" 0.57.
+- **Checkout ×3** (`verify/out/checkout-2026-11-01T15-19-45-785Z/`, 18/18): 9 asked; the cart's product line ("Sauce Labs
+  Fleece Jacket", "Sauce Labs Onesie") at 0.51–0.57 and "Checkout: Overview" at 0.28–0.33, so no quote at 0.6 (6 at 0.5).
+- **Forgejo ×1** (`verify/out/forgejo-2026-11-01T15-21-25-634Z/`, 11/11): 8 asked, 1 quote (`Branch protection for rule
+  "main" has been updated.`, 0.61); the milestone page's `The milestone "Beta launch" has been created.` lost to `absent`
+  (0.35).
+- **Verdict: kept, with low recall.** 7 quotes in 36 dones asked across real sites, checkout and Forgejo; none wrong at 0.6.
+  Precision over recall: a missing quote costs the caller nothing it has today, a wrong one would mislead it.
 - **Cost:** 19 requests, 26.0k input tokens (median 1.4k, about $0.00006 each), median 166 ms, max 570 ms. Spans per
   page 25–77 (cap 100 never reached).
 
