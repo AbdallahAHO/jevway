@@ -4,8 +4,11 @@
 /** Switzer from Fontshare; the system stack takes over when it can't load (offline, file://). */
 export const FONT_LINK = 'https://api.fontshare.com/v2/css?f[]=switzer@400,500&display=swap';
 
-/** Runs in <head>: with JS, views stay hidden until the router picks one, so a job link never flashes the overview. */
-export const HEAD_SCRIPT = `<script>document.documentElement.classList.add('js')</script>`;
+/**
+ * Runs in <head>: with JS, views stay hidden until the router picks one, so a job link never flashes the overview.
+ * If a script fails anyway, the page falls back to reading as one long document instead of staying blank.
+ */
+export const HEAD_SCRIPT = `<script>document.documentElement.classList.add('js');addEventListener('error',(e)=>{if(!(e.target instanceof Element))document.documentElement.classList.remove('js')},true)</script>`;
 
 export const STYLE = `
 :root {
