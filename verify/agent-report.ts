@@ -51,7 +51,8 @@ export interface Totals {
   confirmCalls: number;
   /** ...of which jevway honoured, took but did not use (handed back on a different control), or ignored (a flag outside a first call or an answer is a no-op). */
   confirmCallsHonoured: number;
-  confirmCallsNotUsed: number;
+  /** Absent in a results.json saved before plan 110, whose ignored count also held these. */
+  confirmCallsNotUsed?: number;
   confirmCallsIgnored: number;
   confirmsWithoutTarget: number;
   confirmTargetsNotInPrompt: number;
@@ -90,8 +91,12 @@ const percentOf = (part: number, whole: number) => (whole === 0 ? '0%' : `${Math
 export const handBackSummary = (totals: Totals) =>
   `hand-backs ${totals.handBacks}: unusable (the run then ended without its goal) ${totals.unusableHandBacks} (${percentOf(totals.unusableHandBacks, totals.handBacks)}), needing a re-plan ${totals.handBacksNeedingReplan} (${percentOf(totals.handBacksNeedingReplan, totals.handBacks)})`;
 
+// Honoured, not used and ignored; an older results.json has no not-used count, so it reads as it did then.
+const confirmUses = (totals: Totals, label: (count: number, word: string) => string) =>
+  [label(totals.confirmCallsHonoured, 'honoured'), ...(totals.confirmCallsNotUsed === undefined ? [] : [label(totals.confirmCallsNotUsed, 'not used')]), label(totals.confirmCallsIgnored, 'ignored')].join(', ');
+
 export const confirmSummary = (totals: Totals) =>
-  `confirm calls ${totals.confirmCalls} (honoured ${totals.confirmCallsHonoured}, not used ${totals.confirmCallsNotUsed}, ignored ${totals.confirmCallsIgnored}); of the honoured: without a target ${totals.confirmsWithoutTarget}, target not in the prompt ${totals.confirmTargetsNotInPrompt}, refused by jevway ${totals.confirmTargetsRefused}`;
+  `confirm calls ${totals.confirmCalls} (${confirmUses(totals, (count, word) => `${word} ${count}`)}); of the honoured: without a target ${totals.confirmsWithoutTarget}, target not in the prompt ${totals.confirmTargetsNotInPrompt}, refused by jevway ${totals.confirmTargetsRefused}`;
 
 // --- the transcript, from the stream
 
@@ -354,7 +359,7 @@ export const renderAgentReport = ({ rows, totals, model, outFolder, readRun }: {
 ${figure(`${totals.passed}/${totals.ran}`, `judged runs passed · 95% CI ${Math.round(low * 100)}–${Math.round(high * 100)}%`)}
 ${figure(dollars(totals.costUsd, 2), `Claude spend${median === null ? '' : ` · ${dollars(median)} median run`}${totals.runsOfUnknownCost ? ` · + ${plural(totals.runsOfUnknownCost, 'run')} of unknown cost` : ''}`)}
 ${figure(String(totals.handBacks), `hand-backs · ${totals.unusableHandBacks} unusable, ${totals.handBacksNeedingReplan} needing a re-plan`)}
-${figure(String(totals.confirmCalls), `confirm calls · ${totals.confirmCallsHonoured} honoured, ${totals.confirmCallsNotUsed} not used, ${totals.confirmCallsIgnored} ignored`)}
+${figure(String(totals.confirmCalls), `confirm calls · ${confirmUses(totals, (count, word) => `${count} ${word}`)}`)}
 </div>
 <div class="totals">
 <div class="method-row grid4"><p class="meta">Hand-backs</p><p class="small c2s3">${escape(handBackSummary(totals))}</p></div>
