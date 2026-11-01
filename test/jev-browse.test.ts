@@ -5067,7 +5067,8 @@ describe('a secret is scrubbed from the page as soon as it is read, before anyth
     const echoed = page({
       url: 'http://fixture/tokens',
       title: `Token ${LONG} created`,
-      text: `${'Your tokens are listed below. '.repeat(82)}${LONG} is your new token.`,
+      // The 2500-character cut lands inside the secret as the page shows it; scrubbed, the text is still long enough to be cut.
+      text: `${'Your tokens are listed below. '.repeat(82)}${LONG} is your new token.${' Keep it safe.'.repeat(20)}`,
       fingerprint: 'a',
     });
     const { ask, requests } = scriptedJev([{ operation: 'BLOCKED' }]);
