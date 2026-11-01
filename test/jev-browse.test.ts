@@ -313,6 +313,8 @@ describe('Jev request', () => {
       'type_text_target',
       'click_target',
       'commit_risk',
+      'page_error',
+      'sign_in_wall',
     ]);
     const withValues = buildRequest({ ...input, values: { email: 'a@b.co' }, doneWhen: 'Confirmed' }, space);
     expect(withValues.questions).toHaveProperty('value_for_1');
