@@ -33,7 +33,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
 - Pass \`done_when\`: visible evidence of success on the page the call ends on; check another page in a second call. It is checked independently before status "done".
 - Statuses that hand control back — continue with the same \`session\`:
   needs_input → add the missing value to \`values\`;
-  needs_confirmation → the next click looks irreversible (delete, pay, send). Set \`confirm_irreversible: true\` only when the user's own request names this action and its target (e.g. "delete the repository X" → the clicks that delete X); for anything else, stop and ask the user. A kind of thing ("anything unused", "old branches", "all drafts") does not name a target: list what you would delete or send and ask the user first. Each confirmation covers one click. It counts only on the call that answers a needs_confirmation (or a new session's first call); anywhere else it is ignored. Pass \`confirm_target\` with the user's words that name the target; jev-browse checks the page shows them (the control's own words, like "delete", do not count) and refuses otherwise.
+  needs_confirmation → the next click looks irreversible (delete, pay, send). Set \`confirm_irreversible: true\` only when the user's own request names this action and its target (e.g. "delete the repository X" → the clicks that delete X); for anything else, stop and ask the user. A kind of thing ("anything unused", "old branches", "all drafts") does not name a target: list what you would delete or send and ask the user first. Each confirmation covers one click: the control that needs_confirmation named (same label, same page path); if Jev picks a different irreversible control, it is handed back as a new needs_confirmation. It counts only on the call that answers a needs_confirmation (or a new session's first call, which allows any one); anywhere else it is ignored. Pass \`confirm_target\` with the user's words that name the target; jev-browse checks the page shows them (the control's own words, like "delete", do not count) and refuses otherwise.
   uncertain / blocked → inspect \`stuck\` (candidates) and \`page_text\`, rephrase \`goal\`, or finish the step with chrome-devtools.
   step_budget → \`max_steps\` or \`max_seconds\` (default 300) ran out; the reason says which. Continue on the same session with a narrower goal.
   blocked by a bot check (\`wall.kind\` is "bot_check"; the reason names it) → never try to get past it; ask the user to pass it in that tab, then continue the session.
@@ -55,7 +55,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
         .boolean()
         .optional()
         .describe(
-          "Allow exactly one click flagged as irreversible — only for the action and target the user's request names; a category (\"anything unused\") names no target. It counts only on the call that answers a needs_confirmation (or a new session's first call); anywhere else it is ignored.",
+          "Allow exactly one click flagged as irreversible (the control the needs_confirmation named; a different one is asked again) — only for the action and target the user's request names; a category (\"anything unused\") names no target. It counts only on the call that answers a needs_confirmation (or a new session's first call); anywhere else it is ignored.",
         ),
       confirm_target: z
         .string()

@@ -211,6 +211,9 @@ export class BrowserTask {
   #confirmedCommit = false;
   /** The user's words the caller gave with the confirmation, for the page to show before the click runs. */
   #confirmTarget: string | undefined;
+  /** The control the last needs_confirmation asked about, and the one a confirmation answering it allows (none on a first call). */
+  #flagged: Control | undefined;
+  #confirmedControl: Control | undefined;
   /** How the previous call ended (none before the first), and the status a dropped confirmation is reported against. */
   #lastStatus: TaskStatus | undefined;
   #confirmIgnored: TaskStatus | undefined;
@@ -283,6 +286,7 @@ export class BrowserTask {
     if (this.#lastStatus === undefined || this.#lastStatus === 'needs_confirmation') {
       this.#confirmedCommit = true;
       this.#confirmTarget = confirmTarget;
+      this.#confirmedControl = this.#lastStatus === 'needs_confirmation' ? this.#flagged : undefined;
     } else if (!this.#confirmedCommit) this.#confirmIgnored = this.#lastStatus;
   }
 
@@ -323,6 +327,8 @@ export class BrowserTask {
       this.#reportDialogs(firstStep);
       // A hand-back asks a new question, so a confirmation still pending (a refused one) is spent.
       if (status === 'needs_confirmation') this.#spendConfirmation();
+      // The agent answers a question about one control; the pin says which (see #handBack).
+      this.#flagged = status === 'needs_confirmation' && decision ? controlOf(decision, page) : undefined;
       const confirmIgnored = this.#confirmIgnored;
       this.#confirmIgnored = undefined;
       this.#lastStatus = status;
@@ -1155,6 +1161,7 @@ export class BrowserTask {
   #spendConfirmation() {
     this.#confirmedCommit = false;
     this.#confirmTarget = undefined;
+    this.#confirmedControl = undefined;
   }
 
   // A confirmation is for the target the user named, so it carries their words and the page must show them. A category
@@ -1201,6 +1208,12 @@ export class BrowserTask {
     if (decision.operation === 'TYPE_TEXT' && !decision.valueKey) {
       return ['needs_input', `No supplied value fits the field "${decision.action!.label}"`];
     }
+    // A confirmation answers the question about one control: another risky control is a new question, whatever the page shows.
+    const confirmed = this.#confirmedControl;
+    if (isRiskyClick(decision) && this.#confirmedCommit && confirmed && !sameControl(confirmed, controlOf(decision, page))) {
+      const given = `The confirmation given was for ${confirmed.coordinate ? 'a click by on-screen position' : `"${confirmed.label}"`} on ${confirmed.path}, a different control, so it was not used.`;
+      return ['needs_confirmation', irreversibleReason(decision, page, given)];
+    }
     if (isRiskyClick(decision) && this.#confirmedCommit) {
       const refusal = this.#targetRefusal(decision, page);
       if (refusal) return ['needs_confirmation', refusal];
@@ -1213,16 +1226,43 @@ export class BrowserTask {
           `"${rejected.label}" was already submitted on this page, and the page then said: "${rejected.answer}". Submitting it again would repeat the same request; tell the user what the page says.`,
         ];
       }
-      // The page title says which target the click acts on (a repository, an order), for the agent to hold against the user's words.
-      const title = page.title.slice(0, CONFIRM_TITLE_CHARS);
-      return [
-        'needs_confirmation',
-        `Clicking "${decision.action?.label ?? 'the control boxed on the screenshot'}"${title ? ` on "${title}"` : ''} looks irreversible (risk ${round(decision.commitRisk!)}). Confirm only if the user's request named this action and this target; a category ("anything unused", "old ones") names no target: list the candidates and ask the user. To continue, call again with confirm_irreversible and confirm_target (the user's words naming the target).`,
-      ];
+      return ['needs_confirmation', irreversibleReason(decision, page)];
     }
     return undefined;
   }
 }
+
+// The page title says which target the click acts on (a repository, an order), for the agent to hold against the user's words.
+// It always starts `Clicking "<label>"`: agents and the job runner read the control from there.
+const irreversibleReason = (decision: Decision, page: PageState, note?: string) => {
+  const title = page.title.slice(0, CONFIRM_TITLE_CHARS);
+  return `Clicking "${decision.action?.label ?? 'the control boxed on the screenshot'}"${title ? ` on "${title}"` : ''} looks irreversible (risk ${round(decision.commitRisk!)}).${note ? ` ${note}` : ''} Confirm only if the user's request named this action and this target; a category ("anything unused", "old ones") names no target: list the candidates and ask the user. To continue, call again with confirm_irreversible and confirm_target (the user's words naming the target).`;
+};
+
+/** A control a confirmation is about: its label on a page path, or a click by on-screen position on that path. */
+interface Control {
+  path: string;
+  label: string;
+  coordinate: boolean;
+}
+
+// Only the pathname: a single-page app rewrites its query string (filters, a peek panel) without changing the control,
+// while the pathname names the object a form acts on. The full label carries a row's context, so another row's "Delete" differs.
+const controlOf = (decision: Decision, page: PageState): Control => ({
+  path: pathnameOf(page.url),
+  label: decision.operation === 'CLICK_AT' ? '' : bareLabel(decision.action?.label ?? ''),
+  coordinate: decision.operation === 'CLICK_AT',
+});
+
+const sameControl = (a: Control, b: Control) => a.path === b.path && a.label === b.label && a.coordinate === b.coordinate;
+
+const pathnameOf = (url: string) => {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
+  }
+};
 
 // Optional MCP/CLI arguments arrive as explicit undefined; they must not erase defaults or earlier values.
 const definedOnly = <T extends object>(options: T) =>
