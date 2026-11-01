@@ -49,8 +49,9 @@ export interface Totals {
   handBacksNeedingReplan: number;
   /** `confirm_irreversible` calls, and how many had no target, a target the prompt does not contain, or one jevway refused. */
   confirmCalls: number;
-  /** ...of which jevway honoured, and ignored (a flag outside a first call or an answer is a no-op). */
+  /** ...of which jevway honoured, took but did not use (handed back on a different control), or ignored (a flag outside a first call or an answer is a no-op). */
   confirmCallsHonoured: number;
+  confirmCallsNotUsed: number;
   confirmCallsIgnored: number;
   confirmsWithoutTarget: number;
   confirmTargetsNotInPrompt: number;
@@ -90,7 +91,7 @@ export const handBackSummary = (totals: Totals) =>
   `hand-backs ${totals.handBacks}: unusable (the run then ended without its goal) ${totals.unusableHandBacks} (${percentOf(totals.unusableHandBacks, totals.handBacks)}), needing a re-plan ${totals.handBacksNeedingReplan} (${percentOf(totals.handBacksNeedingReplan, totals.handBacks)})`;
 
 export const confirmSummary = (totals: Totals) =>
-  `confirm calls ${totals.confirmCalls} (honoured ${totals.confirmCallsHonoured}, ignored ${totals.confirmCallsIgnored}); of the honoured: without a target ${totals.confirmsWithoutTarget}, target not in the prompt ${totals.confirmTargetsNotInPrompt}, refused by jevway ${totals.confirmTargetsRefused}`;
+  `confirm calls ${totals.confirmCalls} (honoured ${totals.confirmCallsHonoured}, not used ${totals.confirmCallsNotUsed}, ignored ${totals.confirmCallsIgnored}); of the honoured: without a target ${totals.confirmsWithoutTarget}, target not in the prompt ${totals.confirmTargetsNotInPrompt}, refused by jevway ${totals.confirmTargetsRefused}`;
 
 // --- the transcript, from the stream
 
@@ -353,7 +354,7 @@ export const renderAgentReport = ({ rows, totals, model, outFolder, readRun }: {
 ${figure(`${totals.passed}/${totals.ran}`, `judged runs passed · 95% CI ${Math.round(low * 100)}–${Math.round(high * 100)}%`)}
 ${figure(dollars(totals.costUsd, 2), `Claude spend${median === null ? '' : ` · ${dollars(median)} median run`}${totals.runsOfUnknownCost ? ` · + ${plural(totals.runsOfUnknownCost, 'run')} of unknown cost` : ''}`)}
 ${figure(String(totals.handBacks), `hand-backs · ${totals.unusableHandBacks} unusable, ${totals.handBacksNeedingReplan} needing a re-plan`)}
-${figure(String(totals.confirmCalls), `confirm calls · ${totals.confirmCallsHonoured} honoured, ${totals.confirmCallsIgnored} ignored`)}
+${figure(String(totals.confirmCalls), `confirm calls · ${totals.confirmCallsHonoured} honoured, ${totals.confirmCallsNotUsed} not used, ${totals.confirmCallsIgnored} ignored`)}
 </div>
 <div class="totals">
 <div class="method-row grid4"><p class="meta">Hand-backs</p><p class="small c2s3">${escape(handBackSummary(totals))}</p></div>

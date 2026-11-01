@@ -553,7 +553,7 @@ describe('re-rendering a saved results.json', () => {
       const answer = { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: '{"url":"http://app.test/","title":"Home"}' }] }] } };
       writeFileSync(join(outDir, 'triage/run-1/stream.jsonl'), `${JSON.stringify(call)}\n${JSON.stringify(answer)}\n`);
       const rowOf = { chore: 'triage', run: 1, prompt: 'Label it.', verdict: 'pass', check: 'labelled', passes: 'labelled', calls: [], handBacks: [], inventedValues: [], confirmOffTarget: false, confirmTargets: [], sessionsEnded: 0, otherTools: [], denials: [], answer: 'Done.', outcome: 'success', turns: 2, costUsd: 0.01, durationMs: 4000, dir: 'triage/run-1/' };
-      const totals = { passed: 1, ran: 1, costUsd: 0.01, runsOfUnknownCost: 0, handBacks: 0, unusableHandBacks: 0, handBacksNeedingReplan: 0, confirmCalls: 0, confirmCallsHonoured: 0, confirmCallsIgnored: 0, confirmsWithoutTarget: 0, confirmTargetsNotInPrompt: 0, confirmTargetsRefused: 0 };
+      const totals = { passed: 1, ran: 1, costUsd: 0.01, runsOfUnknownCost: 0, handBacks: 0, unusableHandBacks: 0, handBacksNeedingReplan: 0, confirmCalls: 0, confirmCallsHonoured: 0, confirmCallsNotUsed: 0, confirmCallsIgnored: 0, confirmsWithoutTarget: 0, confirmTargetsNotInPrompt: 0, confirmTargetsRefused: 0 };
       writeFileSync(join(outDir, 'results.json'), JSON.stringify({ model: 'sonnet', runsPerChore: 1, ...totals, rows: [rowOf] }));
       const agent = renderFolder(outDir);
       expect(agent.file).toBe(join(outDir, 'report.html'));

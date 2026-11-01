@@ -110,6 +110,7 @@ const TOTALS: Totals = {
   handBacksNeedingReplan: 1,
   confirmCalls: 2,
   confirmCallsHonoured: 2,
+  confirmCallsNotUsed: 1,
   confirmCallsIgnored: 0,
   confirmsWithoutTarget: 0,
   confirmTargetsNotInPrompt: 1,
@@ -166,7 +167,8 @@ describe('the agent overview', () => {
   it('keeps the hand-back and confirm-call summaries and why the suite stopped early', () => {
     const page = text(overview);
     expect(page).toContain('hand-backs 2: unusable (the run then ended without its goal) 1 (50%), needing a re-plan 1 (50%)');
-    expect(page).toContain('confirm calls 2 (honoured 2, ignored 0); of the honoured: without a target 0, target not in the prompt 1, refused by jevway 1');
+    expect(page).toContain('confirm calls 2 (honoured 2, not used 1, ignored 0); of the honoured: without a target 0, target not in the prompt 1, refused by jevway 1');
+    expect(page).toContain('2 honoured, 1 not used, 0 ignored');
     expect(page).toContain('STOP: ada/app deleted although the request did not name it');
   });
 
