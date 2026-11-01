@@ -612,6 +612,89 @@ describe('BrowserTask', () => {
     });
   });
 
+  describe('a confirmation allows only the control it answered', () => {
+    const PAY = 'Confirm booking and pay €412';
+    const CANCEL = 'Cancel my reservation';
+    const cancelButton: PageAction = { id: 'e6', kind: 'click', node: 5, role: 'button', label: CANCEL };
+    const twoRisky = (fingerprint: string, url = 'http://fixture/stays') =>
+      page({ url, actions: [...bookingActions, cancelButton], fingerprint });
+    // The first call's page, then every later observation on `laterUrl`.
+    const pagesOn = (firstUrl: string, laterUrl = firstUrl) =>
+      Array.from({ length: 12 }, (_, i) => twoRisky(String(i), i === 0 ? firstUrl : laterUrl));
+    const pay = { operation: 'CLICK', click_target: '4', commit_risk: 0.9 };
+    const cancel = { operation: 'CLICK', click_target: '5', commit_risk: 0.9 };
+    const options = { goal: 'Pay for the Staylist booking', maxSteps: 1, changeWaitMs: 0 };
+    const flaggedThen = async (steps: Record<string, any>[], pages = pagesOn('http://fixture/stays')) => {
+      const { ask } = scriptedJev(steps);
+      const { asTab, acted } = fakeTab(pages);
+      const task = new BrowserTask(asTab, ask, options);
+      const flagged = await task.run();
+      expect(flagged.reason).toMatch(new RegExp(`^Clicking "${PAY}"`));
+      return { task, acted };
+    };
+
+    it('clicks the control that was flagged', async () => {
+      const { task, acted } = await flaggedThen([pay, pay]);
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+      await task.run();
+      expect(acted).toEqual([{ label: PAY }]);
+    });
+
+    it('hands back a different risky control, naming it and the one confirmed, and clicks nothing', async () => {
+      const { task, acted } = await flaggedThen([pay, cancel]);
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+      const summary = await task.run();
+      expect(summary.status).toBe('needs_confirmation');
+      expect(summary.reason).toMatch(new RegExp(`^Clicking "${CANCEL}" on "Staylist" looks irreversible`));
+      expect(summary.reason).toContain(`The confirmation given was for "${PAY}" on /stays, a different control, so it was not used.`);
+      expect(summary.reason).toContain('To continue, call again with confirm_irreversible and confirm_target');
+      expect(acted).toEqual([]);
+    });
+
+    it('lets the agent confirm the new control in turn, and then clicks only that one', async () => {
+      const { task, acted } = await flaggedThen([pay, cancel, cancel]);
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+      await task.run();
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+      await task.run();
+      expect(acted).toEqual([{ label: CANCEL }]);
+    });
+
+    it('spends the old confirmation when it hands back the different control', async () => {
+      const { task, acted } = await flaggedThen([pay, cancel, pay]);
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+      await task.run();
+      const after = await task.run();
+      expect(after.status).toBe('needs_confirmation');
+      expect(acted).toEqual([]);
+    });
+
+    it('treats the same label on another page path as another control', async () => {
+      const { task, acted } = await flaggedThen([pay, pay], pagesOn('http://fixture/stays/41', 'http://fixture/stays/42'));
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+      const summary = await task.run();
+      expect(summary.status).toBe('needs_confirmation');
+      expect(summary.reason).toContain(`The confirmation given was for "${PAY}" on /stays/41, a different control`);
+      expect(acted).toEqual([]);
+    });
+
+    it('treats a changed query string as the same page, as a single-page app rewrites it', async () => {
+      const { task, acted } = await flaggedThen([pay, pay], pagesOn('http://fixture/stays?tab=1', 'http://fixture/stays?tab=2#top'));
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+      await task.run();
+      expect(acted).toEqual([{ label: PAY }]);
+    });
+
+    it('lets a new session\'s first-call confirmation, which answers no flagged control, click either one', async () => {
+      const { ask } = scriptedJev([cancel]);
+      const { asTab, acted } = fakeTab(pagesOn('http://fixture/stays'));
+      const task = new BrowserTask(asTab, ask, options);
+      task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+      await task.run();
+      expect(acted).toEqual([{ label: CANCEL }]);
+    });
+  });
+
   describe('a confirmation must name its target in the user\'s words', () => {
     const DELETE = 'Delete this repository';
     const scratchPage = (fingerprint: string, overrides: Partial<PageState> = {}) =>

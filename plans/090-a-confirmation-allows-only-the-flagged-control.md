@@ -56,7 +56,7 @@
    only another `CLICK_AT` on that pathname. A listed click never matches a coordinate pin, and vice versa.
 5. **A different risky control on the confirming call** is handed back as `needs_confirmation` with today's reason for
    the **new** control (so it still starts `Clicking "<new label>"`, which `verify/jobs/runner.ts:74` and agents parse),
-   plus one sentence: `The confirmation given was for "<old label>", a different control, so it was not used.` That
+   plus one sentence: `The confirmation given was for "<old label>" on <old pathname>, a different control, so it was not used.` That
    stop spends the old confirmation and pins the new control, so the agent can confirm it in turn if the user's request
    names it.
 6. **The pin is checked before `confirm_target`**: a mismatched control is a new question whatever the words say.
@@ -95,7 +95,7 @@ Lowercase conventional commits. No AI attribution of any kind. Do NOT push.
 - **Same control runs.** Flagged "Confirm booking and pay €412", confirmed, the next call picks it: it is clicked.
 - **A different risky control is handed back.** A page with two risky buttons; the first call flags A, the confirming
   call's Jev picks B: `needs_confirmation`, the reason starts `Clicking "B"`, contains
-  `The confirmation given was for "A", a different control, so it was not used.`, nothing is clicked. A second
+  `The confirmation given was for "A" on /stays, a different control, so it was not used.`, nothing is clicked. A second
   confirmation then clicks B (and only B).
 - **The old confirmation is spent.** After that hand-back, a run with no new flag clicks nothing risky.
 - **Same label on another pathname is a different control.** Flagged on `/ada/scratch/settings`, picked on
