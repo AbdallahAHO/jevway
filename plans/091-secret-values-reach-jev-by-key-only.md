@@ -57,8 +57,9 @@
 4. **Scrub structurally, at the boundaries; never the page the loop holds.** One pure module `src/jev/secrets.ts`:
    `scrubberFor(values, secretKeys)` returns a function that walks plain objects and arrays and replaces each secret in
    every string (object keys untouched, class instances such as the screenshot `Image` untouched). It is applied to:
-   - Jev's request: the `state` **before** the screenshot is attached (a base64 image could contain a short secret by
-     chance), the `questions`, and every follow-up's questions;
+   - Jev's request: the whole request where it is put together (`buildRequest`'s return, and each follow-up's
+     `{state, questions}`), so every key is covered, also one another branch adds later (plan 102's `last_change`).
+     `image_url` parts and the `Image` asset are skipped: base64 can contain a short secret by chance;
    - the `TaskSummary` in `stop()` (reason, url, title, page_text, steps, stuck, confirm_ignored, missing), which is
      also what `Recording.finish` writes;
    - `task.trace` entries added during the run, scrubbed in place once in `stop()`;
