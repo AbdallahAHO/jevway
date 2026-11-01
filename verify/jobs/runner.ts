@@ -145,6 +145,8 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
   let reconnects = 0;
   let connectionLost = false;
   let stoppedBecause: string | undefined;
+  // Setup failures in a row: one is that run's error; two mean the app isn't usable (e.g. signed out).
+  let setupFailures = 0;
   const results: JobResult[] = [];
   try {
     suite: for (const job of selectedJobs) {
@@ -185,6 +187,7 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
           await tab.navigate(startUrl);
           await before?.(tab, job);
           ready = true;
+          setupFailures = 0;
           const task = new BrowserTask(tab, ask, {
             ...profileOptions(profile),
             goal: goalFor(job, phrasing),
@@ -228,8 +231,8 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
           result.runs.push({ run, dir, passed: false, reached: false, url: '', summaries: [], error: message });
           process.stdout.write(`✘ ${job.id} #${run} — ${message}\n`);
           if (message.includes(CONNECTION_CLOSED)) connectionLost = true;
-          // The app isn't usable (e.g. not signed in): every later run would fail the same way.
-          else if (!ready) {
+          // Twice in a row the app isn't usable (e.g. not signed in): every later run would fail the same way.
+          else if (!ready && ++setupFailures >= 2) {
             stoppedBecause = `${job.id} #${run} could not get ready (${message})`;
             break suite;
           }
