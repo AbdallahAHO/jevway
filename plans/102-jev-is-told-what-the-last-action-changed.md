@@ -17,6 +17,16 @@
 > - The headless slice was not run for 102: the Forgejo result decided it.
 > - Code commits reverted (`f307ac5`, `bb5d884`, `e138361`, `9459a31`). A future `last_change` must not present a
 >   control's new state as a result while the edit is unsaved (plan 064's unsaved-edit state knows when that is).
+>
+> **Addendum (same day, after plans 103–105): the regression claim is withdrawn; the verdict stands on no measured gain.**
+> The premature DONE after the wiki toggle turned out to be a baseline flake. wiki-off alone, today: baseline
+> `39f5928` **7/10** (`exec-d-jev-base/verify/out/forgejo-2026-11-01T17-43-29-350Z`, 3 runs with the same DONE ×3 and
+> done checks ≤ 0.40), plan 103's code 4/5 (`…T17-41-46-965Z`), plan 105's 5/5 (`…T17-42-34-587Z`), and 1 miss in
+> 3 in each of the 104 and 105 slices. 102's 2 misses in 6 runs fit that rate, so the data can't tell `last_change`
+> from noise there. What remains: no gain was shown (Forgejo 29/33 with every loss a known flake once delete-repo was
+> fixed, +0.9% tokens), the headless slice was never run, and the claimed gains (done after an add or a drag, new text)
+> would show on Langfuse, which was down (Chrome 9333). A re-measure is the reviewer's call: about 8M tokens and 15
+> minutes, and without Langfuse it would most likely land on "no regression, no gain" again.
 
 > **Executor instructions**: Follow this plan step by step. Your reviewer maintains `plans/README.md`; do not edit it.
 > This plan changes what Jev is asked, so it moves Jev's verified baseline: it is kept only if the measurement slice shows
