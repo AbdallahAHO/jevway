@@ -8,8 +8,11 @@ describe('the estimated cost of a run', () => {
     expect(estimateCostUsd('jev-1.14.0', 0)).toBe(0);
   });
 
+  it('prices Jev through OpenRouter at the same rate, as an estimate', () => {
+    expect(estimateCostUsd('typesafe/jev-1.14', 7534)).toBe(0.000316);
+  });
+
   it('is null for a model whose price is written nowhere, never a guess', () => {
-    expect(estimateCostUsd('typesafe/jev-1.14', 7534)).toBeNull();
     expect(estimateCostUsd('cloudflare/clef-omni', 7534)).toBeNull();
     expect(estimateCostUsd('some/unknown-model', 7534)).toBeNull();
     expect(estimateCostUsd(null, 7534)).toBeNull();

@@ -58,8 +58,8 @@ only place a price is written down in this repo or its prior art.
    USD per 1M input tokens. Keyed by id, not profile name, so Jev's two routes can be priced apart.
    - `jev-1.14.0` (Jev on the TypeSafe API): **$0.042**. Comment: Jev's published rate (written for jev-1.12 in
      jkudish/jev-browser `src/lib.ts:207`, prior art K5; output free), applied to 1.14 as an estimate, not billing.
-   - `typesafe/jev-1.14` (Jev through OpenRouter): **no price**. OpenRouter's rate for it is written nowhere here; it
-     may add a margin. Cost `null`. A one-line follow-up once the rate is written down.
+   - `typesafe/jev-1.14` (Jev through OpenRouter): **$0.042** too, decided on review (2026-11-01): OpenRouter passes the
+     provider's price through; any margin it adds is unchecked, so it is an estimate like the direct route.
    - Clef, Clef-flash, Clef-omni, pplx-decider, GPT-6 Luna: **no price** (none written in the repo). Cost `null`.
 2. **Input tokens only.** Jev's published output price is free, and no other model has a price, so an output column
    would be dead code. Summing `output_tokens` would also widen `Ask` and touch `decide.ts`. Follow-up if a priced
@@ -109,7 +109,7 @@ Lowercase conventional commits. No attribution trailers of any kind. Do NOT push
 
 - `test/cost.test.ts`:
   - 1M input tokens on `jev-1.14.0` cost 0.042; 7,534 cost 0.000316 (6 decimals); 0 cost 0.
-  - `typesafe/jev-1.14`, `cloudflare/clef-omni` and an unknown id cost `null`.
+  - `typesafe/jev-1.14` costs the same as `jev-1.14.0`; `cloudflare/clef-omni` and an unknown id cost `null`.
   - `profileOptions` of the direct Jev route carries `model: 'jev-1.14.0'`; of the OpenRouter route `typesafe/jev-1.14`.
 - `test/jev-browse.test.ts`, a new `describe` after "model choice": a scripted run (100 tokens per request) with
   `model: 'jev-1.14.0'` and a done with evidence: `summary.jev` has `model: 'jev-1.14.0'`, `input_tokens: 200`,

@@ -100,7 +100,7 @@ Every model judges commit risk **per click candidate by name**, in one follow-up
   "missing": [{ "label": "Email address", "role": "textbox", "path": "/stays" }] }
 ```
 
-`jev.model` is the model id the requests went to. `jev.est_cost_usd` estimates the call's cost from its input tokens (every request, Box and the done's evidence request included) at the model's published rate, rounded to 6 decimals: Jev on the TypeSafe API is priced at $0.042 per 1M input tokens (output is free); a model with no rate written down, Jev through OpenRouter included, gets `null`. It is an estimate, not billing.
+`jev.model` is the model id the requests went to. `jev.est_cost_usd` estimates the call's cost from its input tokens (every request, Box and the done's evidence request included) at the model's published rate, rounded to 6 decimals: Jev on the TypeSafe API is priced at $0.042 per 1M input tokens (output is free); Jev through OpenRouter gets the same rate (OpenRouter's margin, if any, unchecked); a model with no rate written down gets `null`. It is an estimate, not billing.
 
 `secret_keys` names the keys of `values` that are secrets (an API token, a one-time code). Jev sees `[secret:<key>]` in place of such a value and never reads it; it is typed as given, and wherever the page echoes it, `page_text`, `steps`, reasons, traces and `record_dir`'s `summary.json` and `index.html` show the marker instead. Recorded screenshots and video are pixels of the page and are not masked. Mark only real secrets: every occurrence of the value is replaced, even inside other words.
 
