@@ -402,7 +402,8 @@ export class BrowserTask {
       wallWaited = true;
       const deadline = performance.now() + this.#options.wallWaitMs;
       while (wall && performance.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, WALL_POLL_MS));
+        await limit.pause(WALL_POLL_MS);
+        if (limit.stopped()) break;
         // A challenge that clears navigates: a page still loading is looked at again on the next poll.
         page = await this.#tab.observe().catch((error) => {
           if (error instanceof StalePage) return page;
@@ -413,10 +414,12 @@ export class BrowserTask {
       return { wall, cleared: !wall };
     };
 
-    const stopAtWall = (wall: BotWall, decision?: Decision): TaskSummary => ({
-      ...stop('blocked', wallReason(wall), decision),
-      wall: { kind: 'bot_check', origin: originOf(page.url), name: wall.provider },
-    });
+    const stopAtWall = (wall: BotWall, decision?: Decision): TaskSummary => {
+      // A cancel or the time budget that cut the wait short is the reason the run ended.
+      const halt = limit.stopped();
+      if (halt) return stop(halt.status, halt.reason, decision);
+      return { ...stop('blocked', wallReason(wall), decision), wall: { kind: 'bot_check', origin: originOf(page.url), name: wall.provider } };
+    };
 
     // Browser and model errors end the run as `blocked`: the calling agent keeps the session and decides what next.
     try {
