@@ -3839,3 +3839,91 @@ describe('a checkbox or switch the run flipped is not flipped back without a wor
     });
   });
 });
+
+describe('a run stops when the caller cancels or the time budget passes, never mid-input', () => {
+  const CANCELLED = 'Cancelled by the caller';
+  const click = { operation: 'CLICK', click_target: '1' };
+  const changingPages = () => 'abcdefghijklmnop'.split('').map((fingerprint) => page({ fingerprint }));
+
+  afterEach(() => vi.useRealTimers());
+
+  it('stops before the first decision when the caller already cancelled', async () => {
+    const { ask, requests } = scriptedJev([click]);
+    const { asTab, acted } = fakeTab(changingPages());
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open', changeWaitMs: 0 }).run({ signal: AbortSignal.abort() });
+    expect(summary).toMatchObject({ status: 'blocked', reason: CANCELLED, steps: [] });
+    expect(requests).toHaveLength(0);
+    expect(acted).toEqual([]);
+  });
+
+  it('stops inside a wait instead of waiting it out', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'WAIT' }]);
+    const { asTab } = fakeTab([page({ fingerprint: 'same' })]);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 100);
+    const started = performance.now();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open', changeWaitMs: 30_000 }).run({ signal: controller.signal });
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(summary).toMatchObject({ status: 'blocked', reason: CANCELLED });
+    expect(requests).toHaveLength(1);
+  });
+
+  it('cancels a Jev request in flight and never reports it as a model error', async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    // A request that never answers, whatever its signal does: the run must not wait for it.
+    const ask: Ask = (_request, options) => {
+      signals.push(options?.signal);
+      return new Promise(() => undefined);
+    };
+    const { asTab, acted } = fakeTab();
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 50);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open', changeWaitMs: 0 }).run({ signal: controller.signal });
+    expect(summary).toMatchObject({ status: 'blocked', reason: CANCELLED });
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(acted).toEqual([]);
+  });
+
+  it('ends step_budget, naming the time budget, when max_seconds passes mid-run', async () => {
+    vi.useFakeTimers();
+    const scripted = scriptedJev([click]);
+    // Each decision takes a second.
+    const ask: Ask = async (request) => {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      return scripted.ask(request);
+    };
+    const { asTab, acted } = fakeTab(changingPages());
+    const running = new BrowserTask(asTab, ask, { goal: 'Open', maxSeconds: 2.5, changeWaitMs: 0 }).run();
+    await vi.advanceTimersByTimeAsync(5000);
+    const summary = await running;
+    expect(summary.status).toBe('step_budget');
+    expect(summary.reason).toBe('Reached the time budget of 2.5 s (max_seconds) after 2 actions without finishing');
+    expect(acted).toHaveLength(2);
+  });
+
+  it('lets an input in flight finish, reports it, and runs nothing after it', async () => {
+    const { ask } = scriptedJev([click]);
+    const { tab, asTab, acted } = fakeTab(changingPages());
+    const controller = new AbortController();
+    const act = tab.act;
+    tab.act = async (...args) => {
+      controller.abort();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return act(...args);
+    };
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open', changeWaitMs: 30_000 }).run({ signal: controller.signal });
+    expect(summary).toMatchObject({ status: 'blocked', reason: CANCELLED });
+    expect(acted).toEqual([{ label: 'Open Full name' }]);
+    expect(summary.steps).toHaveLength(1);
+    expect(summary.steps[0]).toMatchObject({ operation: 'CLICK', element: 'Open Full name', page_changed: true });
+  });
+
+  it('runs the session normally on the next call after a cancel', async () => {
+    const { ask } = scriptedJev([{ operation: 'DONE', done_check: 0.95 }]);
+    const { asTab } = fakeTab();
+    const task = new BrowserTask(asTab, ask, { goal: 'Open', doneWhen: 'Open', changeWaitMs: 0 });
+    expect((await task.run({ signal: AbortSignal.abort() })).reason).toBe(CANCELLED);
+    expect((await task.run()).status).toBe('done');
+  });
+});
