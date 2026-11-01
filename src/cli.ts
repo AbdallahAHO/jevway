@@ -10,6 +10,8 @@ const USAGE = `jev-browse --goal "<outcome>" (--url <url> | --tab <url part>) [o
   --model jev|pplx-decider|clef-omni|clef|clef-flash|gpt-6-luna   decision model (default: jev, or $JEV_MODEL)
   --screenshots off|fallback|always   marked screenshots, vision models only (default: per model, or $JEV_SCREENSHOTS)
   --max-steps 40
+  --allowed-hosts a.com,*.b.com   hosts the run may be on (narrows $JEV_ALLOWED_HOSTS); leaving them ends it blocked
+  --blocked-hosts ads.com         hosts it must never be on (adds to $JEV_BLOCKED_HOSTS)
   --max-seconds 300               time budget; past it the run ends step_budget (Ctrl-C ends it blocked)
   --keep-open                     leave the tab open (auto/remote browsers)
   --allow-coordinate-clicks       click a boxed control the DOM never reported (canvas, iframe); Jev 1.14 direct only
@@ -30,6 +32,8 @@ const { values: args } = parseArgs({
     screenshots: { type: 'string' },
     'max-steps': { type: 'string' },
     'max-seconds': { type: 'string' },
+    'allowed-hosts': { type: 'string' },
+    'blocked-hosts': { type: 'string' },
     'keep-open': { type: 'boolean' },
     'allow-coordinate-clicks': { type: 'boolean' },
     record: { type: 'string' },
@@ -63,6 +67,8 @@ try {
     doneWhen: args['done-when'],
     maxSteps: args['max-steps'] ? Number(args['max-steps']) : undefined,
     maxSeconds: args['max-seconds'] ? Number(args['max-seconds']) : undefined,
+    allowedHosts: args['allowed-hosts']?.split(','),
+    blockedHosts: args['blocked-hosts']?.split(','),
     allowCoordinateClicks: args['allow-coordinate-clicks'],
     recordDir: args.record,
   });

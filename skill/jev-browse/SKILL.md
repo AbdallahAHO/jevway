@@ -24,7 +24,8 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 4. Always pass `done_when`: visible evidence of success ("Search results for Lisbon are listed"). DONE is accepted only after this check passes. Describe only what the final page itself shows: "the user from the costliest session is open" can't be judged on a user page, "a user's detail page is open" can. Keep it to the page the call ends on. To check another page (the repository's tabs after a settings change), end this call at the save and check in a second call.
 5. Jev picks elements; it doesn't compare numbers. For "the most expensive", "the one with errors" and the like, call once to reach the list, read it yourself (chrome-devtools or the summary's `page_text`), then continue the same `session` with the chosen value in `values`.
 6. Text Jev needs to type, even a filter word like `ERROR`, must be in `values`.
-7. Passwords: jev-browse never sees or types password fields. Type them yourself (chrome-devtools `fill`), then say so in the goal: "I typed the password; sign in." A typed field jev-browse can't see only counts once you mention it.
+7. In the user's own signed-in Chrome, pass `allowed_hosts` with the sites the task belongs to (e.g. `["github.com"]`, `["*.atlassian.net"]`; `*.x.com` excludes `x.com` itself). A click or redirect elsewhere ends the call `blocked`, naming the host; decide yourself whether going there is part of the task.
+8. Passwords: jev-browse never sees or types password fields. Type them yourself (chrome-devtools `fill`), then say so in the goal: "I typed the password; sign in." A typed field jev-browse can't see only counts once you mention it.
 
 ## Read the status
 

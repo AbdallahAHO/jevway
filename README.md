@@ -89,7 +89,7 @@ Every model judges commit risk **per click candidate by name**, in one follow-up
 
 ## Tools
 
-**`browser_task`** takes `goal`, `url` | `tab`, `values`, `done_when`, `session`, `confirm_irreversible`, `confirm_target`, `max_steps`, `max_seconds`, and, for new sessions only, `allow_coordinate_clicks` and `record_dir`. It returns:
+**`browser_task`** takes `goal`, `url` | `tab`, `values`, `done_when`, `session`, `confirm_irreversible`, `confirm_target`, `max_steps`, `max_seconds`, `allowed_hosts`, `blocked_hosts`, and, for new sessions only, `allow_coordinate_clicks` and `record_dir`. It returns:
 
 ```json
 { "session": "be63210d", "status": "needs_input", "reason": "Blocked: no supplied value for \"Email address\"",
@@ -122,6 +122,7 @@ Cancelling the MCP request (or Ctrl-C in the CLI) stops the run before its next 
 - Typing uses real key events per character, so autocompletes register it. Enter is a separate fixed key, offered only right after typing into a search-like field, and pressed only while that field still has focus. Escape is offered only while a menu, popover or suggestion list is expanded, and pressed once automatically when a popup covers the chosen target (then a blur and a synthetic outside press, for lists that ignore Escape).
 - Every input re-checks the page for freshness and for covered targets first (from jev-ultrafast).
 - Page text is treated as untrusted data in every instruction.
+- **Hosts:** `allowed_hosts` / `blocked_hosts` (CLI `--allowed-hosts`, `--blocked-hosts`; server-wide `JEV_ALLOWED_HOSTS`, `JEV_BLOCKED_HOSTS`) take exact hosts or `*.example.com` (subdomains only, not `example.com`). A call can only narrow the server's lists, and a later call only the session's. A start URL outside is never opened; the page URL is checked before every decision and after every step, and leaving ends the run `blocked` naming the host. The run never navigates back. `about:blank` and Chrome error pages always pass; `data:`, `file:` and other host-less pages are outside an allowed list. Only the top page's URL is checked: iframes, popup tabs and the page's own requests are not.
 
 ## Verify
 

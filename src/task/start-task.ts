@@ -2,6 +2,7 @@ import { connectChrome, type BrowserSource, type ChromeHandle } from '../browser
 import { Tab } from '../browser/tab.ts';
 import { createAsk, profileOptions, resolveModel } from '../jev/model.ts';
 import { JourneySession, type JourneyOptions } from '../journeys/journey-session.ts';
+import { hostsFromEnv, narrowHosts, outsideHosts } from './hosts.ts';
 import { BrowserTask, type TaskOptions } from './run-task.ts';
 
 export interface StartOptions extends TaskOptions {
@@ -13,6 +14,9 @@ export interface StartOptions extends TaskOptions {
   confirmIrreversible?: boolean;
   /** With `confirmIrreversible`: the user's own words that name what the click acts on; the page must show them. */
   confirmTarget?: string;
+  /** Hosts this session may be on, inside the server's `JEV_ALLOWED_HOSTS`; and hosts it must never be on, besides `JEV_BLOCKED_HOSTS`. */
+  allowedHosts?: string[];
+  blockedHosts?: string[];
 }
 
 /**
@@ -31,13 +35,18 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
   const browser = () => (chrome ??= connectChrome(source));
 
   return {
-    async start({ url, tab, confirmIrreversible, confirmTarget, ...options }: StartOptions) {
+    async start({ url, tab, confirmIrreversible, confirmTarget, allowedHosts, blockedHosts, ...options }: StartOptions) {
+      // The server's lists, narrowed by the call; a start URL outside them is never opened.
+      const hosts = narrowHosts(hostsFromEnv(), { allowed: allowedHosts, blocked: blockedHosts });
+      const outside = url ? outsideHosts(url, hosts) : undefined;
+      if (outside) throw new Error(`Not opened: ${outside}`);
       const { cdp } = await browser();
       if (!url && !tab) throw new Error('Pass `url` to open a new tab or `tab` to reuse an open one.');
       const page = url ? await Tab.open(cdp, url) : await Tab.find(cdp, tab!);
       const task = new BrowserTask(page, ask, {
         ...profileOptions(profile),
         ...definedOnly(options),
+        hosts,
         screenshots: options.screenshots ?? screenshots,
       });
       task.update({ confirmIrreversible, confirmTarget });

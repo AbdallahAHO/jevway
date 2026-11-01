@@ -4,6 +4,7 @@ import { buildActionSpace } from '../jev/action-space.ts';
 import { centerOf, contains } from '../jev/box.ts';
 import { decide, foldedFavourite, overflowFolds, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
 import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
+import { ANY_HOST, narrowHosts, outsideHosts, type HostRules } from './hosts.ts';
 import { Recording } from './recording.ts';
 import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
 
@@ -43,6 +44,8 @@ export interface TaskOptions {
   changeWaitMs?: number;
   /** Save a sharp screenshot before every action, plus the final page and an index.html viewer, here. */
   recordDir?: string;
+  /** Hosts the run may be on (see hosts.ts): checked before every decision and after every step; leaving ends it `blocked`. */
+  hosts?: HostRules;
 }
 
 export type TaskStatus = 'done' | 'needs_input' | 'needs_confirmation' | 'uncertain' | 'blocked' | 'step_budget';
@@ -98,6 +101,7 @@ const DEFAULTS = {
   box: false,
   allowCoordinateClicks: false,
   changeWaitMs: 1500,
+  hosts: ANY_HOST,
 };
 // How often a page that has not reacted yet is looked at again while waiting for it to change.
 const CHANGE_POLL_MS = 150;
@@ -246,12 +250,16 @@ export class BrowserTask {
     return this.#tab;
   }
 
-  /** Merge new values, a new goal, or a one-time confirmation for the next irreversible click. */
-  update(patch: Partial<TaskOptions> & { confirmIrreversible?: boolean; confirmTarget?: string }) {
-    const { confirmIrreversible, confirmTarget, values, recordDir: _recordDir, ...options } = patch;
+  /** Merge new values, a new goal, narrower hosts (a widening list throws), or a one-time confirmation for the next irreversible click. */
+  update(
+    patch: Partial<Omit<TaskOptions, 'hosts'>> & { confirmIrreversible?: boolean; confirmTarget?: string; allowedHosts?: string[]; blockedHosts?: string[] },
+  ) {
+    const { confirmIrreversible, confirmTarget, values, recordDir: _recordDir, allowedHosts, blockedHosts, ...options } = patch;
+    // First, so a list that would widen the hosts throws before anything else changes.
+    const hosts = narrowHosts(this.#options.hosts, { allowed: allowedHosts, blocked: blockedHosts });
     // A new goal may be to flip back what the old one flipped.
     if (options.goal !== undefined && options.goal !== this.#options.goal) this.#toggled.clear();
-    this.#options = { ...this.#options, ...definedOnly(options), values: { ...this.#options.values, ...values } };
+    this.#options = { ...this.#options, ...definedOnly(options), hosts, values: { ...this.#options.values, ...values } };
     if (!confirmIrreversible) return;
     // A confirmation answers the question jev-browse asked, so a flag carried onto a later call allows nothing (an unused earlier one stands).
     if (this.#lastStatus === undefined || this.#lastStatus === 'needs_confirmation') {
@@ -276,7 +284,7 @@ export class BrowserTask {
     this.#tab.want(Object.values(this.#options.values));
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
-    const { maxSteps, maxSeconds, values, doneWhen, screenshots } = this.#options;
+    const { maxSteps, maxSeconds, values, doneWhen, screenshots, hosts } = this.#options;
     // `stop` reads the page, so it needs a stand-in until the first observe succeeds.
     let page: PageState = BLANK_PAGE;
     let executed = 0;
@@ -363,6 +371,9 @@ export class BrowserTask {
       while (executed < maxSteps) {
         const halt = limit.stopped();
         if (halt) return stop(halt.status, halt.reason);
+        // Never a decision on a page outside the hosts: a start page, a redirect or a late navigation that left them ends the run.
+        const outside = outsideHosts(page.url, hosts);
+        if (outside) return stop('blocked', `Left the allowed hosts: ${outside}; the run stopped without going back`);
         // The arm belongs to one step: a click that never reached the page leaves none for the next decision.
         this.#tab.disarmConfirm();
         if (++decisions > maxSteps * 2) return stop('step_budget', `Made ${maxSteps * 2} decisions without finishing`);
@@ -667,6 +678,9 @@ export class BrowserTask {
           page_changed: page.fingerprint !== before,
           confidence,
         });
+        // A click can leave the site as surely as a navigation: nothing else runs on a page outside the hosts (no guard, look or Escape).
+        const left = outsideHosts(page.url, hosts);
+        if (left) return stop('blocked', `After "${element}" the page left the allowed hosts: ${left}; the run stopped without going back`, decision);
         this.#unsavedEdit = isUnsavedEdit(decision.operation, action, page) ? { noted: false, label: action.label } : undefined;
         if (decision.operation === 'CLICK') this.#recordToggle(action, pathBefore, page);
         // ...and what the page said right after it.
