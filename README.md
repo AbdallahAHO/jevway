@@ -15,38 +15,75 @@ Built on the loop, DOM snapshot, and guards from [browser-use/jev-ultrafast](htt
 
 ## Install into any agent
 
-Build once:
+**Claude Code plugin** (the MCP server and the skill in one install), inside Claude Code:
+
+```text
+/plugin marketplace add AbdallahAHO/jevway
+/plugin install jevway@jevway
+```
+
+On Claude Code 2.1.275 or later this works in one step: `/plugin install jevway --marketplace AbdallahAHO/jevway`.
+
+**Or the MCP server alone**, one line per client:
 
 ```bash
-pnpm install && pnpm build
+claude mcp add jevway -s user -- npx -y -p jevway jevway-mcp   # Claude Code
+codex mcp add jevway -- npx -y -p jevway jevway-mcp            # Codex
 ```
 
-MCP config (Claude Code, Codex, Cursor, OpenCode, Gemini: any stdio MCP client):
+Cursor (`~/.cursor/mcp.json`, under `mcpServers`), or any other stdio MCP client:
 
 ```json
-{
-  "jevway": {
-    "command": "node",
-    "args": ["/absolute/path/to/jevway/dist/mcp.js"],
-    "env": { "TYPESAFE_API_KEY": "…", "JEVWAY_BROWSER": "auto" }
-  }
-}
+"jevway": { "command": "npx", "args": ["-y", "-p", "jevway", "jevway-mcp"] }
 ```
 
-Once the package is published, replace `command`/`args` with `npx -y jevway-mcp`.
+OpenCode (`opencode.json`, under `mcp`):
 
-`JEVWAY_BROWSER` selects the browser:
+```json
+"jevway": { "type": "local", "command": ["npx", "-y", "-p", "jevway", "jevway-mcp"], "enabled": true }
+```
+
+**The key** goes in `~/.config/jevway/env` (`$XDG_CONFIG_HOME/jevway/env` when that is set), so it never has to go
+into a chat or a synced client config:
+
+```bash
+mkdir -p ~/.config/jevway && touch ~/.config/jevway/env && chmod 600 ~/.config/jevway/env
+# then add the line TYPESAFE_API_KEY=… (or OPENROUTER_API_KEY=…) in an editor
+```
+
+- `jevway` and `jevway-mcp` read the file at start. A variable already in the environment wins, so a client's `env`
+  block works too.
+- Some clients pass servers a filtered environment; the file still works there.
+- Without a key the server still starts and lists its tools: `jevway_look` works, and the other tools answer with the fix.
+
+**Check the setup:**
+
+```bash
+npx -y jevway doctor          # Node, key and route, browser, ffmpeg; exit 0 when ready; never prints the key
+npx -y jevway doctor --plan   # the steps still missing, numbered
+npx -y jevway doctor --live   # plus one real Jev request (a fraction of a cent)
+```
+
+Installing through an agent? Point it at [INSTALL-FOR-AGENTS.md](INSTALL-FOR-AGENTS.md): rules (a diff before any
+config edit, no key in the chat, no relaunching a browser it didn't start), steps per client, and checks.
+
+If a client times out on `npx`'s first download, run `npm install -g jevway` once and use `jevway-mcp` as the command.
+
+`JEVWAY_BROWSER` (the server's `env`, or the env file) selects the browser:
 
 - `auto` (default): your running Chrome, after you allow it at `chrome://inspect/#remote-debugging`. This is the same Chrome `chrome-devtools-mcp --auto-connect` uses, so Jev's tab is visible to chrome-devtools.
 - `launch` or `launch-headless`: a throwaway profile.
 - `http://127.0.0.1:9222`: an explicit debugging port.
 
-Optionally copy `skill/jevway/` into your agent's skills so it knows when to use Jev and when to use chrome-devtools.
+Outside the Claude Code plugin, copy `skill/jevway/` (in the repository, or `node_modules/jevway/skill/jevway/`) into
+your agent's skills, so it knows when to use Jev and when to use chrome-devtools.
+
+From a checkout: `pnpm install && pnpm build`, then `node /absolute/path/to/jevway/dist/mcp.js` as the command.
 
 For agents without MCP, use the CLI:
 
 ```bash
-TYPESAFE_API_KEY=… node dist/cli.js --browser launch-headless \
+npx -y jevway --browser launch-headless \
   --url https://en.wikipedia.org/wiki/Main_Page \
   --goal "Open the Wikipedia article about the Rosetta Stone" \
   --values '{"search_query":"Rosetta Stone"}' \
