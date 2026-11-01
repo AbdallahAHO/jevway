@@ -4912,3 +4912,19 @@ describe('a confirmation and a host list follow the run onto a tab it opened', (
     expect(popup.acted).toEqual([]);
   });
 });
+
+describe("the call's stop signal and its tabs", () => {
+  it('lends the signal to the tab in use while the call runs, and takes it back after', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'DONE', done_check: 0.95 }]);
+    const { tab, asTab } = fakeTab([page(), page({ fingerprint: 'b' })]);
+    let during: unknown;
+    const act = tab.act;
+    tab.act = async (...args: Parameters<typeof act>) => {
+      during = (tab as { stopSignal?: AbortSignal }).stopSignal;
+      return act(...args);
+    };
+    await new BrowserTask(asTab, ask, { goal: 'Open', doneWhen: 'x', changeWaitMs: 0 }).run();
+    expect(during).toBeInstanceOf(AbortSignal);
+    expect((tab as { stopSignal?: AbortSignal }).stopSignal).toBeUndefined();
+  });
+});

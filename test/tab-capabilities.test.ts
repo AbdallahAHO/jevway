@@ -137,3 +137,69 @@ describe('an upload', () => {
     expect(calls.find((call) => call.method === 'DOM.setFileInputFiles')?.params).toEqual({ files: ['/Users/ada/avatar.png'], objectId: 'OBJ-80' });
   });
 });
+
+describe("the run's stop signal ends a tab's waits, never an input", () => {
+  /** fakeCdp, with `answer` taking first say over each call; undefined falls through to fakeCdp. */
+  const answering = (answer: (method: string, params: any) => unknown, options: { offsets?: number[] } = {}) => {
+    const fake = fakeCdp(options);
+    const send = fake.cdp.send.bind(fake.cdp);
+    (fake.cdp as any).send = async (method: string, params: any = {}, sessionId?: string) => {
+      const answered = answer(method, params);
+      if (answered === undefined) return send(method, params, sessionId);
+      fake.calls.push({ method, params, sessionId });
+      return answered;
+    };
+    return fake;
+  };
+  const abortIn = (ms: number) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+  };
+  const timed = async <T>(work: () => Promise<T>) => {
+    const started = performance.now();
+    const value = await work();
+    return { value, ms: performance.now() - started };
+  };
+
+  it("stops waiting for a followed tab's address and load", async () => {
+    // A popup that stays on about:blank and never finishes loading: 3 s for its URL, then 15 s for its load.
+    const { cdp } = answering((method, params) => {
+      if (method !== 'Runtime.evaluate') return undefined;
+      if (params.expression === 'location.href') return { result: { value: 'about:blank' } };
+      if (params.expression === 'document.readyState') return { result: { value: 'loading' } };
+      return undefined;
+    });
+    const opener = await Tab.attach(cdp, 'T1');
+    opener.stopSignal = abortIn(50);
+    const { value: next, ms } = await timed(() => opener.follow('T2'));
+    expect(next.targetId).toBe('T2');
+    expect(ms).toBeLessThan(1000);
+  });
+
+  it('stops polling a scroll that keeps moving, after the wheel went out, and says how far it got', async () => {
+    const { cdp, calls } = fakeCdp({ offsets: Array.from({ length: 60 }, (_, i) => i * 10) });
+    const tab = await Tab.attach(cdp, 'T1');
+    tab.stopSignal = abortIn(120);
+    const { value: outcome, ms } = await timed(() => tab.act({ id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: 560 }, PAGE));
+    expect(wheelsIn(calls)).toHaveLength(1);
+    expect(ms).toBeLessThan(700);
+    expect((outcome as { scrolled?: number }).scrolled).toBeGreaterThan(0);
+  });
+
+  it('stops reading a frame that does not answer', async () => {
+    const state = { url: 'http://fixture/', title: 'Fixture', text: 'Hello', w: 1120, h: 780, actions: [], marker: 'M', page_key: 'K', guards: {}, omitted_actions: 0 };
+    const { cdp } = answering((method, params) => {
+      if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'MAIN' }, childFrames: [{ frame: { id: 'F1', url: 'http://ads.example/' } }] } };
+      // The frame's owner is never found: its read hangs until the frame cap.
+      if (method === 'DOM.getFrameOwner') return new Promise(() => undefined);
+      if (method === 'Runtime.evaluate' && String(params.expression).includes('__jevWanted')) return { result: { value: state } };
+      return undefined;
+    });
+    const tab = await Tab.attach(cdp, 'T1');
+    tab.stopSignal = abortIn(50);
+    const { value: page, ms } = await timed(() => tab.observe());
+    expect(page.text).toBe('Hello');
+    expect(ms).toBeLessThan(1000);
+  });
+});
