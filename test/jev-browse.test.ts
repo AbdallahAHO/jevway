@@ -4020,3 +4020,71 @@ describe('a run stays on the allowed hosts and off the blocked ones', () => {
     });
   });
 });
+
+describe('a bot wall', () => {
+  // npm's Cloudflare challenge as headless Chrome saw it: nothing on it to act on but a wait.
+  const wallPage = (fingerprint = 'wall') =>
+    page({
+      url: 'https://www.npmjs.com/',
+      title: 'Just a moment...',
+      text: 'www.npmjs.com\nPerforming security verification\nThis website uses a security service to protect against malicious bots. This page is displayed while the website verifies you are not a bot.\nRay ID:\na4c627515b445548\nPerformance and Security by\nCloudflare\nPrivacy',
+      actions: [{ id: 'wait', kind: 'wait', label: 'Wait for the page to update' }],
+      fingerprint,
+    });
+  const realPage = (fingerprint = 'real') => page({ url: 'https://www.npmjs.com/package/zod', title: 'zod - npm', text: 'zod\nTypeScript-first schema validation', fingerprint });
+
+  it('ends the run blocked, naming the wall, without spending a decision on it', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'WAIT' }]);
+    const { asTab, acted } = fakeTab([wallPage()]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open zod', doneWhen: 'x', changeWaitMs: 0, wallWaitMs: 0 }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain('Cloudflare bot check');
+    expect(summary.reason).toContain('jev-browse never tries to get past one');
+    expect(summary.page_text).toContain('Performing security verification');
+    expect(requests).toHaveLength(0);
+    expect(acted).toEqual([]);
+  });
+
+  it('waits out a check that clears by itself, then goes on without having asked Jev about it', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
+    const { asTab } = fakeTab([wallPage('w1'), wallPage('w2'), realPage()]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open zod', doneWhen: 'x', changeWaitMs: 0, wallWaitMs: 5000 }).run();
+    expect(summary.status).toBe('done');
+    expect(summary.title).toBe('zod - npm');
+    expect(requests).toHaveLength(1);
+    expect(JSON.stringify(requests[0])).not.toContain('Performing security verification');
+  });
+
+  it('never ends done on a page that turned into a check while Jev decided', async () => {
+    const { ask } = scriptedJev([{ operation: 'DONE', done_check: 0.95 }]);
+    const { tab, asTab } = fakeTab([realPage(), wallPage()]);
+    tab.fresh = async () => false;
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open zod', doneWhen: 'x', changeWaitMs: 0, wallWaitMs: 0 }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain('Cloudflare bot check');
+    expect(summary.title).toBe('Just a moment...');
+  });
+
+  it('does not wait out a check a second time when it comes back in the same call', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
+    const { asTab } = fakeTab([wallPage('w1'), realPage(), wallPage('w2')]);
+    const started = performance.now();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open zod', doneWhen: 'x', changeWaitMs: 0, wallWaitMs: 1000 }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain('Cloudflare bot check');
+    expect(requests).toHaveLength(1);
+    expect(performance.now() - started).toBeLessThan(1500);
+  });
+
+  it('runs a page that only discusses captchas as any other page', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
+    const thread = page({
+      title: 'Ask HN: Are captchas still worth it? | Hacker News',
+      text: 'Ask HN: Are captchas still worth it?\nWe dropped Google Captcha v3. The "I am not a robot" checkbox costs more signups than the bots it stops; verify you are human pages punish VPN users.',
+    });
+    const { asTab } = fakeTab([thread]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open the thread', doneWhen: 'x', changeWaitMs: 0, wallWaitMs: 0 }).run();
+    expect(summary.status).toBe('done');
+    expect(requests).toHaveLength(1);
+  });
+});
