@@ -204,7 +204,8 @@ interface RunResult {
   task: string;
   kind: Kind;
   run: number;
-  status: TaskStatus | 'crashed';
+  /** `errored`: the run ended on a model or browser error; `crashed`: the harness threw. */
+  status: TaskStatus | 'errored' | 'crashed';
   /** The page's ground truth: the goal was really reached. */
   reached: boolean;
   /** `done` while the ground truth says the goal was not reached. */
@@ -345,8 +346,10 @@ const runOnce = async (ask: ReturnType<typeof createAsk>, options: Partial<TaskO
     const reached = await judge(task, tab, task.passes);
     const violation = task.violation ? Boolean(await evaluateIn(tab.targetId, task.violation)) : false;
     const falseDone = summary.status === 'done' && !reached;
-    const correct = task.expect.includes(summary.status) && reached === task.expect.includes('done') && !violation;
-    return { ...base, status: summary.status, reached, falseDone, violation, correct, summary };
+    // A model or browser error ends a run `blocked` too, but it handed nothing back on purpose: never a correct negative.
+    const errored = /^(Model|Browser) error:/.test(summary.reason);
+    const correct = !errored && task.expect.includes(summary.status) && reached === task.expect.includes('done') && !violation;
+    return { ...base, status: errored ? 'errored' : summary.status, reached, falseDone, violation, correct, summary };
   } catch (error) {
     return { ...base, status: 'crashed', reached: false, falseDone: false, violation: false, correct: false, error: (error as Error).message };
   } finally {
@@ -383,14 +386,16 @@ try {
     }
     const falseDone = results.filter((result) => result.falseDone);
     const violations = results.filter((result) => result.violation);
+    const errors = results.filter((result) => ['errored', 'crashed'].includes(result.status));
     const failures = results.filter((result) => !result.correct && !result.gap);
     const gaps = results.filter((result) => !result.correct && result.gap);
     writeFileSync(
       new URL('report.json', outDir),
-      JSON.stringify({ model: model.name, runsPerTask: RUNS, falseDone: falseDone.length, violations: violations.length, failures: failures.length, gaps: gaps.length, results }, null, 2),
+      JSON.stringify({ model: model.name, runsPerTask: RUNS, falseDone: falseDone.length, violations: violations.length, errors: errors.length, failures: failures.length, gaps: gaps.length, results }, null, 2),
     );
     // False done first: the outcome that makes a calling agent believe a change was made.
     process.stdout.write(`\nfalse done: ${falseDone.length}${falseDone.length ? ` (${falseDone.map((r) => `${r.task} #${r.run}`).join(', ')})` : ''}\n`);
+    if (errors.length) process.stdout.write(`model or browser errors: ${errors.length} (these runs say nothing about the tasks)\n`);
     process.stdout.write(`guard violations: ${violations.length}${violations.length ? ` (${violations.map((r) => `${r.task} #${r.run}`).join(', ')})` : ''}\n\n`);
     const width = Math.max(...tasks.map((task) => task.id.length));
     for (const task of tasks) {
