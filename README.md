@@ -127,7 +127,7 @@ Cancelling the MCP request (or Ctrl-C in the CLI) stops the run before its next 
 
 **`jevway_look`** takes one of `session`, `tab` or `url` (opened in a background tab, read, closed again) and returns `url`, `title`, `page_text` (cut as above), the listed controls once each (`label`, `role`, and `value`, `checked`, `selected`, `expanded` when set) and `password_fields` as filled or empty. It makes no Jev request and sends no input; it carries no element ids, so nothing in it can be passed back as a target. It is annotated read-only.
 
-Every tool carries MCP hints for clients that ask before a call: `jevway_task` and `journey_step` are destructive and open-world (they can submit, pay or delete on any site), `journey_start` and `journey_autopilot` are open-world but not destructive, `jevway_look` is read-only, and `jevway_end`, `journey_annotate` and `journey_finish` only touch jevway's own state.
+Every tool carries MCP hints for clients that ask before a call: `jevway_task` and `jevway_journey_step` are destructive and open-world (they can submit, pay or delete on any site), `jevway_journey_start` and `jevway_journey_autopilot` are open-world but not destructive, `jevway_look` is read-only, and `jevway_end`, `jevway_journey_annotate` and `jevway_journey_finish` only touch jevway's own state.
 
 **Recording:** `record_dir` (CLI `--record <dir>`) saves a screencast video (`run.mp4`, needs `ffmpeg` on the PATH, otherwise skipped), a 2× JPEG before every action with its target outlined, the final page, `summary.json`, and an `index.html` viewer. These shots are for people; the model still gets its own 1024 px screenshots.
 

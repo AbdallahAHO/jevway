@@ -33,8 +33,8 @@ the commands, the server, its tools, its environment and its skill.
 - The model keeps its name: "Jev", "TypeSafe Jev", model ids like `jev-1.14.0` and `typesafe/jev-1.14`, and code names
   like `jevVerify` or `__jevFast` are not the product and do not change. Neither do the vendor keys
   `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY`.
-- The journey tools (`journey_start`, `journey_step`, `journey_autopilot`, `journey_annotate`, `journey_finish`) keep
-  their names: the mapping below covers the three task tools only.
+- The journey tools take the prefix too (`journey_start` → `jevway_journey_start`, and the same for `_step`,
+  `_autopilot`, `_annotate` and `_finish`), so every tool the server lists starts with `jevway_`.
 - History stays as written: old `plans/NNN-*.md`, `plans/LOG.md` and the round history in `plans/README.md` keep the
   names they were written with. So do saved reports under `verify/out/`; the report renderer still reads their old
   suite titles ("… jobs with jev-browse").
@@ -51,6 +51,7 @@ the commands, the server, its tools, its environment and its skill.
 | Tool | `browser_task` | `jevway_task` |
 | Tool | `browser_look` | `jevway_look` |
 | Tool | `browser_task_end` | `jevway_end` |
+| Journey tools | `journey_start`, `journey_step`, `journey_autopilot`, `journey_annotate`, `journey_finish` | `jevway_journey_start`, `jevway_journey_step`, `jevway_journey_autopilot`, `jevway_journey_annotate`, `jevway_journey_finish` |
 | Claude Code tool ids (`verify:agent`) | `mcp__jev-browse__browser_task`, … | `mcp__jevway__jevway_task`, … |
 | Environment | `JEV_*` (e.g. `JEV_BROWSER`, `JEV_MODEL`, `JEV_ALLOWED_HOSTS`, `JEV_FORGEJO_RUNS`) | `JEVWAY_*` (`JEVWAY_BROWSER`, `JEVWAY_MODEL`, `JEVWAY_ALLOWED_HOSTS`, `JEVWAY_FORGEJO_RUNS`) |
 | Suite knobs built by `verify/jobs/runner.ts` | `JEV_<NAME>_RUNS`, `_ONLY`, `_DEVICE`, `_PHRASING` | `JEVWAY_<NAME>_…` |
@@ -118,7 +119,7 @@ Lowercase conventional commits. **No AI attribution of any kind.** Do NOT push. 
 ## Done criteria
 
 - [ ] `pnpm typecheck`, `pnpm test`, `pnpm build` exit 0 on every commit (build at the end)
-- [ ] `tools/list` lists `jevway_task`, `jevway_look`, `jevway_end` (and the five journey tools), no `browser_*`
+- [ ] `tools/list` lists `jevway_task`, `jevway_look`, `jevway_end` and the five `jevway_journey_*` tools, no `browser_*` or bare `journey_*`
 - [ ] `node dist/cli.js --help` says jevway; `npm pack --dry-run` shows `jevway@0.1.0` with `skill/jevway/SKILL.md`
 - [ ] `rg -n "jev-browse|browser_task|browser_look|JEV_" -g '!plans/**' -g '!verify/out/**'` returns only: the
   README's "formerly jev-browse" line, the report parser's old-title alternative, and other projects' names containing

@@ -59,7 +59,7 @@ const APP_URL = `${ORIGIN}/${ADA.username}/app`;
 const TASK_TOOL = 'mcp__jevway__jevway_task';
 const END_TOOL = 'mcp__jevway__jevway_end';
 const LOOK_TOOL = 'mcp__jevway__jevway_look';
-const JOURNEY_TOOLS = ['start', 'step', 'autopilot', 'annotate', 'finish'].map((name) => `mcp__jevway__journey_${name}`);
+const JOURNEY_TOOLS = ['start', 'step', 'autopilot', 'annotate', 'finish'].map((name) => `mcp__jevway__jevway_journey_${name}`);
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 

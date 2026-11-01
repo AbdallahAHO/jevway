@@ -221,7 +221,7 @@ await scenario('finish: journey.json flows, every screenshot on disk, viewer ren
 await chrome.close();
 
 // ── The same loop over MCP stdio ────────────────────────────────────────────────────────────
-await scenario('MCP: journey_start (image block) → journey_autopilot → journey_annotate → journey_finish', async () => {
+await scenario('MCP: jevway_journey_start (image block) → jevway_journey_autopilot → jevway_journey_annotate → jevway_journey_finish', async () => {
   const client = new Client({ name: 'journey-verify', version: '0.0.0' });
   await client.connect(
     new StdioClientTransport({
@@ -236,23 +236,23 @@ await scenario('MCP: journey_start (image block) → journey_autopilot → journ
   );
   try {
     const { tools } = await client.listTools();
-    for (const name of ['journey_start', 'journey_step', 'journey_autopilot', 'journey_annotate', 'journey_finish']) {
+    for (const name of ['jevway_journey_start', 'jevway_journey_step', 'jevway_journey_autopilot', 'jevway_journey_annotate', 'jevway_journey_finish']) {
       assert.ok(
         tools.some((tool) => tool.name === name),
         `${name} not listed`,
       );
     }
-    const started: any = await client.callTool({ name: 'journey_start', arguments: { url: fixtureUrl } });
+    const started: any = await client.callTool({ name: 'jevway_journey_start', arguments: { url: fixtureUrl } });
     assert.ok(!started.isError, started.content[0].text);
     assert.equal(started.content[1].type, 'image');
     const { journey: id } = JSON.parse(started.content[0].text);
     const explored: any = await client.callTool({
-      name: 'journey_autopilot',
+      name: 'jevway_journey_autopilot',
       arguments: { journey: id, screens: 2, flow: 'Explore' },
     });
     assert.ok(!explored.isError, explored.content[0].text);
     const annotated: any = await client.callTool({
-      name: 'journey_annotate',
+      name: 'jevway_journey_annotate',
       arguments: {
         journey: id,
         screen: 's01',
@@ -261,7 +261,7 @@ await scenario('MCP: journey_start (image block) → journey_autopilot → journ
       },
     });
     assert.ok(!annotated.isError, annotated.content[0].text);
-    const finished: any = await client.callTool({ name: 'journey_finish', arguments: { journey: id } });
+    const finished: any = await client.callTool({ name: 'jevway_journey_finish', arguments: { journey: id } });
     const summary = JSON.parse(finished.content[0].text);
     assert.ok(summary.screens >= 3 && existsSync(summary.viewer), finished.content[0].text);
     return `${summary.screens} screens, flows ${summary.flows.map((f: any) => f.name).join(', ')}`;

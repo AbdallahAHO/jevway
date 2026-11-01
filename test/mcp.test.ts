@@ -58,11 +58,11 @@ describe('tools/list', () => {
       jevway_task: expect.objectContaining({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }),
       jevway_end: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }),
       jevway_look: expect.objectContaining({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }),
-      journey_start: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }),
-      journey_step: expect.objectContaining({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }),
-      journey_autopilot: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }),
-      journey_annotate: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }),
-      journey_finish: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }),
+      jevway_journey_start: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }),
+      jevway_journey_step: expect.objectContaining({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }),
+      jevway_journey_autopilot: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }),
+      jevway_journey_annotate: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }),
+      jevway_journey_finish: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }),
     });
   });
 });

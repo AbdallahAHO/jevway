@@ -261,7 +261,7 @@ const findJourney = (id: string) => {
 };
 
 server.registerTool(
-  'journey_start',
+  'jevway_journey_start',
   {
     title: 'Start mapping mobile user journeys',
     // Opens a tab on any URL; taps nothing.
@@ -272,8 +272,8 @@ and QA-checked (console errors, failed requests, horizontal overflow, tap target
 Returns the first screen: report JSON + a screenshot image. Output folder: journey.json, screens/*.png, index.html viewer.
 
 Loop: look at the screenshot and report, optionally inspect with chrome-devtools (same Chrome), then
-journey_step (you choose, and describe what you saw) or journey_autopilot (Jev explores N screens and checks back).
-Finish with journey_finish. Use made-up data for any typing; stop at login, payment, and send steps.`,
+jevway_journey_step (you choose, and describe what you saw) or jevway_journey_autopilot (Jev explores N screens and checks back).
+Finish with jevway_journey_finish. Use made-up data for any typing; stop at login, payment, and send steps.`,
     inputSchema: {
       url: z.string().url(),
       device: z.enum(['iphone-15', 'pixel-8', 'laptop', 'desktop']).optional(),
@@ -310,13 +310,13 @@ Finish with journey_finish. Use made-up data for any typing; stop at login, paym
       journeys.set(id, journey);
       return journeyReply(id, journey, journey.report());
     } catch (error) {
-      return journeyError('journey_start', error);
+      return journeyError('jevway_journey_start', error);
     }
   },
 );
 
 server.registerTool(
-  'journey_step',
+  'jevway_journey_step',
   {
     title: 'Take the next journey step',
     // Taps whatever the caller names, a submit included.
@@ -338,13 +338,13 @@ Pass value to type into a text field. Pass flow (e.g. "Homes/Searching homes"; i
       const journey = findJourney(id);
       return journeyReply(id, journey, await journey.step(input));
     } catch (error) {
-      return journeyError('journey_step', error);
+      return journeyError('jevway_journey_step', error);
     }
   },
 );
 
 server.registerTool(
-  'journey_autopilot',
+  'jevway_journey_autopilot',
   {
     title: 'Let Jev explore the journey',
     // Taps on the site, but skips irreversible taps and stops at auth walls.
@@ -352,7 +352,7 @@ server.registerTool(
     description: `With an intent, Jev keeps going until the intent is reached, it hits a stop condition, or it runs out of untried taps (no move limit). Without an intent, it checks back after \`screens\` new screens. The result includes a per-move log.
 It skips tried taps and off-site links, backs out of explored screens, skips irreversible taps while exploring, and stops at auth walls
 (or at the irreversible step / when the intent is reached if an intent is set). Steps are recorded under \`flow\`.
-Afterwards, describe the discovered screens with journey_annotate (look at their screenshot files).`,
+Afterwards, describe the discovered screens with jevway_journey_annotate (look at their screenshot files).`,
     inputSchema: {
       journey: z.string(),
       screens: z.number().int().positive().max(30).optional(),
@@ -365,13 +365,13 @@ Afterwards, describe the discovered screens with journey_annotate (look at their
       const journey = findJourney(id);
       return journeyReply(id, journey, await journey.autopilot({ screens, flow, intent }));
     } catch (error) {
-      return journeyError('journey_autopilot', error);
+      return journeyError('jevway_journey_autopilot', error);
     }
   },
 );
 
 server.registerTool(
-  'journey_annotate',
+  'jevway_journey_annotate',
   {
     title: 'Describe a journey screen or regroup steps',
     // Edits the local journey record only.
@@ -395,13 +395,13 @@ server.registerTool(
       );
       return { content: [{ type: 'text' as const, text: `Annotated ${screen}.` }] };
     } catch (error) {
-      return journeyError('journey_annotate', error);
+      return journeyError('jevway_journey_annotate', error);
     }
   },
 );
 
 server.registerTool(
-  'journey_finish',
+  'jevway_journey_finish',
   {
     title: 'Finish the journey map',
     // Writes the local journey files and closes the tab.
@@ -416,7 +416,7 @@ server.registerTool(
       journeys.delete(id);
       return { content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 1) }] };
     } catch (error) {
-      return journeyError('journey_finish', error);
+      return journeyError('jevway_journey_finish', error);
     }
   },
 );
