@@ -5168,3 +5168,18 @@ describe('a page error quoted in a hand-back never carries a secret', () => {
     expect(leaks(summary.reason, summary, requests, task.trace)).toEqual([false, false, false, false]);
   });
 });
+
+describe('a dialog message is scrubbed before it is cut', () => {
+  const LONG = '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';
+
+  it('keeps a secret the page puts in an alert out of history and requests, though the note cuts it at 200', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'BLOCKED' }]);
+    const { tab, asTab } = fakeTab([page({ fingerprint: 'a' }), page({ fingerprint: 'b' })]);
+    // The 200-character cut lands inside the secret as the alert shows it.
+    tab.dialogOnAct = { type: 'alert', message: `${'Your token is ready to copy now. '.repeat(5)}${LONG}`, accepted: true };
+    const task = new BrowserTask(asTab, ask, { goal: 'Show my token', values: { token: LONG }, secretKeys: ['token'], changeWaitMs: 0 });
+    const summary = await task.run();
+    expect(summary.steps[0].element).toContain('Your token is ready to copy now.');
+    for (const output of [summary, requests, task.trace]) expect(JSON.stringify(output)).not.toContain(LONG.slice(0, 20));
+  });
+});
