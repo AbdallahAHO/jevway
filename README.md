@@ -95,10 +95,12 @@ Every model judges commit risk **per click candidate by name**, in one follow-up
 { "session": "be63210d", "status": "needs_input", "reason": "Blocked: no supplied value for \"Email address\"",
   "url": "…", "title": "…", "page_text": "…", "elapsed_ms": 899,
   "steps": [{ "operation": "TYPE_TEXT", "element": "Full name", "value_key": "full_name", "page_changed": true, "confidence": 0.9 }],
-  "jev": { "requests": 3, "input_tokens": 7534, "median_latency_ms": 284 },
+  "jev": { "requests": 3, "input_tokens": 7534, "median_latency_ms": 284, "screenshots": 0, "model": "jev-1.14.0", "est_cost_usd": 0.000316 },
   "stuck": { "operation": "BLOCKED", "candidates": [] },
   "missing": [{ "label": "Email address", "role": "textbox", "path": "/stays" }] }
 ```
+
+`jev.model` is the model id the requests went to. `jev.est_cost_usd` estimates the call's cost from its input tokens (every request, Box and the done's evidence request included) at the model's published rate, rounded to 6 decimals: Jev on the TypeSafe API is priced at $0.042 per 1M input tokens (output is free); a model with no rate written down, Jev through OpenRouter included, gets `null`. It is an estimate, not billing.
 
 `secret_keys` names the keys of `values` that are secrets (an API token, a one-time code). Jev sees `[secret:<key>]` in place of such a value and never reads it; it is typed as given, and wherever the page echoes it, `page_text`, `steps`, reasons, traces and `record_dir`'s `summary.json` and `index.html` show the marker instead. Recorded screenshots and video are pixels of the page and are not masked. Mark only real secrets: every occurrence of the value is replaced, even inside other words.
 
@@ -155,7 +157,7 @@ pnpm report:render verify/out/<folder>   # rebuild a jobs suite's report.html fr
 
 `pnpm verify:real` runs Wikipedia, MDN, GitHub, Hacker News, npm, Booking.com and Google Flights. Every task stops before login or payment, passes are checked against the final URL, and bot walls (Cloudflare, captchas) are reported apart from failures, judged by the same detector the run uses (`src/browser/bot-wall.ts`).
 
-Traces go to `verify/out/`. A jobs suite's `report.html` opens on an overview of its jobs, each with its featured run's step shots; a job's view starts with the run's video, its steps on a timeline and a strip that follow the video, every run one click away, then what Jev was given and how the run was judged. Results are in [docs/verification.md](docs/verification.md).
+Traces go to `verify/out/`. A jobs suite's `report.html` opens on an overview of its jobs, each with its featured run's step shots; a job's view starts with the run's video, its steps on a timeline and a strip that follow the video, every run one click away, then what Jev was given and how the run was judged. Each run's cost row shows its estimated cost (the sum of its calls' `est_cost_usd`), and the overview the median per run and the suite's total; a run saved before summaries carried a cost, or on a model without a price, shows "unknown". Results are in [docs/verification.md](docs/verification.md).
 
 How jev-browse compares with other open-source Jev browser projects, and which of their ideas are planned or rejected: [docs/prior-art.md](docs/prior-art.md).
 
