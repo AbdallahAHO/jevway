@@ -26,6 +26,7 @@ import {
 } from './instructions.ts';
 import type { ImageTransport } from './model.ts';
 import { scrubberFor, shownValues } from './secrets.ts';
+import type { LastChange } from './page-change.ts';
 
 export const NO_SUPPLIED_VALUE = 'NO_SUPPLIED_VALUE';
 export const NO_SUPPLIED_FILE = 'NO_SUPPLIED_FILE';
@@ -83,6 +84,8 @@ export interface DecisionInput {
    * task may open one instead of handing the step back.
    */
   unsureBelow?: number;
+  /** What the last executed action changed on the page (untrusted page data); absent before the first action. */
+  lastChange?: LastChange;
 }
 
 export interface NextClick {
@@ -294,6 +297,7 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
     supplied_values: shownValues(input.values, input.secretKeys),
     ...(Object.keys(input.files ?? {}).length && { supplied_files: input.files }),
     recent_actions: input.history.slice(-10),
+    ...(input.lastChange && { last_change: input.lastChange }),
     ...(input.screenshot && { screenshot: SCREENSHOT_NOTE }),
   };
   // TypeSafe takes the image as an asset in place under `screenshot`; OpenRouter vision models read image parts

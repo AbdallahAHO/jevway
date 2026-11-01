@@ -4959,10 +4959,13 @@ describe('what the last action changed', () => {
   it('keeps it through a re-decision without an action, until the next executed action replaces it', async () => {
     const save = { operation: 'CLICK', click_target: '2' };
     const { ask, requests } = scriptedJev([tick, { operation: 'DONE', done_check: 0.1 }, save, done]);
-    const { asTab } = fakeTab([todo('false', 'a'), todo('true', 'b'), todo('true', 'c'), todo('true', 'd', 'Your list\nSaved')]);
+    // The save closes the form: its button goes, and "Saved" is the page message (the click saved the tick), not new text here.
+    const saved = { ...todo('true', 'd', 'Your list\nSaved'), actions: todo('true', 'd').actions.slice(0, 1) };
+    const { asTab } = fakeTab([todo('false', 'a'), todo('true', 'b'), todo('true', 'c'), saved]);
     await new BrowserTask(asTab, ask, options).run();
     expect(changeOf(requests[2])).toEqual(changeOf(requests[1]));
-    expect(changeOf(requests[3])).toEqual({ after: 'CLICK Save list', new_text: 'Saved' });
+    expect(changeOf(requests[3])).toEqual({ after: 'CLICK Save list', removed: ['button "Save list"'] });
+    expect(requests[3].state.page.text.startsWith('[Page message after "Save list"] Saved')).toBe(true);
   });
 
   it('sends no key after an action that changed nothing Jev can see', async () => {
