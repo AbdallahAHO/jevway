@@ -4189,3 +4189,138 @@ describe('a bot wall', () => {
     expect(requests).toHaveLength(1);
   });
 });
+
+describe('values the caller marks secret', () => {
+  // A token with a space and a slash, so its URL encodings differ from it.
+  const TOKEN = 'tok Zq/81x';
+  const ENCODINGS = [TOKEN, encodeURIComponent(TOKEN), encodeURIComponent(TOKEN).replace(/%20/g, '+')].map((form) => form.toLowerCase());
+  const MARKER = '[secret:token]';
+  const tokenField: PageAction = { id: 't1', kind: 'fill', node: 7, role: 'textbox', label: 'API token', value: '' };
+  const copyButton: PageAction = { id: 't2', kind: 'click', node: 8, role: 'button', label: 'Copy the new token' };
+  const blank = page({ url: 'http://fixture/settings/tokens', title: 'Tokens', text: 'Paste your token for Ada', actions: [tokenField, copyButton], fingerprint: 'a' });
+  // The page echoes the token everywhere it can: address, title, text (upper-cased too), the field, a button.
+  const echoing = (fingerprint: string) =>
+    page({
+      url: `http://fixture/settings/tokens?last=${encodeURIComponent(TOKEN)}`,
+      title: `Token ${TOKEN}`,
+      text: `Saved token ${TOKEN} for Ada\nCOPY ${TOKEN.toUpperCase()}`,
+      actions: [
+        { ...tokenField, value: TOKEN, current_value: TOKEN },
+        { ...copyButton, label: `Copy ${TOKEN}` },
+      ],
+      fingerprint,
+    });
+  const leaks = (anything: unknown) => {
+    const text = (typeof anything === 'string' ? anything : JSON.stringify(anything)).toLowerCase();
+    return ENCODINGS.filter((form) => text.includes(form));
+  };
+  const typeToken = { operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: 'token' };
+  const copyIt = { operation: 'CLICK', click_target: '2', commit_risk: 0.9 };
+
+  it('shows Jev the key in place of the value, in the supplied values and the value question', () => {
+    const space = buildActionSpace(blank.actions);
+    const request = buildRequest({ page: blank, goal: 'Save the token', history: [], checkCommitRisk: true, values: { token: TOKEN, name: 'Ada' }, secretKeys: ['token'] }, space) as any;
+    expect(request.state.supplied_values).toEqual({ token: MARKER, name: 'Ada' });
+    expect(request.questions.value_for_1.criteria.token).toBe(`token: ${MARKER}`);
+    expect(request.questions.value_for_1.criteria.name).toBe('name: Ada');
+    expect(leaks(request)).toEqual([]);
+  });
+
+  it('leaves Jev\'s request exactly as it was when no key is marked', () => {
+    const space = buildActionSpace(echoing('b').actions);
+    const input = { page: echoing('b'), goal: 'Save the token', history: [], checkCommitRisk: true, values: { token: TOKEN } };
+    expect(buildRequest({ ...input, secretKeys: [] }, space)).toEqual(buildRequest(input, space));
+    expect(buildRequest({ ...input, secretKeys: ['otp'] }, space)).toEqual(buildRequest(input, space));
+  });
+
+  it('scrubs a secret the page echoes from the request, but not from the screenshot', () => {
+    const space = buildActionSpace(echoing('b').actions);
+    const screenshot = Buffer.from(TOKEN).toString('base64');
+    const request = buildRequest(
+      { page: echoing('b'), goal: `Save the token ${TOKEN}`, history: [{ operation: 'CLICK', element: `Copy ${TOKEN}` }], checkCommitRisk: true, values: { token: TOKEN }, secretKeys: ['token'], screenshot },
+      space,
+    ) as any;
+    expect(leaks(request.state[1])).toEqual([]);
+    expect(leaks(request.questions)).toEqual([]);
+    expect(JSON.stringify(request.state[1])).toContain(`Saved token ${MARKER} for Ada`);
+    expect(request.state[0].image_url.url).toBe(`data:image/jpeg;base64,${screenshot}`);
+  });
+
+  it('scrubs it from follow-up questions too', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '2', risk_2: 0.1 }]);
+    await decide(ask, { page: echoing('b'), goal: 'Copy it', history: [], checkCommitRisk: true, values: { token: TOKEN }, secretKeys: ['token'], elementRisk: 'chosen' });
+    expect(requests).toHaveLength(2);
+    expect(leaks(requests)).toEqual([]);
+  });
+
+  it('types the real value, and keeps it out of every request, summary, trace and recording', async () => {
+    const { ask, requests } = scriptedJev([typeToken, copyIt]);
+    const { tab, asTab, acted } = fakeTab([blank, echoing('b'), echoing('c'), echoing('d')]);
+    const recordDir = mkdtempSync(join(tmpdir(), 'jev-secret-'));
+    const task = new BrowserTask(asTab, ask, { goal: 'Save the token', values: { token: TOKEN, name: 'Ada' }, secretKeys: ['token'], changeWaitMs: 0, recordDir });
+    const summary = await task.run();
+
+    expect(acted).toEqual([{ label: 'API token', text: TOKEN }]);
+    expect(summary.status).toBe('needs_confirmation');
+    expect(summary.reason).toMatch(/^Clicking "Copy \[secret:token\]" on "Token \[secret:token\]"/);
+    expect(summary.page_text).toContain(`Saved token ${MARKER} for Ada`);
+    expect(summary.url).toBe('http://fixture/settings/tokens?last=[secret:token]');
+    for (const output of [requests, summary, task.trace]) expect(leaks(output)).toEqual([]);
+    for (const file of ['summary.json', 'index.html']) {
+      const written = readFileSync(join(recordDir, file), 'utf8');
+      expect(leaks(written)).toEqual([]);
+      expect(written).toContain(MARKER);
+    }
+    // The page's scripts never get the secret to look for: only unmarked values are wanted.
+    expect(tab.wanted).toEqual(['Ada']);
+  });
+
+  it('keeps every key marked on an earlier call secret, and adds the new ones', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'BLOCKED' }]);
+    const { asTab } = fakeTab([echoing('b')]);
+    const task = new BrowserTask(asTab, ask, { goal: 'Save it', values: { token: TOKEN }, secretKeys: ['token'], changeWaitMs: 0 });
+    await task.run();
+    task.update({ values: { otp: '918273' }, secretKeys: ['otp'] });
+    const summary = await task.run();
+    expect(JSON.stringify(requests.at(-1).state.supplied_values)).toBe(JSON.stringify({ token: MARKER, otp: '[secret:otp]' }));
+    expect(leaks(summary)).toEqual([]);
+  });
+
+  it('passes the marked keys from a new session started through the runner', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'BLOCKED' }]);
+    const { asTab } = fakeTab([echoing('b')]);
+    vi.spyOn(model, 'createAsk').mockReturnValue(ask);
+    vi.spyOn(chrome, 'connectChrome').mockResolvedValue({ cdp: {} } as chrome.ChromeHandle);
+    vi.spyOn(Tab, 'open').mockResolvedValue(asTab);
+    const task = await createRunner('launch-headless').start({ goal: 'Save it', url: 'http://fixture/settings/tokens', values: { token: TOKEN }, secretKeys: ['token'], changeWaitMs: 0 });
+    const summary = await task.run();
+    vi.restoreAllMocks();
+    expect(leaks([requests, summary])).toEqual([]);
+  });
+});
+
+describe('a needs_input names the fields it wants', () => {
+  it('names the field Jev chose when no supplied value fits it', async () => {
+    const { ask } = scriptedJev([{ operation: 'TYPE_TEXT', type_text_target: '2', value_for_2: NO_SUPPLIED_VALUE }]);
+    const summary = await new BrowserTask(fakeTab().asTab, ask, { goal: 'Book', values: { name: 'Ada' }, changeWaitMs: 0 }).run();
+    expect(summary.reason).toBe('No supplied value fits the field "Email address"');
+    expect(summary.missing).toEqual([{ label: 'Email address', role: 'textbox', path: '/stays' }]);
+  });
+
+  it('names every empty field a BLOCKED has no value for, in page order', async () => {
+    const { ask } = scriptedJev([{ operation: 'BLOCKED' }]);
+    const summary = await new BrowserTask(fakeTab().asTab, ask, { goal: 'Book', changeWaitMs: 0 }).run();
+    expect(summary.reason).toBe('Blocked: no supplied value for "Full name", "Email address"');
+    expect(summary.missing).toEqual([
+      { label: 'Full name', role: 'textbox', path: '/stays' },
+      { label: 'Email address', role: 'textbox', path: '/stays' },
+    ]);
+  });
+
+  it('leaves it out of any other hand-back', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '4', commit_risk: 0.9 }]);
+    const summary = await new BrowserTask(fakeTab().asTab, ask, { goal: 'Pay', changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('needs_confirmation');
+    expect(summary).not.toHaveProperty('missing');
+  });
+});
