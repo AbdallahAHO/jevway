@@ -340,7 +340,17 @@ export class BrowserTask {
   async run({ signal }: { signal?: AbortSignal } = {}): Promise<TaskSummary> {
     // The recording is for people: a browser failure while recording must not change or hang the run's outcome.
     await this.#recording?.start(this.#tab).catch(() => undefined);
-    const summary = await this.#withEvidence(this.#settle(await this.#loop(signal)));
+    let settled: TaskSummary;
+    try {
+      settled = await this.#withEvidence(this.#settle(await this.#loop(signal)));
+    } finally {
+      // The stop signal lasts until the evidence request is answered: it is the call's last wait.
+      this.#limit?.dispose();
+      this.#limit = undefined;
+    }
+    // A secret never leaves in a summary or a trace, wherever the page echoed it: the checks and the evidence included.
+    for (; this.#traceScrubbed < this.trace.length; this.#traceScrubbed++) this.trace[this.#traceScrubbed] = this.#scrub(this.trace[this.#traceScrubbed]);
+    const summary = this.#scrub(settled);
     await this.#recording?.finish(this.#tab, summary).catch(() => undefined);
     return summary;
   }
@@ -378,9 +388,7 @@ export class BrowserTask {
       this.#confirmIgnored = undefined;
       this.#lastStatus = status;
       this.#ending = { page, decision, firstRequest, overridable };
-      // A secret never leaves in a summary or a trace, wherever the page echoed it.
-      for (; this.#traceScrubbed < this.trace.length; this.#traceScrubbed++) this.trace[this.#traceScrubbed] = this.#scrub(this.trace[this.#traceScrubbed]);
-      return this.#scrub({
+      return {
         status,
         reason,
         url: page.url,
@@ -399,7 +407,7 @@ export class BrowserTask {
         ...(status !== 'done' && decision && { stuck: stuckOn(decision) }),
         ...(confirmIgnored && { confirm_ignored: `the previous call ended ${confirmIgnored}, not needs_confirmation` }),
         ...(status === 'needs_input' && decision && { missing: missingFields(decision, page) }),
-      } satisfies TaskSummary);
+      };
     };
 
     // Many pickers apply a choice only when they close, and a person closes the menu they opened before calling it done:
@@ -848,8 +856,6 @@ export class BrowserTask {
       return stop('blocked', describeError(error));
     } finally {
       this.#tab.disarmConfirm();
-      limit.dispose();
-      this.#limit = undefined;
     }
   }
 
@@ -888,9 +894,13 @@ export class BrowserTask {
     const spans = quoteSpans(page.text);
     if (!spans.length) return summary;
     const started = performance.now();
+    // A call already stopped asks nothing more; the request is scrubbed like every other and stops with the run.
+    const limit = this.#limit;
+    if (limit?.stopped()) return summary;
+    const request = this.#scrub(evidenceRequest(page, doneWhen, spans.map((span) => span.text)));
     let response: Awaited<ReturnType<Ask>>;
     try {
-      response = await this.#ask(evidenceRequest(page, doneWhen, spans.map((span) => span.text)));
+      response = await (limit ? limit.within(this.#ask(request, { signal: limit.signal })) : this.#ask(request));
     } catch {
       return summary;
     }
