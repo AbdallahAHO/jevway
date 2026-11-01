@@ -16,15 +16,15 @@
  * other, like a calling agent that asks the user about everything the request did not name. It passes the job's
  * `confirmTarget`, the words of that request which name what the click acts on, as `confirm_target`.
  *
- * Env knobs, with NAME the uppercased `name`: `JEV_<NAME>_RUNS` (default 3), `JEV_<NAME>_ONLY` (comma-separated job
- * ids), `JEV_<NAME>_DEVICE` (a key of DEVICES, default desktop) and `JEV_<NAME>_PHRASING` (`as-written` or `terse`).
+ * Env knobs, with NAME the uppercased `name`: `JEVWAY_<NAME>_RUNS` (default 3), `JEVWAY_<NAME>_ONLY` (comma-separated job
+ * ids), `JEVWAY_<NAME>_DEVICE` (a key of DEVICES, default desktop) and `JEVWAY_<NAME>_PHRASING` (`as-written` or `terse`).
  *
  * @example
  * await runJobs({
  *   name: 'grafana',
  *   title: (count) => `Grafana play: ${count} jobs with jevway`,
  *   startUrl: 'https://play.grafana.org/',
- *   browser: process.env.JEV_GRAFANA_BROWSER ?? 'launch-headless',
+ *   browser: process.env.JEVWAY_GRAFANA_BROWSER ?? 'launch-headless',
  *   jobs: JOBS,
  * });
  */
@@ -105,7 +105,7 @@ const MAX_RECONNECTS = 3;
 const CONNECTION_CLOSED = 'Browser connection closed';
 
 export interface RunJobsOptions {
-  /** Names the env knobs and the output folder: `grafana` reads `JEV_GRAFANA_RUNS` and writes `verify/out/grafana-…/`. */
+  /** Names the env knobs and the output folder: `grafana` reads `JEVWAY_GRAFANA_RUNS` and writes `verify/out/grafana-…/`. */
   name: string;
   /** The report heading, given how many jobs were selected. */
   title: (jobCount: number) => string;
@@ -121,7 +121,7 @@ export interface RunJobsOptions {
 }
 
 export const runJobs = async ({ name, title, startUrl, browser, jobs, before, reset, checks }: RunJobsOptions) => {
-  const knob = (suffix: string) => `JEV_${name.toUpperCase()}_${suffix}`;
+  const knob = (suffix: string) => `JEVWAY_${name.toUpperCase()}_${suffix}`;
   const { profile, screenshots } = resolveModel();
   const ask = createAsk(profile);
   const runs = Number(process.env[knob('RUNS')] ?? 3);

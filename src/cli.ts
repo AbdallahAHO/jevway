@@ -10,12 +10,12 @@ const USAGE = `jevway --goal "<outcome>" (--url <url> | --tab <url part>) [optio
   --files '{"avatar":"/abs/me.png"}'   files Jev may upload (absolute paths; Jev sees names, never paths)
   --done-when "<evidence>"        visible evidence of success
   --checks '[{"type":"url_contains","text":"/issues/"}]'   facts checked by code on the final page
-  --browser auto|launch|launch-headless|http://127.0.0.1:9222   (default: auto, or $JEV_BROWSER)
-  --model jev|pplx-decider|clef-omni|clef|clef-flash|gpt-6-luna   decision model (default: jev, or $JEV_MODEL)
-  --screenshots off|fallback|always   marked screenshots, vision models only (default: per model, or $JEV_SCREENSHOTS)
+  --browser auto|launch|launch-headless|http://127.0.0.1:9222   (default: auto, or $JEVWAY_BROWSER)
+  --model jev|pplx-decider|clef-omni|clef|clef-flash|gpt-6-luna   decision model (default: jev, or $JEVWAY_MODEL)
+  --screenshots off|fallback|always   marked screenshots, vision models only (default: per model, or $JEVWAY_SCREENSHOTS)
   --max-steps 40
-  --allowed-hosts a.com,*.b.com   hosts the run may be on (narrows $JEV_ALLOWED_HOSTS); leaving them ends it blocked
-  --blocked-hosts ads.com         hosts it must never be on (adds to $JEV_BLOCKED_HOSTS)
+  --allowed-hosts a.com,*.b.com   hosts the run may be on (narrows $JEVWAY_ALLOWED_HOSTS); leaving them ends it blocked
+  --blocked-hosts ads.com         hosts it must never be on (adds to $JEVWAY_BLOCKED_HOSTS)
   --max-seconds 300               time budget; past it the run ends step_budget (Ctrl-C ends it blocked)
   --keep-open                     leave the tabs open (auto/remote browsers), including any the run's clicks opened
   --allow-coordinate-clicks       click a boxed control the DOM never reported (canvas, iframe); Jev 1.14 direct only
@@ -64,7 +64,7 @@ try {
 
 let runner: ReturnType<typeof createRunner>;
 try {
-  runner = createRunner(args.browser ?? process.env.JEV_BROWSER ?? 'auto', {
+  runner = createRunner(args.browser ?? process.env.JEVWAY_BROWSER ?? 'auto', {
     model: args.model,
     screenshots: args.screenshots,
   });

@@ -52,7 +52,7 @@ const covers = (outer: string, inner: string) => {
  * pattern. An empty or missing list changes nothing.
  *
  * @example
- * const server = hostsFromEnv(); // JEV_ALLOWED_HOSTS=*.wikipedia.org
+ * const server = hostsFromEnv(); // JEVWAY_ALLOWED_HOSTS=*.wikipedia.org
  * narrowHosts(server, { allowed: ['en.wikipedia.org'] }); // { allowed: ['en.wikipedia.org'], blocked: [] }
  * narrowHosts(server, { allowed: ['evil.example'] }); // throws: a call can only narrow them
  */
@@ -66,9 +66,9 @@ export const narrowHosts = (base: HostRules, layer: { allowed?: string | string[
   return { ...(allowed.length ? { allowed } : base.allowed && { allowed: base.allowed }), blocked };
 };
 
-/** The server's lists, from `JEV_ALLOWED_HOSTS` and `JEV_BLOCKED_HOSTS`; every call starts from these. */
+/** The server's lists, from `JEVWAY_ALLOWED_HOSTS` and `JEVWAY_BLOCKED_HOSTS`; every call starts from these. */
 export const hostsFromEnv = (env: Record<string, string | undefined> = process.env): HostRules =>
-  narrowHosts(ANY_HOST, { allowed: env.JEV_ALLOWED_HOSTS, blocked: env.JEV_BLOCKED_HOSTS });
+  narrowHosts(ANY_HOST, { allowed: env.JEVWAY_ALLOWED_HOSTS, blocked: env.JEVWAY_BLOCKED_HOSTS });
 
 /**
  * Says why `url` is outside the rules, naming its host and the list it breaks, or undefined when the run may be there.

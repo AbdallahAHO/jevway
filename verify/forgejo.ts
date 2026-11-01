@@ -6,10 +6,10 @@
  *
  *   pnpm apps:forgejo:up                                  # once: Forgejo + Mailpit in Docker, seeded users
  *   pnpm verify:forgejo                                   # every job, 3 runs each
- *   JEV_FORGEJO_RUNS=1 JEV_FORGEJO_ONLY=new-issue,comment pnpm verify:forgejo
+ *   JEVWAY_FORGEJO_RUNS=1 JEVWAY_FORGEJO_ONLY=new-issue,comment pnpm verify:forgejo
  *   pnpm apps:forgejo:down                                # remove the stack and its data
  *
- * Launches its own headless Chrome (override with JEV_FORGEJO_BROWSER). Opens report.html.
+ * Launches its own headless Chrome (override with JEVWAY_FORGEJO_BROWSER). Opens report.html.
  */
 import type { Tab } from '../src/browser/tab.ts';
 import {
@@ -222,7 +222,7 @@ if (!(await stackIsUp())) {
   process.exit(1);
 }
 
-// JEV_FORGEJO_CHECKS=1: pass the caller's checks (plan 099) where a job's own ground truth shows on its final page, as a
+// JEVWAY_FORGEJO_CHECKS=1: pass the caller's checks (plan 099) where a job's own ground truth shows on its final page, as a
 // calling agent would. The jobs and their judging stay as they are. Left out: description and wiki-off (they end on the
 // repository page or its settings, which show the change differently), protect-main (the rule's page doesn't name it as
 // saved), and the jobs that must hand back (checks never change a hand-back).
@@ -251,10 +251,10 @@ const CHECKS: Record<string, Check[]> = {
 
 await runJobs({
   name: 'forgejo',
-  ...(process.env.JEV_FORGEJO_CHECKS === '1' && { checks: CHECKS }),
+  ...(process.env.JEVWAY_FORGEJO_CHECKS === '1' && { checks: CHECKS }),
   title: (jobCount) => `Forgejo: ${jobCount} write jobs with jevway`,
   startUrl: APP_URL,
-  browser: process.env.JEV_FORGEJO_BROWSER ?? 'launch-headless',
+  browser: process.env.JEVWAY_FORGEJO_BROWSER ?? 'launch-headless',
   jobs: JOBS,
   before: (tab, job) => signIn(tab, START_PAGE[job.id] ?? APP_URL),
   reset: () => resetDemo(),

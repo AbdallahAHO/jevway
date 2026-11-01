@@ -12,9 +12,9 @@
  *
  *   pnpm apps:forgejo:up                                  # once: Forgejo + Mailpit in Docker, seeded users
  *   pnpm verify:signup                                    # every job, 3 runs each
- *   JEV_SIGNUP_RUNS=1 JEV_SIGNUP_ONLY=sign-up pnpm verify:signup
+ *   JEVWAY_SIGNUP_RUNS=1 JEVWAY_SIGNUP_ONLY=sign-up pnpm verify:signup
  *
- * Launches its own headless Chrome (override with JEV_SIGNUP_BROWSER). Creates and deletes only accounts named
+ * Launches its own headless Chrome (override with JEVWAY_SIGNUP_BROWSER). Creates and deletes only accounts named
  * `signup-…` and the mail sent to them. Opens report.html.
  */
 import type { Tab } from '../src/browser/tab.ts';
@@ -196,7 +196,7 @@ await runJobs({
   name: 'signup',
   title: (jobCount) => `Forgejo sign-up: ${jobCount} jobs with jevway`,
   startUrl: `${ORIGIN}/`,
-  browser: process.env.JEV_SIGNUP_BROWSER ?? 'launch-headless',
+  browser: process.env.JEVWAY_SIGNUP_BROWSER ?? 'launch-headless',
   jobs: JOBS,
   before: openSignUp,
   reset,

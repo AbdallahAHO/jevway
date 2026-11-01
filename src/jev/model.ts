@@ -147,7 +147,7 @@ export const estimateCostUsd = (model: string | null, inputTokens: number): numb
 };
 
 /**
- * Resolves the model and screenshot mode from explicit choices, then `JEV_MODEL` / `JEV_SCREENSHOTS`.
+ * Resolves the model and screenshot mode from explicit choices, then `JEVWAY_MODEL` / `JEVWAY_SCREENSHOTS`.
  * Jev uses the TypeSafe API (images as `assets`, plus Box) when `TYPESAFE_API_KEY` is set, otherwise OpenRouter.
  * Screenshots on a model that cannot read images are a configuration error, not a silent no-op.
  *
@@ -155,8 +155,8 @@ export const estimateCostUsd = (model: string | null, inputTokens: number): numb
  * const { profile, screenshots } = resolveModel({ model: 'clef-omni' }); // screenshots: 'always'
  */
 export const resolveModel = ({
-  model = process.env.JEV_MODEL || 'jev',
-  screenshots = process.env.JEV_SCREENSHOTS || undefined,
+  model = process.env.JEVWAY_MODEL || 'jev',
+  screenshots = process.env.JEVWAY_SCREENSHOTS || undefined,
 }: { model?: string; screenshots?: string } = {}) => {
   if (!(model in MODELS)) throw new Error(`Unknown model "${model}"; use ${Object.keys(MODELS).join(' | ')}.`);
   const { direct, ...route }: Profile = MODELS[model as ModelName];

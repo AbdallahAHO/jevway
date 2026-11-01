@@ -4,8 +4,8 @@
  * run plainly and under stress. Reports pass rates and crashes; failures are findings, not fixes.
  *
  *   pnpm verify:gotchas
- *   JEV_GOTCHAS_RUNS=1 JEV_GOTCHAS_PROFILES=normal pnpm verify:gotchas   # quick look
- *   JEV_GOTCHAS_ONLY=wizard,toggle-trap pnpm verify:gotchas              # a few scenarios
+ *   JEVWAY_GOTCHAS_RUNS=1 JEVWAY_GOTCHAS_PROFILES=normal pnpm verify:gotchas   # quick look
+ *   JEVWAY_GOTCHAS_ONLY=wizard,toggle-trap pnpm verify:gotchas                 # a few scenarios
  *
  * Profiles: `normal` (plain page), `slow` (400 ms latency, 50 KB/s, 4x CPU throttling), `churn` (?chaos=1: the list is
  * rebuilt every 900 ms, a 40 px banner comes and goes every 1.3 s, click effects land 300-800 ms late).
@@ -120,9 +120,9 @@ const csv = (name: string) =>
     .map((part) => part.trim())
     .filter(Boolean);
 
-const runsPerCell = Number(process.env.JEV_GOTCHAS_RUNS ?? 3);
-const profiles = csv('JEV_GOTCHAS_PROFILES').length ? csv('JEV_GOTCHAS_PROFILES') : [...PROFILES];
-const only = csv('JEV_GOTCHAS_ONLY');
+const runsPerCell = Number(process.env.JEVWAY_GOTCHAS_RUNS ?? 3);
+const profiles = csv('JEVWAY_GOTCHAS_PROFILES').length ? csv('JEVWAY_GOTCHAS_PROFILES') : [...PROFILES];
+const only = csv('JEVWAY_GOTCHAS_ONLY');
 for (const name of profiles) {
   if (!PROFILES.includes(name as Profile)) throw new Error(`Unknown profile "${name}"; use ${PROFILES.join(' | ')}.`);
 }

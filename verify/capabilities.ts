@@ -4,7 +4,7 @@
  * wall), and two guard tasks (signing in must not stop for confirmation; placing the order must).
  *
  *   pnpm verify:capabilities
- *   JEV_CAPABILITIES_RUNS=1 JEV_CAPABILITIES_ONLY=upload,new-tab pnpm verify:capabilities
+ *   JEVWAY_CAPABILITIES_RUNS=1 JEVWAY_CAPABILITIES_ONLY=upload,new-tab pnpm verify:capabilities
  *   node verify/capabilities.ts --self-check     # no model: every check is false on a fresh page and true once reached by script
  *
  * The report leads with the false-done count: a run that ended `done` while the page's own state (window.__fixture,
@@ -222,11 +222,11 @@ const csv = (name: string) =>
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean);
-const only = csv('JEV_CAPABILITIES_ONLY');
+const only = csv('JEVWAY_CAPABILITIES_ONLY');
 for (const id of only) if (!TASKS.some((task) => task.id === id)) throw new Error(`Unknown task "${id}".`);
 const tasks = only.length ? TASKS.filter((task) => only.includes(task.id)) : TASKS;
-const RUNS = Number(process.env.JEV_CAPABILITIES_RUNS ?? 3);
-if (!Number.isInteger(RUNS) || RUNS < 1) throw new Error(`JEV_CAPABILITIES_RUNS must be a positive integer.`);
+const RUNS = Number(process.env.JEVWAY_CAPABILITIES_RUNS ?? 3);
+if (!Number.isInteger(RUNS) || RUNS < 1) throw new Error(`JEVWAY_CAPABILITIES_RUNS must be a positive integer.`);
 const selfCheck = process.argv.includes('--self-check');
 
 // Two origins: the pages on one port, and the same frame page on a second port, so the cross-origin iframe really is.

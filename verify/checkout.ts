@@ -10,9 +10,9 @@
  * locked-out account instead, leaving the login page with its error.
  *
  *   pnpm verify:checkout                                   # every job, 3 runs each
- *   JEV_CHECKOUT_RUNS=1 JEV_CHECKOUT_ONLY=place-order pnpm verify:checkout
+ *   JEVWAY_CHECKOUT_RUNS=1 JEVWAY_CHECKOUT_ONLY=place-order pnpm verify:checkout
  *
- * Launches its own headless Chrome (override with JEV_CHECKOUT_BROWSER, e.g. http://127.0.0.1:9222). Opens report.html.
+ * Launches its own headless Chrome (override with JEVWAY_CHECKOUT_BROWSER, e.g. http://127.0.0.1:9222). Opens report.html.
  */
 import type { Tab } from '../src/browser/tab.ts';
 import type { Job } from './jobs/report.ts';
@@ -148,7 +148,7 @@ await runJobs({
   name: 'checkout',
   title: (jobCount) => `SauceDemo checkout: ${jobCount} jobs with jevway`,
   startUrl: START_URL,
-  browser: process.env.JEV_CHECKOUT_BROWSER ?? 'launch-headless',
+  browser: process.env.JEVWAY_CHECKOUT_BROWSER ?? 'launch-headless',
   jobs: JOBS,
   reset: async (job) => {
     jobInRun = job.id;

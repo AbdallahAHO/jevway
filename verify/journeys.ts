@@ -227,7 +227,7 @@ await scenario('MCP: journey_start (image block) → journey_autopilot → journ
     new StdioClientTransport({
       command: process.execPath,
       args: [new URL('../src/mcp.ts', import.meta.url).pathname],
-      env: { ...process.env, JEV_BROWSER: 'launch-headless', JEV_JOURNEYS_DIR: join(outRoot, 'mcp') } as Record<
+      env: { ...process.env, JEVWAY_BROWSER: 'launch-headless', JEVWAY_JOURNEYS_DIR: join(outRoot, 'mcp') } as Record<
         string,
         string
       >,

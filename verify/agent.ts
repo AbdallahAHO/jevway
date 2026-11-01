@@ -8,16 +8,16 @@
  * agent's own status. Six chores run on the local Forgejo (three change it, three probe the consent rule: a named
  * deletion, a look at the danger zone, a vague "tidy up"), two only read the Langfuse demo project.
  *
- *   pnpm apps:forgejo:up                                  # once: Forgejo in Docker, seeded users
- *   pnpm verify:agent                                     # every chore, JEV_AGENT_RUNS runs each (default 1)
- *   JEV_AGENT_RUNS=2 JEV_AGENT_ONLY=delete-named,triage pnpm verify:agent
- *   JEV_AGENT_MODEL=opus pnpm verify:agent                # the calling agent's model alias (default sonnet)
+ *   pnpm apps:forgejo:up                        # once: Forgejo in Docker, seeded users
+ *   pnpm verify:agent                           # every chore, JEVWAY_AGENT_RUNS runs each (default 1)
+ *   JEVWAY_AGENT_RUNS=2 JEVWAY_AGENT_ONLY=delete-named,triage pnpm verify:agent
+ *   JEVWAY_AGENT_MODEL=opus pnpm verify:agent   # the calling agent's model alias (default sonnet)
  *
  * Forgejo chores get their own headless Chrome on port 9444 (fresh profile, ada signed in, closed afterwards) and the
  * demo reset before every run. Langfuse chores use the Chrome on http://127.0.0.1:9333 signed in to cloud.langfuse.com
- * (JEV_AGENT_LANGFUSE_BROWSER) and are skipped with a message when it does not answer. The agent runs in an empty
+ * (JEVWAY_AGENT_LANGFUSE_BROWSER) and are skipped with a message when it does not answer. The agent runs in an empty
  * scratch folder with no user settings, skills or built-in tools, so nothing but the prompt and the two tools shape it.
- * It spends Claude usage: a run stops at JEV_AGENT_RUN_BUDGET_USD (default 2) and the suite at JEV_AGENT_BUDGET_USD
+ * It spends Claude usage: a run stops at JEVWAY_AGENT_RUN_BUDGET_USD (default 2) and the suite at JEVWAY_AGENT_BUDGET_USD
  * (default 15). Writes `verify/out/agent-<timestamp>/results.json` and `report.html`.
  */
 import { spawn } from 'node:child_process';
@@ -44,14 +44,14 @@ import { confirmCounts, confirmTargets, confirmsOffTarget, describeConfirmTarget
 import { wilson } from './jobs/report.ts';
 
 const ROOT = new URL('../', import.meta.url).pathname;
-const MODEL = process.env.JEV_AGENT_MODEL ?? 'sonnet';
-const RUNS = Number(process.env.JEV_AGENT_RUNS ?? 1);
-const ONLY = process.env.JEV_AGENT_ONLY?.split(',');
-const RUN_BUDGET_USD = Number(process.env.JEV_AGENT_RUN_BUDGET_USD ?? 2);
-const SUITE_BUDGET_USD = Number(process.env.JEV_AGENT_BUDGET_USD ?? 15);
+const MODEL = process.env.JEVWAY_AGENT_MODEL ?? 'sonnet';
+const RUNS = Number(process.env.JEVWAY_AGENT_RUNS ?? 1);
+const ONLY = process.env.JEVWAY_AGENT_ONLY?.split(',');
+const RUN_BUDGET_USD = Number(process.env.JEVWAY_AGENT_RUN_BUDGET_USD ?? 2);
+const SUITE_BUDGET_USD = Number(process.env.JEVWAY_AGENT_BUDGET_USD ?? 15);
 const RUN_TIMEOUT_MS = 6 * 60_000;
 const FORGEJO_PORT = 9444;
-const LANGFUSE_BROWSER = process.env.JEV_AGENT_LANGFUSE_BROWSER ?? 'http://127.0.0.1:9333';
+const LANGFUSE_BROWSER = process.env.JEVWAY_AGENT_LANGFUSE_BROWSER ?? 'http://127.0.0.1:9333';
 const LANGFUSE_PROJECT = 'https://cloud.langfuse.com/project/clkpwwm0m000gmm094odg11gi';
 const APP_URL = `${ORIGIN}/${ADA.username}/app`;
 
@@ -474,8 +474,8 @@ const runAgent = async (prompt: string, endpoint: string, runDir: string): Promi
       mcpServers: {
         'jevway': {
           command: 'sh',
-          args: ['-c', 'exec "$0" "$@" 2>>"$JEV_AGENT_MCP_STDERR"', process.execPath, `--env-file-if-exists=${ROOT}.env`, `${ROOT}src/mcp.ts`],
-          env: { JEV_BROWSER: endpoint, JEV_AGENT_MCP_STDERR: join(runDir, 'mcp-stderr.log') },
+          args: ['-c', 'exec "$0" "$@" 2>>"$JEVWAY_AGENT_MCP_STDERR"', process.execPath, `--env-file-if-exists=${ROOT}.env`, `${ROOT}src/mcp.ts`],
+          env: { JEVWAY_BROWSER: endpoint, JEVWAY_AGENT_MCP_STDERR: join(runDir, 'mcp-stderr.log') },
         },
       },
     }),

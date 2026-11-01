@@ -4314,9 +4314,9 @@ describe('a run stays on the allowed hosts and off the blocked ones', () => {
       expect(open).not.toHaveBeenCalled();
     });
 
-    it("applies the server's JEV_ALLOWED_HOSTS and JEV_BLOCKED_HOSTS, which a call can narrow but never widen", async () => {
-      vi.stubEnv('JEV_ALLOWED_HOSTS', '*.example.com');
-      vi.stubEnv('JEV_BLOCKED_HOSTS', 'ads.example.com');
+    it("applies the server's JEVWAY_ALLOWED_HOSTS and JEVWAY_BLOCKED_HOSTS, which a call can narrow but never widen", async () => {
+      vi.stubEnv('JEVWAY_ALLOWED_HOSTS', '*.example.com');
+      vi.stubEnv('JEVWAY_BLOCKED_HOSTS', 'ads.example.com');
       await expect((await startAt('https://evil.example/', {})).task).rejects.toThrow('evil.example is outside the allowed hosts (*.example.com)');
       await expect((await startAt('https://ads.example.com/', {})).task).rejects.toThrow('ads.example.com is a blocked host (ads.example.com)');
       await expect((await startAt('https://shop.example.com/', { allowedHosts: ['evil.example'] })).task).rejects.toThrow(

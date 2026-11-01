@@ -2,7 +2,7 @@
  * Live end-to-end verification: real Chrome, real Jev calls, independent ground-truth checks.
  *
  *   pnpm verify                 # headless Chrome, fixture + Wikipedia + MCP stdio
- *   JEV_VERIFY_BROWSER=launch pnpm verify   # watch it in a visible window
+ *   JEVWAY_VERIFY_BROWSER=launch pnpm verify   # watch it in a visible window
  *
  * Every scenario asserts the page's real state (window.__fixture or URL), never Jev's own DONE.
  */
@@ -19,14 +19,14 @@ import { ANY_HOST, narrowHosts } from '../src/task/hosts.ts';
 import { BrowserTask, type TaskSummary } from '../src/task/run-task.ts';
 import { judgeQuote } from './evidence-quote.ts';
 
-// JEV_MODEL / JEV_SCREENSHOTS pick the decision model and screenshot mode, as in the MCP server.
+// JEVWAY_MODEL / JEVWAY_SCREENSHOTS pick the decision model and screenshot mode, as in the MCP server.
 const { profile, screenshots } = resolveModel();
 const ask = createAsk(profile);
 // Experiment override: measure a model's decisions against ground truth without its hand-back threshold.
 // It doesn't reach the MCP scenario, whose server uses the profile's threshold.
-const minConfidence = Number(process.env.JEV_VERIFY_MIN_CONFIDENCE ?? profile.minConfidence);
+const minConfidence = Number(process.env.JEVWAY_VERIFY_MIN_CONFIDENCE ?? profile.minConfidence);
 process.stdout.write(`model: ${profile.name} (${profile.model}) · screenshots: ${screenshots} · min confidence: ${minConfidence}\n`);
-const source = (process.env.JEV_VERIFY_BROWSER ?? 'launch-headless') as BrowserSource;
+const source = (process.env.JEVWAY_VERIFY_BROWSER ?? 'launch-headless') as BrowserSource;
 const outDir = new URL(`./out/${new Date().toISOString().replace(/[:.]/g, '-')}/`, import.meta.url);
 mkdirSync(outDir, { recursive: true });
 
@@ -335,7 +335,7 @@ await scenario('MCP stdio: a cancelled jevway_task stops acting (session continu
     new StdioClientTransport({
       command: process.execPath,
       args: [new URL('../src/mcp.ts', import.meta.url).pathname],
-      env: { ...process.env, JEV_BROWSER: chrome.endpoint } as Record<string, string>,
+      env: { ...process.env, JEVWAY_BROWSER: chrome.endpoint } as Record<string, string>,
       stderr: 'inherit',
     }),
   );
@@ -410,7 +410,7 @@ await scenario('MCP stdio: tools list + jevway_task + jevway_end', async () => {
     new StdioClientTransport({
       command: process.execPath,
       args: [new URL('../src/mcp.ts', import.meta.url).pathname],
-      env: { ...process.env, JEV_BROWSER: 'launch-headless' } as Record<string, string>,
+      env: { ...process.env, JEVWAY_BROWSER: 'launch-headless' } as Record<string, string>,
       stderr: 'inherit',
     }),
   );

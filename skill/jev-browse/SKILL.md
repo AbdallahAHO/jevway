@@ -51,7 +51,7 @@ Pass `record_dir` on a new session to keep a record for people: a screencast vid
 
 ## Run without permission prompts
 
-`JEV_BROWSER=auto` attaches to the user's Chrome, which asks them to allow remote debugging. For unattended runs, start a separate Chrome with its own profile instead:
+`JEVWAY_BROWSER=auto` attaches to the user's Chrome, which asks them to allow remote debugging. For unattended runs, start a separate Chrome with its own profile instead:
 
 ```bash
 PROFILE="$SCRATCH/chrome-profile"   # a session scratch folder, never the user's profile
@@ -60,7 +60,7 @@ PROFILE="$SCRATCH/chrome-profile"   # a session scratch folder, never the user's
 until curl -s http://127.0.0.1:9333/json/version >/dev/null; do sleep 0.5; done
 ```
 
-- jev-browse: `JEV_BROWSER=http://127.0.0.1:9333` (MCP env) or `--browser http://127.0.0.1:9333` (CLI).
+- jev-browse: `JEVWAY_BROWSER=http://127.0.0.1:9333` (MCP env) or `--browser http://127.0.0.1:9333` (CLI).
 - agent-browser shares the same Chrome with `--cdp 9333`; use it for sign-up and login steps, then hand the goal to `jevway_task`.
 - Logins stay in that profile across runs. Stop only that Chrome: `pkill -f "user-data-dir=$PROFILE"`.
 - Keep the window visible (no `--headless`) when a site shows a Cloudflare or captcha check: a real window often clears it on its own. Never try to solve or bypass a challenge; if it still asks, hand the click to the user. `jevway_task` waits up to 8 s for one to clear, then ends `blocked` with a reason naming it ("The page is a bot check (Cloudflare; …)") and `wall: { kind: "bot_check", origin, name }`: rephrasing cannot help. Ask the user to pass it in that tab, then continue the same `session`.

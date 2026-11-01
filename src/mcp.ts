@@ -10,10 +10,10 @@ import { lookAt } from './task/look.ts';
 import type { BrowserTask } from './task/run-task.ts';
 import { createRunner } from './task/start-task.ts';
 
-// JEV_BROWSER: auto (running Chrome, shared with chrome-devtools-mcp --auto-connect) | launch | launch-headless | http://host:port
-// JEV_MODEL: jev (default) | pplx-decider | clef-omni | clef | clef-flash | gpt-6-luna (see src/jev/model.ts)
-// JEV_SCREENSHOTS: off | fallback | always (vision models only)
-const runner = createRunner(process.env.JEV_BROWSER ?? 'auto');
+// JEVWAY_BROWSER: auto (running Chrome, shared with chrome-devtools-mcp --auto-connect) | launch | launch-headless | http://host:port
+// JEVWAY_MODEL: jev (default) | pplx-decider | clef-omni | clef | clef-flash | gpt-6-luna (see src/jev/model.ts)
+// JEVWAY_SCREENSHOTS: off | fallback | always (vision models only)
+const runner = createRunner(process.env.JEVWAY_BROWSER ?? 'auto');
 // `running`: the session's current call. A cancelled call can still be finishing an input; the next call waits for it.
 const sessions = new Map<string, { task: BrowserTask; ownsTab: boolean; running?: Promise<unknown> }>();
 const journeys = new Map<string, JourneySession>();
@@ -98,12 +98,12 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
         .array(z.string())
         .optional()
         .describe(
-          'Hosts the run may be on: exact ("en.wikipedia.org") or "*.example.com" (any subdomain, not example.com itself). Checked on the start URL, before every step and after every click; leaving them ends the run blocked, naming the host (it never navigates back). Only narrows the server\'s JEV_ALLOWED_HOSTS, and a later call on the session can only narrow it further.',
+          'Hosts the run may be on: exact ("en.wikipedia.org") or "*.example.com" (any subdomain, not example.com itself). Checked on the start URL, before every step and after every click; leaving them ends the run blocked, naming the host (it never navigates back). Only narrows the server\'s JEVWAY_ALLOWED_HOSTS, and a later call on the session can only narrow it further.',
         ),
       blocked_hosts: z
         .array(z.string())
         .optional()
-        .describe('Hosts the run must never be on, same patterns; added to the server\'s JEV_BLOCKED_HOSTS and to earlier calls\' lists.'),
+        .describe('Hosts the run must never be on, same patterns; added to the server\'s JEVWAY_BLOCKED_HOSTS and to earlier calls\' lists.'),
       allow_coordinate_clicks: z
         .boolean()
         .optional()
@@ -291,14 +291,14 @@ Finish with journey_finish. Use made-up data for any typing; stop at login, paym
         .describe(
           'URL prefix autopilot must stay under, e.g. one project in a multi-project app. Default: same origin.',
         ),
-      out_dir: z.string().optional().describe('Defaults to $JEV_JOURNEYS_DIR or ./journeys, plus <host>/<timestamp>.'),
+      out_dir: z.string().optional().describe('Defaults to $JEVWAY_JOURNEYS_DIR or ./journeys, plus <host>/<timestamp>.'),
     },
   },
   async ({ url, device, intent, values, stay_within, out_dir }) => {
     try {
       const id = randomUUID().slice(0, 8);
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const outDir = out_dir ?? join(process.env.JEV_JOURNEYS_DIR ?? 'journeys', new URL(url).host, stamp);
+      const outDir = out_dir ?? join(process.env.JEVWAY_JOURNEYS_DIR ?? 'journeys', new URL(url).host, stamp);
       const journey = await runner.startJourney({
         startUrl: url,
         device,

@@ -14,7 +14,7 @@ export interface StartOptions extends TaskOptions {
   confirmIrreversible?: boolean;
   /** With `confirmIrreversible`: the user's own words that name what the click acts on; the page must show them. */
   confirmTarget?: string;
-  /** Hosts this session may be on, inside the server's `JEV_ALLOWED_HOSTS`; and hosts it must never be on, besides `JEV_BLOCKED_HOSTS`. */
+  /** Hosts this session may be on, inside the server's `JEVWAY_ALLOWED_HOSTS`; and hosts it must never be on, besides `JEVWAY_BLOCKED_HOSTS`. */
   allowedHosts?: string[];
   blockedHosts?: string[];
 }

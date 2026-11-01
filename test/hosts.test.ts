@@ -67,8 +67,8 @@ describe('the URL check', () => {
 });
 
 describe('merging the server, the call and later calls', () => {
-  it('reads the server lists from JEV_ALLOWED_HOSTS and JEV_BLOCKED_HOSTS', () => {
-    expect(hostsFromEnv({ JEV_ALLOWED_HOSTS: '*.wikipedia.org, en.wiktionary.org', JEV_BLOCKED_HOSTS: 'login.wikipedia.org' })).toEqual({
+  it('reads the server lists from JEVWAY_ALLOWED_HOSTS and JEVWAY_BLOCKED_HOSTS', () => {
+    expect(hostsFromEnv({ JEVWAY_ALLOWED_HOSTS: '*.wikipedia.org, en.wiktionary.org', JEVWAY_BLOCKED_HOSTS: 'login.wikipedia.org' })).toEqual({
       allowed: ['*.wikipedia.org', 'en.wiktionary.org'],
       blocked: ['login.wikipedia.org'],
     });
@@ -76,7 +76,7 @@ describe('merging the server, the call and later calls', () => {
   });
 
   it('adds every blocked list and keeps the newest allowed list when it lies inside the one before', () => {
-    const server = hostsFromEnv({ JEV_ALLOWED_HOSTS: '*.wikipedia.org en.wiktionary.org', JEV_BLOCKED_HOSTS: 'a.wikipedia.org' });
+    const server = hostsFromEnv({ JEVWAY_ALLOWED_HOSTS: '*.wikipedia.org en.wiktionary.org', JEVWAY_BLOCKED_HOSTS: 'a.wikipedia.org' });
     const call = narrowHosts(server, { allowed: ['en.wikipedia.org', '*.m.wikipedia.org'], blocked: ['b.wikipedia.org'] });
     expect(call).toEqual({ allowed: ['en.wikipedia.org', '*.m.wikipedia.org'], blocked: ['a.wikipedia.org', 'b.wikipedia.org'] });
     expect(narrowHosts(server, {})).toEqual(server);
@@ -88,7 +88,7 @@ describe('merging the server, the call and later calls', () => {
     ['*.wiktionary.org', 'a wildcard wider than an exact host'],
     ['*.org', 'a wildcard wider than a wildcard'],
   ])('refuses %s (%s): a call can only narrow', (pattern) => {
-    const server = hostsFromEnv({ JEV_ALLOWED_HOSTS: '*.wikipedia.org en.wiktionary.org' });
+    const server = hostsFromEnv({ JEVWAY_ALLOWED_HOSTS: '*.wikipedia.org en.wiktionary.org' });
     expect(() => narrowHosts(server, { allowed: [pattern] })).toThrow(
       `allowed host "${pattern}" is outside the allowed hosts already set (*.wikipedia.org, en.wiktionary.org); a call can only narrow them`,
     );

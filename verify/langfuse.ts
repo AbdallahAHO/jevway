@@ -2,13 +2,13 @@
  * Langfuse jobs-to-be-done: sixteen read-only, multi-step jobs in Langfuse's public demo project, each run from the
  * project home, recorded (video + described steps), and checked against the final URL and page text.
  *
- *   pnpm verify:langfuse                                  # every job, 3 runs each
- *   JEV_LANGFUSE_RUNS=1 JEV_LANGFUSE_ONLY=costliest-user,prompt-version pnpm verify:langfuse
- *   JEV_LANGFUSE_RUNS=3 JEV_LANGFUSE_DEVICE=iphone-15 pnpm verify:langfuse   # a key of DEVICES, default desktop
- *   JEV_LANGFUSE_PHRASING=terse pnpm verify:langfuse                         # only the jobs that have a terseGoal
+ *   pnpm verify:langfuse                                                           # every job, 3 runs each
+ *   JEVWAY_LANGFUSE_RUNS=1 JEVWAY_LANGFUSE_ONLY=costliest-user,prompt-version pnpm verify:langfuse
+ *   JEVWAY_LANGFUSE_RUNS=3 JEVWAY_LANGFUSE_DEVICE=iphone-15 pnpm verify:langfuse   # a key of DEVICES, default desktop
+ *   JEVWAY_LANGFUSE_PHRASING=terse pnpm verify:langfuse                            # only the jobs that have a terseGoal
  *
  * Needs a Chrome signed in to cloud.langfuse.com on a debugging port (default http://127.0.0.1:9333, override
- * with JEV_LANGFUSE_BROWSER); see the jev-browse skill's "Run without permission prompts". Opens report.html.
+ * with JEVWAY_LANGFUSE_BROWSER); see the jev-browse skill's "Run without permission prompts". Opens report.html.
  */
 import type { Job } from './jobs/report.ts';
 import { runJobs } from './jobs/runner.ts';
@@ -220,7 +220,7 @@ await runJobs({
   name: 'langfuse',
   title: (jobCount) => `Langfuse demo: ${jobCount} jobs with jevway`,
   startUrl: PROJECT,
-  browser: process.env.JEV_LANGFUSE_BROWSER ?? 'http://127.0.0.1:9333',
+  browser: process.env.JEVWAY_LANGFUSE_BROWSER ?? 'http://127.0.0.1:9333',
   jobs: JOBS,
   before: async (tab) => {
     if (/\/auth\//.test(String(await tab.evaluate('location.pathname')))) {

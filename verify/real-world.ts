@@ -1,10 +1,10 @@
 /**
  * Real-world verification: public sites, a fresh headless Chrome per run, ground truth from the page's own URL.
  *
- *   pnpm verify:real                                   # every scenario, 5 runs each, the profile's screenshot mode
- *   JEV_SCREENSHOTS=always JEV_REAL_RUNS=3 pnpm verify:real
- *   JEV_REAL_ONLY=npm,mdn pnpm verify:real
- *   JEV_ALLOWED_HOSTS=en.wikipedia.org JEV_REAL_ONLY=wikipedia pnpm verify:real   # runs inside the server's host lists
+ *   pnpm verify:real                                                                    # every scenario, 5 runs each, the profile's screenshot mode
+ *   JEVWAY_SCREENSHOTS=always JEVWAY_REAL_RUNS=3 pnpm verify:real
+ *   JEVWAY_REAL_ONLY=npm,mdn pnpm verify:real
+ *   JEVWAY_ALLOWED_HOSTS=en.wikipedia.org JEVWAY_REAL_ONLY=wikipedia pnpm verify:real   # runs inside the server's host lists
  *
  * Every task stops before any login, payment or submission. Jev's own DONE never counts as a pass.
  */
@@ -118,9 +118,9 @@ const SCENARIOS: Scenario[] = [
 
 const { profile, screenshots } = resolveModel();
 const ask = createAsk(profile);
-const runs = Number(process.env.JEV_REAL_RUNS ?? 5);
-const only = process.env.JEV_REAL_ONLY?.split(',');
-const source = (process.env.JEV_VERIFY_BROWSER ?? 'launch-headless') as BrowserSource;
+const runs = Number(process.env.JEVWAY_REAL_RUNS ?? 5);
+const only = process.env.JEVWAY_REAL_ONLY?.split(',');
+const source = (process.env.JEVWAY_VERIFY_BROWSER ?? 'launch-headless') as BrowserSource;
 const outDir = new URL(`./out/real-${new Date().toISOString().replace(/[:.]/g, '-')}/`, import.meta.url);
 mkdirSync(outDir, { recursive: true });
 process.stdout.write(`model: ${profile.name} (${profile.model}) · screenshots: ${screenshots} · ${runs} runs each\n`);
@@ -181,7 +181,7 @@ for (const scenario of SCENARIOS.filter((s) => !only || only.includes(s.name))) 
         doneWhen: scenario.doneWhen,
         maxSteps: 25,
         screenshots,
-        // JEV_ALLOWED_HOSTS / JEV_BLOCKED_HOSTS, as the MCP server would apply them.
+        // JEVWAY_ALLOWED_HOSTS / JEVWAY_BLOCKED_HOSTS, as the MCP server would apply them.
         hosts: hostsFromEnv(),
       });
       const summary = await task.run();

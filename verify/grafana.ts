@@ -3,11 +3,11 @@
  * home page in a fresh headless Chrome, recorded (video + described steps), and checked against the final URL.
  * A second real app next to Langfuse, to show the page reader and the loop are not tuned to one UI.
  *
- *   pnpm verify:grafana                                   # every job, 3 runs each
- *   JEV_GRAFANA_RUNS=1 JEV_GRAFANA_ONLY=find-kubelet,explore-6h pnpm verify:grafana
- *   JEV_GRAFANA_RUNS=3 JEV_GRAFANA_DEVICE=iphone-15 pnpm verify:grafana      # a key of DEVICES, default desktop
+ *   pnpm verify:grafana                                                         # every job, 3 runs each
+ *   JEVWAY_GRAFANA_RUNS=1 JEVWAY_GRAFANA_ONLY=find-kubelet,explore-6h pnpm verify:grafana
+ *   JEVWAY_GRAFANA_RUNS=3 JEVWAY_GRAFANA_DEVICE=iphone-15 pnpm verify:grafana   # a key of DEVICES, default desktop
  *
- * Launches its own headless Chrome (override with JEV_GRAFANA_BROWSER, e.g. http://127.0.0.1:9222). Opens report.html.
+ * Launches its own headless Chrome (override with JEVWAY_GRAFANA_BROWSER, e.g. http://127.0.0.1:9222). Opens report.html.
  */
 import type { Job } from './jobs/report.ts';
 import { runJobs } from './jobs/runner.ts';
@@ -104,6 +104,6 @@ await runJobs({
   name: 'grafana',
   title: (jobCount) => `Grafana play: ${jobCount} jobs with jevway`,
   startUrl: `${ORIGIN}/`,
-  browser: process.env.JEV_GRAFANA_BROWSER ?? 'launch-headless',
+  browser: process.env.JEVWAY_GRAFANA_BROWSER ?? 'launch-headless',
   jobs: JOBS,
 });

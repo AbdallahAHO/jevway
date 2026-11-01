@@ -10,11 +10,11 @@
  *
  *   pnpm apps:vikunja:up                                  # once: Vikunja in Docker, seeded user
  *   pnpm verify:vikunja                                   # every job, 3 runs each
- *   JEV_VIKUNJA_RUNS=1 JEV_VIKUNJA_ONLY=new-project pnpm verify:vikunja
+ *   JEVWAY_VIKUNJA_RUNS=1 JEVWAY_VIKUNJA_ONLY=new-project pnpm verify:vikunja
  *   node verify/vikunja.ts --self-check                   # no model: each check is false on the seeded demo, true once the change is made
  *   pnpm apps:vikunja:down                                # remove the stack and its data
  *
- * Launches its own headless Chrome (override with JEV_VIKUNJA_BROWSER). Opens report.html.
+ * Launches its own headless Chrome (override with JEVWAY_VIKUNJA_BROWSER). Opens report.html.
  */
 import { connectChrome } from '../src/browser/chrome.ts';
 import { Tab } from '../src/browser/tab.ts';
@@ -350,7 +350,7 @@ if (process.argv.includes('--self-check')) {
     name: 'vikunja',
     title: (jobCount) => `Vikunja (held back): ${jobCount} jobs with jevway`,
     startUrl: ORIGIN,
-    browser: process.env.JEV_VIKUNJA_BROWSER ?? 'launch-headless',
+    browser: process.env.JEVWAY_VIKUNJA_BROWSER ?? 'launch-headless',
     jobs: JOBS,
     before: (tab, job) => signIn(tab, START_PAGE[job.id] ?? `${ORIGIN}/`),
     reset: () => resetDemo(),
