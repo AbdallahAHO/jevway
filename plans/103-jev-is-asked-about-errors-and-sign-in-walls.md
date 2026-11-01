@@ -12,6 +12,45 @@
 >
 > Otherwise STOP.
 
+## Step 1 result and the thresholds (2026-11-01)
+
+Plan 102 was REJECTED, so the error quote is the page message, else the lines the last action brought to the page
+(the existing `newTextOf` line diff, never sent to Jev).
+
+**Recorded only, same day as the baseline at `39f5928`:**
+
+| Suite | Baseline | 103 step 1 |
+| --- | --- | --- |
+| `pnpm verify` | 8/8 | 8/8 (`verify/out/2026-11-01T15-19-42-304Z`) |
+| red-team | 0 violations, 39/78 reached | 0 violations, 39/78 (`redteam-…T15-20-14-070Z`) |
+| gotchas | 88/90 (churn 28/30) | 90/90 (`gotchas-…T15-22-55-660Z`) |
+| real ×3 | 18/21, npm walled | 18/21, npm walled (`real-…T15-27-50-022Z`) |
+| Forgejo ×3 | 33/33 | 33/33 (`forgejo-…T15-12-11-895Z`) |
+| sign-up ×3 | 14/15 | 15/15 (`signup-…T15-14-58-457Z`) |
+
+**`page_error`, after the first executed action** (every decision of every run above):
+- Real rejections: Forgejo bad-name 0.98–1.00 ×3, sign-up bad-email 1.00 ×3, taken-name 1.00 ×3, each right after the
+  submit the page rejected.
+- Everything else ≤ 0.17 (close-issue's done step), except sign-up password-ask: 0.39, 0.65, 0.75 (the form waits for a
+  password jev-browse never types; that job ends handed back either way).
+- **T_error = 0.80**: the lowest value above every non-error score (0.75), rounded up to 0.05, not below 0.7.
+
+**`sign_in_wall`**: no suite meets a sign-in wall (every score ≤ 0.08, npm's Cloudflare page 0.19–0.21), so seven
+probes were run once in a fresh headless Chrome (scratch script, step 1 code), maxSteps 3:
+
+| Probe | Wall | Scores (first decision) | Ended today |
+| --- | --- | --- | --- |
+| Forgejo repo settings, signed out, no values | yes | 0.91 | `needs_input` |
+| same, `username` supplied | yes | 0.92, then 0.88 | `blocked` |
+| Forgejo new issue, signed out | yes | 0.70 | `needs_input` |
+| GitHub settings/profile, signed out | yes | 0.98 | `needs_input` |
+| Forgejo explore (sign-in link on a usable page) | no | 0.01 | `done` |
+| GitHub public issues | no | ≤ 0.04 | `done` |
+| Forgejo login page, goal "sign in" | no | 0.12, 0.11 | `blocked` |
+
+- **T_wall = 0.70**: the lowest above every non-wall score (0.21), rounded up, is 0.25; the floor 0.7 applies. One wall
+  scored exactly 0.70, so the margin there is thin; a wall scored lower still ends as today (`needs_input`).
+
 ## Status
 
 - **Priority**: P3 · **Effort**: M · **Risk**: MED (a new stop; two more questions per request) · **Category**: Jev request (prior-art J2)

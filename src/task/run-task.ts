@@ -184,8 +184,9 @@ const COVERED_OVERLAP_BELOW = 0.1;
 const DONE_EVIDENT = 0.9;
 // The last look before a loop guard hands back accepts the goal as met at this done check: the same bar a DONE needs.
 const LAST_LOOK_DONE = 0.5;
-// Jev's page-error and sign-in-wall answers end the run from these scores; set from recorded runs (plans/103).
-const PAGE_ERROR_STOP = 0.7;
+// Jev's page-error and sign-in-wall answers end the run from these scores, set from recorded runs (plans/103): real
+// rejections scored 0.98–1.00 and no other page above 0.75; sign-in walls 0.70–0.98 and no other page above 0.21.
+const PAGE_ERROR_STOP = 0.8;
 const SIGN_IN_WALL_STOP = 0.7;
 // A next-step head this sure of another action contradicts a single done spike (measured on Jev: 2 of 16 such spikes were false DONEs).
 const HEAD_DISAGREES = 0.6;
