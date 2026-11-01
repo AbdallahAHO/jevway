@@ -4607,3 +4607,44 @@ describe('stops that are final stay final, whatever the caller checks say', () =
     expect(summary.wall).toMatchObject({ kind: 'bot_check' });
   });
 });
+
+describe("the done's evidence request", () => {
+  const TOKEN = 'tok Zq/81x';
+  const tokenPage = page({ text: `Staylist\nBooking confirmed with token ${TOKEN}\nReference JV-1042.`, url: 'http://fixture/stays#booking' });
+
+  it('never carries a secret, and neither does the evidence, the checks or the trace it returns', async () => {
+    const { ask, evidenceRequests } = scriptedJev([{ operation: 'DONE', done_check: 0.95, evidence: '2' }]);
+    const task = new BrowserTask(fakeTab([tokenPage]).asTab, ask, {
+      goal: 'Book',
+      doneWhen: 'Booking confirmed',
+      values: { token: TOKEN },
+      secretKeys: ['token'],
+      checks: [{ type: 'text_contains', text: TOKEN }],
+      changeWaitMs: 0,
+    });
+    const summary = await task.run();
+    expect(summary.status).toBe('done');
+    expect(evidenceRequests).toHaveLength(1);
+    expect(summary.evidence?.quote).toContain('[secret:token]');
+    for (const output of [evidenceRequests, summary, task.trace]) expect(JSON.stringify(output).toLowerCase()).not.toContain('zq/81x');
+  });
+
+  it('is cancelled with the run, and the run stays done without evidence', async () => {
+    const scripted = scriptedJev([{ operation: 'DONE', done_check: 0.95 }]);
+    const controller = new AbortController();
+    const signals: (AbortSignal | undefined)[] = [];
+    // The evidence request never answers, whatever its signal does: the run must not wait for it.
+    const ask: Ask = (request, options) => {
+      if (!request.questions.evidence) return scripted.ask(request);
+      signals.push(options?.signal);
+      setTimeout(() => controller.abort(), 50);
+      return new Promise(() => undefined);
+    };
+    const started = performance.now();
+    const summary = await new BrowserTask(fakeTab([tokenPage]).asTab, ask, { goal: 'Book', doneWhen: 'x', changeWaitMs: 0 }).run({ signal: controller.signal });
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(summary.status).toBe('done');
+    expect(summary).not.toHaveProperty('evidence');
+    expect(signals[0]?.aborted).toBe(true);
+  });
+});
