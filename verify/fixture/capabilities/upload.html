@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Profile · Settings</title>
+<style>
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; }
+  header { padding: 14px 24px; background: #0f766e; color: #fff; font-weight: 600; }
+  main { max-width: 560px; margin: 24px auto; padding: 0 16px; }
+  .avatar { display: flex; gap: 16px; align-items: center; }
+  .circle { width: 64px; height: 64px; border-radius: 50%; background: #ddd; }
+  /* The real input is hidden; the styled button in front of it opens the file picker. */
+  #picker { display: none; }
+  .choose { padding: 8px 14px; border: 1px solid #0f766e; border-radius: 6px; background: #fff; color: #0f766e; cursor: pointer; }
+</style>
+</head>
+<body>
+<header>Settings</header>
+<main>
+  <h1>Profile</h1>
+  <div class="avatar">
+    <div class="circle" id="preview"></div>
+    <div>
+      <input type="file" id="picker" accept="image/*">
+      <button type="button" class="choose" id="choose">Upload a profile picture</button>
+      <p id="status">No picture yet</p>
+    </div>
+  </div>
+</main>
+<script>
+  // Independent ground truth for verification; the agent never reads this object.
+  window.__fixture = { uploaded: null };
+  const picker = document.getElementById('picker');
+  document.getElementById('choose').addEventListener('click', () => picker.click());
+  picker.addEventListener('change', () => {
+    const file = picker.files[0];
+    if (!file) return;
+    window.__fixture.uploaded = file.name;
+    document.getElementById('status').textContent = `Profile picture set: ${file.name}`;
+    document.getElementById('preview').style.background = '#0f766e';
+  });
+</script>
+</body>
+</html>

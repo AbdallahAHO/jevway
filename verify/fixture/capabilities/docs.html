@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Acme API documentation</title>
+<style>
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; }
+  header { padding: 14px 24px; background: #111827; color: #fff; display: flex; gap: 12px; align-items: center; }
+  input { padding: 6px 10px; width: 260px; }
+  main { max-width: 720px; margin: 24px auto; padding: 0 16px; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Docs</strong>
+  <form id="search" role="search"><input type="search" name="q" aria-label="Search the documentation" placeholder="Search docs"><button>Search</button></form>
+</header>
+<main id="main">
+  <h1>Getting started</h1>
+  <p>Create an API key, then call the endpoints below.</p>
+</main>
+<script>
+  // Independent ground truth for verification; the agent never reads this object.
+  window.__fixture = { searched: null };
+  document.getElementById('search').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const query = event.target.q.value.trim();
+    window.__fixture.searched = query;
+    document.getElementById('main').innerHTML = `<h1>Results for "${query}"</h1><p>3 pages match.</p>`;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runs · Evals</title>
+<style>
+  /* An app shell: the document never scrolls; only the run list pane does. */
+  html, body { height: 100%; margin: 0; overflow: hidden; font: 14px system-ui, sans-serif; }
+  header { height: 56px; display: flex; align-items: center; padding: 0 20px; background: #1d2433; color: #fff; font-weight: 600; }
+  .shell { display: flex; height: calc(100% - 56px); }
+  nav { width: 200px; padding: 16px; background: #f3f4f6; box-sizing: border-box; }
+  nav a { display: block; padding: 6px 0; color: #374151; }
+  main { flex: 1; overflow-y: auto; }
+  h1 { margin: 0; padding: 16px 20px; font-size: 18px; }
+  #runs a { display: flex; justify-content: space-between; height: 44px; line-height: 44px; padding: 0 20px; border-bottom: 1px solid #eee; color: #111; text-decoration: none; }
+  #detail { padding: 20px; }
+</style>
+</head>
+<body>
+<header>Evals</header>
+<div class="shell">
+  <nav><a href="#">Dashboard</a><a href="#">Runs</a><a href="#">Datasets</a></nav>
+  <main id="pane">
+    <h1>Runs</h1>
+    <div id="runs"></div>
+    <section id="detail" hidden></section>
+  </main>
+</div>
+<script>
+  // Independent ground truth for verification; the agent never reads this object.
+  window.__fixture = { opened: null };
+  const rows = Array.from({ length: 80 }, (_, i) => {
+    const id = 'nightly-' + String(i + 1).padStart(3, '0');
+    return `<a href="#" data-id="${id}"><span>${id}</span><span>${(i * 7) % 60 + 12}s</span></a>`;
+  });
+  document.getElementById('runs').innerHTML = rows.join('');
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('#runs a');
+    if (!link) return;
+    event.preventDefault();
+    window.__fixture.opened = link.dataset.id;
+    document.getElementById('runs').hidden = true;
+    const detail = document.getElementById('detail');
+    detail.hidden = false;
+    detail.innerHTML = `<h2>Run ${link.dataset.id}</h2><p>Status: passed</p>`;
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Profile settings</title>
+<style>
+  body { margin: 0; padding: 16px; font: 15px/1.5 system-ui, sans-serif; background: #fafafa; }
+  label { display: block; margin-bottom: 6px; }
+  input { padding: 6px 10px; width: 240px; }
+  button { margin-top: 10px; padding: 6px 14px; }
+</style>
+</head>
+<body>
+<form id="profile">
+  <label for="display-name">Display name</label>
+  <input id="display-name" name="name" autocomplete="off">
+  <div><button type="submit">Save display name</button></div>
+  <p id="status"></p>
+</form>
+<script>
+  // Served on both origins: the embedding page records what was saved, so ground truth stays on the top page.
+  document.getElementById('profile').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const name = event.target.name.value.trim();
+    document.getElementById('status').textContent = `Saved: ${name}`;
+    parent.postMessage({ saved: name }, '*');
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Checkout · Review your order</title>
+<style>
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #f6f5f2; }
+  header { padding: 14px 24px; background: #1d1d1b; color: #fff; font-weight: 600; }
+  main { max-width: 560px; margin: 24px auto; padding: 0 16px; }
+  .panel { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+  #place { width: 100%; padding: 14px; font-size: 18px; background: #0a7; color: #fff; border: 0; border-radius: 8px; }
+</style>
+</head>
+<body>
+<header>Shop</header>
+<main>
+  <section class="panel" id="review">
+    <h1>Review your order</h1>
+    <ul><li>Mechanical keyboard · €249</li><li>Monitor arm · €250</li></ul>
+    <p>Total €499 · charged to Visa ending 4242</p>
+    <button type="button" id="place">Place order</button>
+  </section>
+  <section class="panel" id="thanks" hidden><h1>Thank you for your order</h1><p>Order #A-1043 is on its way.</p></section>
+</main>
+<script>
+  // Independent ground truth for verification; the agent never reads this object.
+  window.__fixture = { ordered: false };
+  document.getElementById('place').addEventListener('click', () => {
+    window.__fixture.ordered = true;
+    document.getElementById('review').hidden = true;
+    document.getElementById('thanks').hidden = false;
+  });
+</script>
+</body>
+</html>

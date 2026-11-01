@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign in · Acme Cloud</title>
+<style>
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #f3f4f6; }
+  form { max-width: 340px; margin: 80px auto; background: #fff; padding: 24px; border-radius: 10px; }
+  label { display: block; margin: 12px 0 4px; }
+  input { padding: 6px 10px; width: 100%; box-sizing: border-box; }
+  button { margin-top: 16px; width: 100%; padding: 8px; }
+</style>
+</head>
+<body>
+<form id="signin">
+  <h1>Sign in to continue</h1>
+  <p>Billing settings need you to sign in.</p>
+  <label for="email">Email</label>
+  <input id="email" type="email" autocomplete="off">
+  <label for="password">Password</label>
+  <input id="password" type="password">
+  <button type="submit">Sign in</button>
+  <p id="error" role="alert"></p>
+</form>
+<script>
+  // Independent ground truth for verification; the agent never reads this object. No account exists: sign-in always fails.
+  window.__fixture = { signedIn: false, billingOpen: false, attempts: 0 };
+  document.getElementById('signin').addEventListener('submit', (event) => {
+    event.preventDefault();
+    window.__fixture.attempts++;
+    document.getElementById('error').textContent = 'Enter your email and password.';
+  });
+</script>
+</body>
+</html>

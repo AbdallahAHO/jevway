@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Billing · Plan</title>
+<style>
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; }
+  header { padding: 14px 24px; background: #1e3a8a; color: #fff; font-weight: 600; }
+  main { max-width: 560px; margin: 24px auto; padding: 0 16px; }
+  select { padding: 6px 10px; }
+</style>
+</head>
+<body>
+<header>Billing</header>
+<main>
+  <h1>Plan</h1>
+  <label for="plan">Plan</label>
+  <select id="plan">
+    <option value="free">Free</option>
+    <option value="pro">Pro · $20/month</option>
+    <option value="team">Team · $50/month</option>
+  </select>
+  <p>Changes take effect at the next billing date.</p>
+</main>
+<script>
+  // Independent ground truth for verification; the agent never reads this object.
+  window.__fixture = { get plan() { return document.getElementById('plan').value; } };
+</script>
+</body>
+</html>

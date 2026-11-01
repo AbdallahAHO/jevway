@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Activity feed</title>
+<style>
+  /* The feed lives in its own scroll pane, as in most app shells; the document never scrolls. */
+  html, body { height: 100%; margin: 0; overflow: hidden; font: 14px system-ui, sans-serif; }
+  header { height: 56px; display: flex; align-items: center; padding: 0 20px; background: #233; color: #fff; font-weight: 600; }
+  #pane { height: calc(100% - 56px); overflow-y: auto; }
+  #list a { display: block; height: 44px; line-height: 44px; padding: 0 20px; border-bottom: 1px solid #eee; color: #111; text-decoration: none; }
+  #more { padding: 16px 20px; color: #666; }
+  #detail { padding: 20px; }
+</style>
+</head>
+<body>
+<header>Activity</header>
+<div id="pane">
+  <div id="list"></div>
+  <div id="more" hidden>Loading more…</div>
+  <section id="detail" hidden></section>
+</div>
+<script>
+  // Independent ground truth for verification; the agent never reads this object.
+  window.__fixture = { loads: 0, opened: null };
+  const PAGE = 20, MAX = 80;
+  let count = 0, loading = false;
+  const append = () => {
+    const items = Array.from({ length: PAGE }, (_, i) => `<a href="#" data-id="item-${count + i + 1}">Item ${count + i + 1}</a>`);
+    document.getElementById('list').insertAdjacentHTML('beforeend', items.join(''));
+    count += PAGE;
+  };
+  append();
+  // Scrolling the pane near its bottom fetches the next 20 after a short network delay.
+  const pane = document.getElementById('pane');
+  pane.addEventListener('scroll', () => {
+    const nearBottom = pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 200;
+    if (loading || count >= MAX || !nearBottom) return;
+    loading = true;
+    document.getElementById('more').hidden = false;
+    setTimeout(() => {
+      append();
+      window.__fixture.loads++;
+      document.getElementById('more').hidden = true;
+      loading = false;
+    }, 300);
+  });
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest('#list a');
+    if (!link) return;
+    event.preventDefault();
+    window.__fixture.opened = link.dataset.id;
+    document.getElementById('list').hidden = true;
+    const detail = document.getElementById('detail');
+    detail.hidden = false;
+    detail.innerHTML = `<h2>${link.textContent} is open</h2>`;
+  });
+</script>
+</body>
+</html>
