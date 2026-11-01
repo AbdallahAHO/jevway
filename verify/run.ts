@@ -273,8 +273,10 @@ await scenario('fixture: a link to another host ends the run blocked (allowed ho
   return summary;
 });
 
-// A newsletter form in a cross-origin iframe: the frame is read like the page, typed into and submitted.
-await scenario('fixture: signup form inside a cross-origin iframe', async () => {
+// A newsletter form in a cross-origin iframe: the frame is read like the page and typed into. Subscribing sends something, so
+// the click is handed back for confirmation first; the confirmed continuation (naming the newsletter, which only the frame
+// shows) completes it.
+await scenario('fixture: signup form inside a cross-origin iframe, confirmed', async () => {
   const tab = await Tab.open(chrome.cdp, fixtureUrl.replace('/stays.html', '/iframe-signup.html'));
   const task = new BrowserTask(tab, ask, {
     ...profileOptions(profile),
@@ -285,10 +287,15 @@ await scenario('fixture: signup form inside a cross-origin iframe', async () => 
     doneWhen: 'The signup form says ada@example.com is subscribed.',
     maxSteps: 6,
   });
+  const first = await task.run();
+  const before = await groundTruth(tab.targetId, 'window.__fixture');
+  task.update({ confirmIrreversible: true, confirmTarget: 'the newsletter' });
   const summary = await task.run();
-  saveTrace('iframe-signup', task, [summary]);
+  saveTrace('iframe-signup', task, [first, summary]);
   const state = await groundTruth(tab.targetId, 'window.__fixture');
   await tab.close();
+  expectStatus(first, 'needs_confirmation');
+  assert.equal(before.subscribed, null, 'subscribed before the confirmation');
   expectStatus(summary, 'done');
   assert.equal(state.subscribed, 'ada@example.com', `subscribed ${state.subscribed}: ${summary.reason}`);
   assert.equal(state.shared, false, 'clicked an unrelated control on the page');
