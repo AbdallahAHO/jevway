@@ -7,6 +7,7 @@ import { decide, foldedFavourite, overflowFolds, type Ask, type Candidate, type 
 import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
 import { ANY_HOST, narrowHosts, outsideHosts, type HostRules } from './hosts.ts';
 import { scrubberFor } from '../jev/secrets.ts';
+import { describeFailure, runChecks, type Check, type CheckResult } from './checks.ts';
 import { Recording } from './recording.ts';
 import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
 
@@ -55,6 +56,11 @@ export interface TaskOptions {
   hosts?: HostRules;
   /** How long a bot check (a Cloudflare challenge, a captcha page) gets to clear itself before the run hands back `blocked`. */
   wallWaitMs?: number;
+  /**
+   * The caller's checks, evaluated by code on the final page (see checks.ts): a failed one turns `done` into
+   * `uncertain`; all passing turn `blocked`/`uncertain` into `done` only with `doneWhen` scored ≥ 0.5 on that page.
+   */
+  checks?: Check[];
 }
 
 export type TaskStatus = 'done' | 'needs_input' | 'needs_confirmation' | 'uncertain' | 'blocked' | 'step_budget';
@@ -87,6 +93,8 @@ export interface TaskSummary {
   wall?: TaskWall;
   /** On `needs_input`: each field that wants a value, with its role and the URL pathname it is on. */
   missing?: { label: string; role?: string; path: string }[];
+  /** Each of the caller's checks with whether it passed on the final page; present when checks were given. */
+  checks?: CheckResult[];
 }
 
 export interface TraceEntry {
@@ -126,6 +134,7 @@ const DEFAULTS = {
   hosts: ANY_HOST,
   // Prior art (jkudish/jev-browser) waits 8 s; npm's headless challenge never cleared in 50 s, so this bounds patience.
   wallWaitMs: 8000,
+  checks: [] as Check[],
 };
 // How often a bot check is looked at again while it gets the chance to clear itself.
 const WALL_POLL_MS = 250;
@@ -264,6 +273,10 @@ export class BrowserTask {
   #refusedForValue = new Set<number>();
   /** Trace entries before this index are already scrubbed of secret values. */
   #traceScrubbed = 0;
+  /** The page each decision was made on: a `done_when` score counts for the caller's checks only on the page it judged. */
+  #decidedOn = new WeakMap<Decision, PageState>();
+  /** How the last call stopped: the page its summary reports and the decision it stopped on. */
+  #ending: { page: PageState; decision?: Decision } | undefined;
   #tab: Tab;
   #ask: Ask;
   #recording: Recording | undefined;
@@ -319,7 +332,7 @@ export class BrowserTask {
   async run({ signal }: { signal?: AbortSignal } = {}): Promise<TaskSummary> {
     // The recording is for people: a browser failure while recording must not change or hang the run's outcome.
     await this.#recording?.start(this.#tab).catch(() => undefined);
-    const summary = await this.#loop(signal);
+    const summary = this.#settle(await this.#loop(signal));
     await this.#recording?.finish(this.#tab, summary).catch(() => undefined);
     return summary;
   }
@@ -355,6 +368,7 @@ export class BrowserTask {
       const confirmIgnored = this.#confirmIgnored;
       this.#confirmIgnored = undefined;
       this.#lastStatus = status;
+      this.#ending = { page, decision };
       // A secret never leaves in a summary or a trace, wherever the page echoed it.
       for (; this.#traceScrubbed < this.trace.length; this.#traceScrubbed++) this.trace[this.#traceScrubbed] = this.#scrub(this.trace[this.#traceScrubbed]);
       return this.#scrub({
@@ -827,6 +841,32 @@ export class BrowserTask {
     }
   }
 
+  // jev-browse: the caller's checks are facts about the final page, so they settle the status the loop chose. A failed
+  // check overturns `done`; passing checks finish a hand-back only together with a done_when score made on that same
+  // page, because the checked text may have been there before the run. Questions for the caller are never changed.
+  #settle(summary: TaskSummary): TaskSummary {
+    const { checks, doneWhen } = this.#options;
+    if (!checks.length || !this.#ending) return summary;
+    const { page, decision } = this.#ending;
+    const results = runChecks(checks, page);
+    const failed = results.filter((result) => !result.pass);
+    if (summary.status === 'done' && failed.length) {
+      this.#lastStatus = 'uncertain';
+      const listed = failed.map(describeFailure).join('; ');
+      return { ...summary, status: 'uncertain', reason: `Jev reported done, but ${failed.length} of ${results.length} checks failed on the final page: ${listed}`, checks: results };
+    }
+    const score = decision && this.#decidedOn.get(decision) === page ? decision.doneProbability : undefined;
+    // The same bars a DONE needs, and the higher one right after an edit that nothing saved yet.
+    const bar = this.#unsavedEdit ? GUARDS.doneSteady : LAST_LOOK_DONE;
+    if (['blocked', 'uncertain'].includes(summary.status) && !failed.length && doneWhen && score !== undefined && score >= bar) {
+      this.#lastStatus = 'done';
+      const { stuck: _stuck, ...rest } = summary;
+      const reason = `All ${results.length} checks passed on the final page and "${doneWhen}" scored ${round(score)} there (the run had ended ${summary.status}: ${summary.reason})`;
+      return { ...rest, status: 'done', reason, checks: results };
+    }
+    return { ...summary, checks: results };
+  }
+
   // Tells Jev about the dialogs the page opened since the last look, on the latest step of this call (or the next one, when
   // there is none yet). Returns a reason when a dialog we only ever decline keeps coming back: the run must end then.
   // `click` is the click that ran just before, with what the run had left unsaved on its page.
@@ -943,6 +983,7 @@ export class BrowserTask {
       this.#latencies.push(decision.latencyMs);
       this.#inputTokens += decision.inputTokens;
       if (screenshot) this.#screenshots++;
+      this.#decidedOn.set(decision, page);
       return decision;
     };
     const withScreenshot = screenshots === 'always' || (lastLook && screenshots !== 'off');

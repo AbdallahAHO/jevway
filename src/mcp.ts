@@ -5,6 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import type { JourneySession } from './journeys/journey-session.ts';
+import { CHECKS } from './task/checks.ts';
 import type { BrowserTask } from './task/run-task.ts';
 import { createRunner } from './task/start-task.ts';
 
@@ -31,6 +32,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
 - Start \`url\` on the page where the change is made (e.g. /owner/repo/milestones/new), not a parent page: Jev follows the links it sees, and a same-named global link can win. After a hand-back on the wrong page, fix \`url\`.
 - Pass every text value the goal needs in \`values\` (e.g. {"city":"Lisbon","email":"a@b.co"}). Jev only types supplied values. Name the keys that hold secrets (an API token, a one-time code) in \`secret_keys\`: Jev then sees only the key, and the value is replaced by \`[secret:<key>]\` in everything returned.
 - Pass \`done_when\`: visible evidence of success on the page the call ends on; check another page in a second call. It is checked independently before status "done".
+- Pass \`checks\` for facts you can state exactly (the address, a title, a text that must or must not show, a field's value, a ticked box, a listed control by role and name). Code checks them on the final page and returns each one in \`checks\`: a failed check turns "done" into "uncertain" (the reason names it); all passing turn "blocked"/"uncertain" into "done" only together with \`done_when\`. Text checks read the visible text only, so prefer the URL or title for "a page is open".
 - Statuses that hand control back — continue with the same \`session\`:
   needs_input → add the missing value to \`values\` (\`missing\` lists each field that wants one: label, role, page path);
   needs_confirmation → the next click looks irreversible (delete, pay, send). Set \`confirm_irreversible: true\` only when the user's own request names this action and its target (e.g. "delete the repository X" → the clicks that delete X); for anything else, stop and ask the user. A kind of thing ("anything unused", "old branches", "all drafts") does not name a target: list what you would delete or send and ask the user first. Each confirmation covers one click: the control that needs_confirmation named (same label, same page path); if Jev picks a different irreversible control, it is handed back as a new needs_confirmation. It counts only on the call that answers a needs_confirmation (or a new session's first call, which allows any one); anywhere else it is ignored. Pass \`confirm_target\` with the user's words that name the target; jev-browse checks the page shows them (the control's own words, like "delete", do not count) and refuses otherwise.
@@ -56,6 +58,9 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
           'Keys of `values` that are secrets (API token, one-time code, card number). Jev sees the key, never the value; the value is typed as given and shows as [secret:<key>] in page_text, steps, reasons and recordings. Kept for the session.',
         ),
       done_when: z.string().optional().describe('Visible evidence, on the page the call ends on, that the goal is complete.'),
+      checks: CHECKS.optional().describe(
+        'Facts code checks on the final page: url_contains {text}, url_matches {pattern: glob, * = anything}, title_contains {text}, text_contains / text_absent {text}, element_exists {name, role?}, value_equals {label, value}, checked {label, state}, count_at_least {min, name?, role?}. Case and spacing are ignored; an empty needle fails. They stay for the session until replaced ([] clears them).',
+      ),
       session: z.string().optional().describe('Continue a previous session (same tab, history kept).'),
       confirm_irreversible: z
         .boolean()
@@ -111,6 +116,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
       values,
       secret_keys,
       done_when,
+      checks,
       session,
       confirm_irreversible,
       confirm_target,
@@ -134,6 +140,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
           values,
           secretKeys: secret_keys,
           doneWhen: done_when,
+          checks,
           maxSteps: max_steps,
           maxSeconds: max_seconds,
           allowedHosts: allowed_hosts,
@@ -149,6 +156,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
           values,
           secretKeys: secret_keys,
           doneWhen: done_when,
+          checks,
           maxSteps: max_steps,
           maxSeconds: max_seconds,
           allowedHosts: allowed_hosts,

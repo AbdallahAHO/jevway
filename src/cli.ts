@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
+import { CHECKS, type Check } from './task/checks.ts';
 import { createRunner } from './task/start-task.ts';
 
 const USAGE = `jev-browse --goal "<outcome>" (--url <url> | --tab <url part>) [options]
@@ -7,6 +8,7 @@ const USAGE = `jev-browse --goal "<outcome>" (--url <url> | --tab <url part>) [o
   --values '{"city":"Lisbon"}'   text values Jev may type
   --secret-keys token,otp         keys of --values that are secrets: Jev sees the key only, output shows [secret:<key>]
   --done-when "<evidence>"        visible evidence of success
+  --checks '[{"type":"url_contains","text":"/issues/"}]'   facts checked by code on the final page
   --browser auto|launch|launch-headless|http://127.0.0.1:9222   (default: auto, or $JEV_BROWSER)
   --model jev|pplx-decider|clef-omni|clef|clef-flash|gpt-6-luna   decision model (default: jev, or $JEV_MODEL)
   --screenshots off|fallback|always   marked screenshots, vision models only (default: per model, or $JEV_SCREENSHOTS)
@@ -29,6 +31,7 @@ const { values: args } = parseArgs({
     values: { type: 'string' },
     'secret-keys': { type: 'string' },
     'done-when': { type: 'string' },
+    checks: { type: 'string' },
     browser: { type: 'string' },
     model: { type: 'string' },
     screenshots: { type: 'string' },
@@ -48,7 +51,15 @@ if (args.help || !args.goal || !(args.url || args.tab)) {
   process.exit(args.help ? 0 : 2);
 }
 
-// Model or key problems are usage errors: report them before any browser starts.
+// Malformed checks, like model or key problems, are usage errors: report them before any browser starts.
+let checks: Check[] | undefined;
+try {
+  checks = args.checks ? CHECKS.parse(JSON.parse(args.checks)) : undefined;
+} catch (error) {
+  console.error(`jev-browse: --checks: ${(error as Error).message}`);
+  process.exit(2);
+}
+
 let runner: ReturnType<typeof createRunner>;
 try {
   runner = createRunner(args.browser ?? process.env.JEV_BROWSER ?? 'auto', {
@@ -68,6 +79,7 @@ try {
     values: args.values ? JSON.parse(args.values) : undefined,
     secretKeys: args['secret-keys']?.split(',').map((key) => key.trim()).filter(Boolean),
     doneWhen: args['done-when'],
+    checks,
     maxSteps: args['max-steps'] ? Number(args['max-steps']) : undefined,
     maxSeconds: args['max-seconds'] ? Number(args['max-seconds']) : undefined,
     allowedHosts: args['allowed-hosts']?.split(','),
