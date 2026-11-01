@@ -100,7 +100,10 @@ a brand phrase, so an article quoting one or two challenge lines is not a wall. 
 6. **The harness imports the same module.** `verify/real-world.ts` drops `BOT_WALL` and judges the final page with
    `detectBotWall(await tab.observe())`, independently of the run's status (ground truth stays a separate read). Its
    `⊘ bot wall` reporting stays, now with the wall's name.
-7. **Statuses unchanged.** `blocked`, as for any page the run can't act on.
+7. **Statuses unchanged.** `blocked`, as for any page the run can't act on. The summary also carries
+   `wall: { kind: 'bot_check', origin, name }` (`name`: cloudflare, recaptcha, hcaptcha, turnstile, unusual-traffic), the
+   shape the reviewer set for both bot walls and plan 103's sign-in walls (`kind: 'sign_in'`), declared next to
+   `TaskSummary` in `run-task.ts`.
 
 ## Scope
 
