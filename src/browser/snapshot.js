@@ -526,6 +526,8 @@
       (i === 0 ? ' (passwords are typed by the user, not by you)' : ''),
   );
   const words = [];
+  // jev-browse: a frame reads only the part of it the page leaves on screen (set by the tab); a page reads its viewport.
+  const view = window.__jevView || { x: 0, y: 0, w: innerWidth, h: innerHeight };
   const range = document.createRange();
   let node,
     length = 0;
@@ -537,7 +539,7 @@
       if (!value || !parent || parent.closest('script,style,noscript,template') || !visible(parent)) continue;
       range.selectNodeContents(node);
       const r = range.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth) {
+      if (r.width > 0 && r.height > 0 && r.bottom > view.y && r.top < view.y + view.h && r.right > view.x && r.left < view.x + view.w) {
         words.push(value);
         length += value.length;
       }

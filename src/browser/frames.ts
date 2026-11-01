@@ -286,9 +286,12 @@ export class Frames {
     if (!levels) return null;
     const placement = framePlacement(levels, this.#viewport);
     if (placement.region.w < MIN_SIDE || placement.region.h < MIN_SIDE) return null;
+    // The text walk keeps to the part of the frame the page shows, in the frame's own coordinates.
+    const { offset, region } = placement;
+    const view = { x: region.x - offset.x, y: region.y - offset.y, w: region.w, h: region.h };
     const response = await this.evaluate(
       frame,
-      `window.__jevIdBase=${frame.base};window.__jevWanted=${JSON.stringify(wanted)};${script}`,
+      `window.__jevIdBase=${frame.base};window.__jevView=${JSON.stringify(view)};window.__jevWanted=${JSON.stringify(wanted)};${script}`,
       { timeout: FRAME_READ_MS },
     );
     const state = response.exceptionDetails ? null : response.result?.value;
