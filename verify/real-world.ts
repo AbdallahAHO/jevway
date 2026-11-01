@@ -9,6 +9,7 @@
  * Every task stops before any login, payment or submission. Jev's own DONE never counts as a pass.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { findBotWall } from '../src/browser/bot-wall.ts';
 import { connectChrome, type BrowserSource } from '../src/browser/chrome.ts';
 import { Tab } from '../src/browser/tab.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
@@ -124,15 +125,15 @@ const outDir = new URL(`./out/real-${new Date().toISOString().replace(/[:.]/g, '
 mkdirSync(outDir, { recursive: true });
 process.stdout.write(`model: ${profile.name} (${profile.model}) · screenshots: ${screenshots} · ${runs} runs each\n`);
 
-// A bot check or captcha ends the run for the environment, not for the agent: reported apart from failures.
-// A challenge page says so in its title or at the top; the whole text also matches comments that merely discuss captchas.
-const BOT_WALL = /verify(ing)? you are (human|not a bot)|performing security verification|unusual traffic|captcha|are you a robot/i;
+// A bot check or captcha ends the run for the environment, not for the agent: reported apart from failures. The same
+// detector the run uses (src/browser/bot-wall.ts) judges the final page, read separately from the run's own status.
 
 interface RunResult {
   scenario: string;
   run: number;
   passed: boolean;
-  botWall?: boolean;
+  /** The wall's name ("Cloudflare", "reCAPTCHA", …) when the final page is a bot check. */
+  botWall?: string;
   url: string;
   summary?: Partial<TaskSummary>;
   error?: string;
@@ -160,8 +161,7 @@ for (const scenario of SCENARIOS.filter((s) => !only || only.includes(s.name))) 
       // Ground truth comes from a separate read of the page, not from the task's summary.
       const url = String(await tab.evaluate('location.href'));
       // Challenge pages can sit at the target URL itself (npm serves Cloudflare's at /package/zod).
-      const pageHead = String(await tab.evaluate('`${document.title}\\n${(document.body?.innerText ?? "").slice(0, 600)}`'));
-      const botWall = BOT_WALL.test(pageHead);
+      const botWall = (await findBotWall(tab, await tab.observe()))?.name;
       const passed = !botWall && scenario.passes(new URL(url));
       result = { ...result, url, passed, summary, ...(botWall && { botWall }) };
       writeFileSync(new URL(`${scenario.name}-${run}.json`, outDir), JSON.stringify({ summary, trace: task.trace }, null, 1));
@@ -179,7 +179,7 @@ for (const scenario of SCENARIOS.filter((s) => !only || only.includes(s.name))) 
     results.push(result);
     const s = result.summary;
     process.stdout.write(
-      `${result.passed ? '✔' : result.botWall ? '⊘ bot wall' : '✘'} ${scenario.name} #${run} — ${result.error ?? `${s?.status} in ${s?.elapsed_ms}ms · ${s?.steps?.length} actions · ${s?.jev?.requests} requests · ${s?.jev?.screenshots} screenshots${result.passed ? '' : ` · ${s?.reason} · ${result.url}`}`}\n`,
+      `${result.passed ? '✔' : result.botWall ? `⊘ bot wall (${result.botWall})` : '✘'} ${scenario.name} #${run} — ${result.error ?? `${s?.status} in ${s?.elapsed_ms}ms · ${s?.steps?.length} actions · ${s?.jev?.requests} requests · ${s?.jev?.screenshots} screenshots${result.passed ? '' : ` · ${s?.reason} · ${result.url}`}`}\n`,
     );
   }
 }

@@ -1,3 +1,4 @@
+import { findBotWall, type BotWall } from '../browser/bot-wall.ts';
 import { PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, type PageAction, type PageState, type Tab } from '../browser/tab.ts';
 import { showsTarget } from '../browser/words.ts';
 import { buildActionSpace } from '../jev/action-space.ts';
@@ -46,6 +47,8 @@ export interface TaskOptions {
   recordDir?: string;
   /** Hosts the run may be on (see hosts.ts): checked before every decision and after every step; leaving ends it `blocked`. */
   hosts?: HostRules;
+  /** How long a bot check (a Cloudflare challenge, a captcha page) gets to clear itself before the run hands back `blocked`. */
+  wallWaitMs?: number;
 }
 
 export type TaskStatus = 'done' | 'needs_input' | 'needs_confirmation' | 'uncertain' | 'blocked' | 'step_budget';
@@ -102,7 +105,11 @@ const DEFAULTS = {
   allowCoordinateClicks: false,
   changeWaitMs: 1500,
   hosts: ANY_HOST,
+  // Prior art (jkudish/jev-browser) waits 8 s; npm's headless challenge never cleared in 50 s, so this bounds patience.
+  wallWaitMs: 8000,
 };
+// How often a bot check is looked at again while it gets the chance to clear itself.
+const WALL_POLL_MS = 250;
 // How often a page that has not reacted yet is looked at again while waiting for it to change.
 const CHANGE_POLL_MS = 150;
 /**
@@ -349,8 +356,20 @@ export class BrowserTask {
       return true;
     };
     // Every way of ending `done` goes through here: undefined means a menu was closed first, so the loop decides again.
-    const stopDone = async (reason: string, decision?: Decision): Promise<TaskSummary | undefined> =>
-      (await closeMenuBeforeDone()) ? undefined : stop('done', reason, decision);
+    const stopDone = async (reason: string, decision?: Decision): Promise<TaskSummary | undefined> => {
+      if (await closeMenuBeforeDone()) return undefined;
+      // The page may have turned into a bot check while Jev decided: done is never returned on one.
+      if (!(await this.#tab.fresh(page))) {
+        // A page that can't be read now keeps the done Jev decided on.
+        const now = await this.#tab.observe().catch(() => undefined);
+        if (now && (await findBotWall(this.#tab, now))) {
+          page = now;
+          const { wall } = await wallAfterWait();
+          return wall ? stop('blocked', wallReason(wall), decision) : undefined;
+        }
+      }
+      return stop('done', reason, decision);
+    };
 
     // A loop guard fires on a page the actions may already have brought to the goal: take one last look before handing back.
     const stopAfterLastLook = async (status: TaskStatus, reason: string, decision: Decision): Promise<TaskSummary | undefined> => {
@@ -360,6 +379,27 @@ export class BrowserTask {
         return stopDone(`Completion condition verified: ${doneWhen}`, look);
       }
       return stop(status, reason, decision);
+    };
+
+    // jev-browse: a bot check offers nothing to act on, and the run never tries to get past one. It gets wallWaitMs to clear
+    // itself (the page read again meanwhile), once per call: one that comes back after clearing ends the run at once.
+    let wallWaited = false;
+    const wallAfterWait = async (): Promise<{ wall?: BotWall; cleared: boolean }> => {
+      let wall = await findBotWall(this.#tab, page);
+      if (!wall) return { cleared: false };
+      if (wallWaited) return { wall, cleared: false };
+      wallWaited = true;
+      const deadline = performance.now() + this.#options.wallWaitMs;
+      while (wall && performance.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, WALL_POLL_MS));
+        // A challenge that clears navigates: a page still loading is looked at again on the next poll.
+        page = await this.#tab.observe().catch((error) => {
+          if (error instanceof StalePage) return page;
+          throw error;
+        });
+        wall = await findBotWall(this.#tab, page);
+      }
+      return { wall, cleared: !wall };
     };
 
     // Browser and model errors end the run as `blocked`: the calling agent keeps the session and decides what next.
@@ -376,6 +416,9 @@ export class BrowserTask {
         if (outside) return stop('blocked', `The page is outside this run's hosts: ${outside}; the run stopped without going back`);
         // The arm belongs to one step: a click that never reached the page leaves none for the next decision.
         this.#tab.disarmConfirm();
+        // Checked before a decision is spent: a challenge page has nothing for Jev to pick.
+        const { wall } = await wallAfterWait();
+        if (wall) return stop('blocked', wallReason(wall));
         if (++decisions > maxSteps * 2) return stop('step_budget', `Made ${maxSteps * 2} decisions without finishing`);
         let decision: Decision;
         try {
@@ -1303,6 +1346,10 @@ const round = (value: number) => Math.round(value * 1000) / 1000;
 class ModelCallError extends Error {}
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+// The hand-back for a bot wall: what it is, what made it one, and who can pass it.
+const wallReason = (wall: BotWall) =>
+  `The page is a bot check (${wall.name}; seen: ${wall.evidence.map((e) => (e.startsWith('title ') ? e : `"${e}"`)).join(', ')}) that did not clear by itself; jev-browse never tries to get past one. A person can pass it in this tab, then continue the session.`;
 
 // Anything that is not a model error came from the tab (CDP, page never settling, an unconfirmed action).
 const describeError = (error: unknown) =>

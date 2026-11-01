@@ -4038,7 +4038,7 @@ describe('a bot wall', () => {
     const { asTab, acted } = fakeTab([wallPage()]);
     const summary = await new BrowserTask(asTab, ask, { goal: 'Open zod', doneWhen: 'x', changeWaitMs: 0, wallWaitMs: 0 }).run();
     expect(summary.status).toBe('blocked');
-    expect(summary.reason).toContain('Cloudflare bot check');
+    expect(summary.reason).toContain('bot check (Cloudflare;');
     expect(summary.reason).toContain('jev-browse never tries to get past one');
     expect(summary.page_text).toContain('Performing security verification');
     expect(requests).toHaveLength(0);
@@ -4061,7 +4061,7 @@ describe('a bot wall', () => {
     tab.fresh = async () => false;
     const summary = await new BrowserTask(asTab, ask, { goal: 'Open zod', doneWhen: 'x', changeWaitMs: 0, wallWaitMs: 0 }).run();
     expect(summary.status).toBe('blocked');
-    expect(summary.reason).toContain('Cloudflare bot check');
+    expect(summary.reason).toContain('bot check (Cloudflare;');
     expect(summary.title).toBe('Just a moment...');
   });
 
@@ -4071,7 +4071,7 @@ describe('a bot wall', () => {
     const started = performance.now();
     const summary = await new BrowserTask(asTab, ask, { goal: 'Open zod', doneWhen: 'x', changeWaitMs: 0, wallWaitMs: 1000 }).run();
     expect(summary.status).toBe('blocked');
-    expect(summary.reason).toContain('Cloudflare bot check');
+    expect(summary.reason).toContain('bot check (Cloudflare;');
     expect(requests).toHaveLength(1);
     expect(performance.now() - started).toBeLessThan(1500);
   });

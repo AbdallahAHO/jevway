@@ -105,7 +105,7 @@ Every model judges commit risk **per click candidate by name**, in one follow-up
 | `needs_input` | A field needs a value that isn't in `values`. Nothing is invented. |
 | `needs_confirmation` | The next click looks irreversible (pay, send, delete, submit). `confirm_irreversible: true` allows exactly one such click, and an agent should set it only for the action and target the user's own request names (a category such as "anything unused" names no target: it lists the candidates and asks the user); otherwise it asks the user. It counts only on the call that answers a needs_confirmation (or a new session's first call); anywhere else it is ignored. Pass `confirm_target` with the user's words that name the target; jev-browse checks the page shows them (the control's own words, like "delete", do not count) and refuses otherwise. |
 | `uncertain` | Operation or target confidence was below the model threshold (Jev 0.3; per model in `src/jev/model.ts`), 6 actions in a row ran under 0.5 confidence (exploring, not progressing), or DONE could not be verified. |
-| `blocked` | No supported operation can progress, 3 actions in a row changed nothing, the same target was covered 3 times, one action only toggled the page back and forth 4 times, or the same element was used 6 times in 7 actions. |
+| `blocked` | No supported operation can progress, 3 actions in a row changed nothing, the same target was covered 3 times, one action only toggled the page back and forth 4 times, or the same element was used 6 times in 7 actions. Also a bot check (a Cloudflare challenge, a reCAPTCHA, hCaptcha or Turnstile page, an "unusual traffic" page) that did not clear by itself within 8 s: the reason names it, no Jev request is spent on it, and jev-browse never tries to get past one. |
 | `step_budget` | `max_steps` (default 40) or `max_seconds` (CLI `--max-seconds`; default 300, per call) was reached; the reason says which. |
 
 Cancelling the MCP request (or Ctrl-C in the CLI) stops the run before its next step: it ends `blocked`, "Cancelled by the caller", in the recording and the session history. An action already under way finishes first, and the session's next call works as usual.
@@ -141,7 +141,7 @@ pnpm verify:langfuse   # 10 jobs in Langfuse's demo project, signed-in Chrome on
 - **Wide table rows** (like Langfuse's traces table): rows wider than their scroll box are listed and opened, not their checkboxes. The run is recorded.
 - **MCP stdio round trip.**
 
-`pnpm verify:real` runs Wikipedia, MDN, GitHub, Hacker News, npm, Booking.com and Google Flights. Every task stops before login or payment, passes are checked against the final URL, and bot walls (Cloudflare, captchas) are reported apart from failures.
+`pnpm verify:real` runs Wikipedia, MDN, GitHub, Hacker News, npm, Booking.com and Google Flights. Every task stops before login or payment, passes are checked against the final URL, and bot walls (Cloudflare, captchas) are reported apart from failures, judged by the same detector the run uses (`src/browser/bot-wall.ts`).
 
 Traces go to `verify/out/`. Results are in [docs/verification.md](docs/verification.md).
 

@@ -10,9 +10,12 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { findBotWall } from '../src/browser/bot-wall.ts';
 import { connectChrome } from '../src/browser/chrome.ts';
 import { DEVICES, type DeviceName } from '../src/browser/devices.ts';
 import { StalePage, Tab, TargetUnreachable, type PageAction } from '../src/browser/tab.ts';
+import type { Ask } from '../src/jev/decide.ts';
+import { BrowserTask } from '../src/task/run-task.ts';
 
 interface Check {
   name: string;
@@ -884,6 +887,65 @@ const checks: Check[] = [
       await tab.act(scrollDown, page, undefined, { evenIfChanged: true });
       for (let waited = 0; waited < 1000 && !(await tab.evaluate('scrollY')); waited += 50) await pause(50);
       assert.ok((await tab.evaluate('scrollY')) > 0, 'the page did not scroll');
+    },
+  },
+  // Bot walls: the run's own detector on real pages, and a run that meets one. No model: the ask below must never be needed on a wall.
+  {
+    name: "a Cloudflare challenge is a wall, named with its Turnstile box",
+    file: 'bot-wall-cloudflare.html',
+    run: async (tab) => {
+      const wall = await findBotWall(tab, await tab.observe());
+      assert.equal(wall?.name, 'Cloudflare Turnstile', JSON.stringify(wall));
+    },
+  },
+  {
+    name: "Google's unusual-traffic page is a wall, named after its reCAPTCHA box",
+    file: 'bot-wall-unusual-traffic.html',
+    run: async (tab) => {
+      const wall = await findBotWall(tab, await tab.observe());
+      assert.equal(wall?.name, 'reCAPTCHA', JSON.stringify(wall));
+    },
+  },
+  {
+    name: 'an article quoting "verify you are human" and a Ray ID is not a wall',
+    file: 'bot-wall-article.html',
+    run: async (tab) => assert.equal(await findBotWall(tab, await tab.observe()), undefined),
+  },
+  {
+    name: 'a thread whose top comments discuss captchas and bot checks is not a wall',
+    file: 'bot-wall-thread.html',
+    run: async (tab) => assert.equal(await findBotWall(tab, await tab.observe()), undefined),
+  },
+  {
+    name: 'a run on a challenge that never clears ends blocked after its wait, without asking the model',
+    file: 'bot-wall-cloudflare.html',
+    run: async (tab) => {
+      let asked = 0;
+      const ask: Ask = async () => {
+        asked++;
+        throw new Error('no model in this check');
+      };
+      const summary = await new BrowserTask(tab, ask, { goal: 'Open zod', doneWhen: 'The zod page is open' }).run();
+      assert.equal(summary.status, 'blocked', summary.reason);
+      assert.match(summary.reason, /bot check \(Cloudflare Turnstile;/);
+      assert.equal(asked, 0);
+      assert.ok(summary.elapsed_ms >= 8000 && summary.elapsed_ms < 12_000, `ended after ${summary.elapsed_ms} ms`);
+    },
+  },
+  {
+    name: 'a run on a challenge that clears after 2 s waits it out and goes on to ask the model',
+    file: 'bot-wall-clears.html',
+    run: async (tab) => {
+      let asked = 0;
+      const ask: Ask = async () => {
+        asked++;
+        throw new Error('no model in this check');
+      };
+      const summary = await new BrowserTask(tab, ask, { goal: 'Read the article', doneWhen: 'The article is open' }).run();
+      assert.match(summary.reason, /no model in this check/, summary.reason);
+      assert.equal(asked, 1);
+      assert.match(summary.title, /Field Notes/);
+      assert.ok(summary.elapsed_ms >= 1500 && summary.elapsed_ms < 8000, `ended after ${summary.elapsed_ms} ms`);
     },
   },
 ];

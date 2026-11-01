@@ -97,7 +97,7 @@ describe('a bot wall', () => {
   });
 
   it("names a Cloudflare page's Turnstile box", () => {
-    expect(detectBotWall(NPM_CHALLENGE, ['Turnstile'])?.name).toBe('Cloudflare (Turnstile)');
+    expect(detectBotWall(NPM_CHALLENGE, ['Turnstile'])?.name).toBe('Cloudflare Turnstile');
   });
 });
 
@@ -112,7 +112,7 @@ describe('finding a bot wall on a tab', () => {
     };
     expect(await findBotWall(tab, { title: 'Docs', text: 'Getting started' })).toBeUndefined();
     expect(asked).toBe(0);
-    expect((await findBotWall(tab, NPM_CHALLENGE))?.name).toBe('Cloudflare (Turnstile)');
+    expect((await findBotWall(tab, NPM_CHALLENGE))?.name).toBe('Cloudflare Turnstile');
     expect(asked).toBe(1);
   });
 
