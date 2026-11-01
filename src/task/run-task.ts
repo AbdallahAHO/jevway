@@ -699,8 +699,9 @@ export class BrowserTask {
             // A page whose text never stops changing (a ticking clock) would refuse a page-level key forever, while one refusal is
             // enough to wait out an animation: the third try runs even though the page changed.
             const forced = PAGE_LEVEL_KINDS.includes(action.kind) && this.#pageLevelStale >= 2;
-            await this.#tab.act(action, page, text, forced ? { evenIfChanged: true } : undefined);
-            element = action.label;
+            const outcome = await this.#tab.act(action, page, text, forced ? { evenIfChanged: true } : undefined);
+            // A scroll that moved nothing says so, or Jev keeps asking for it.
+            element = outcome?.scrolled === 0 ? `${action.label} (nothing moved: there is no more to scroll this way)` : action.label;
           }
         } catch (error) {
           if (!(error instanceof StalePage)) throw error;

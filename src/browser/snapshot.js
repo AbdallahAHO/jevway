@@ -530,9 +530,30 @@
   const omitted_actions = Math.max(0, actions.length - 250);
   actions.splice(250);
   actions.forEach((a, i) => (a.id = 'e' + (i + 1)));
+  // jev-browse: an app shell keeps the document still and scrolls a pane. When the document can't move one way, the
+  // largest visible box that can is offered instead, with the wheel aimed at the centre of its visible part (DOM rects
+  // only) and a step of 80% of its visible height, so a short pane never steps past a row.
+  const panes = [];
+  for (const e of [document.body, ...document.body.querySelectorAll('*')]) {
+    if (e.scrollHeight <= e.clientHeight + 1 || !/(auto|scroll|overlay)/.test(getComputedStyle(e).overflowY)) continue;
+    const r = e.getBoundingClientRect(),
+      left = Math.max(r.left, 0),
+      top = Math.max(r.top, 0),
+      w = Math.min(r.right, innerWidth) - left,
+      h = Math.min(r.bottom, innerHeight) - top;
+    if (w >= 50 && h >= 50 && visible(e))
+      panes.push({ e, w, h, at: { x: Math.round(left + w / 2), y: Math.round(top + h / 2) } });
+  }
+  panes.sort((a, b) => b.w * b.h - a.w * a.h);
+  const paneStep = (pane) => Math.max(100, Math.min(560, Math.round(pane.h * 0.8)));
+  const paneDown = panes.find(({ e }) => e.scrollTop + e.clientHeight < e.scrollHeight - 2);
+  const paneUp = panes.find(({ e }) => e.scrollTop > 0);
   if (scrollY + innerHeight < height - 2)
     actions.push({ id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: 560 });
+  else if (paneDown)
+    actions.push({ id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: paneStep(paneDown), at: paneDown.at });
   if (scrollY > 0) actions.push({ id: 'scroll_up', kind: 'scroll', label: 'Scroll up', delta: -560 });
+  else if (paneUp) actions.push({ id: 'scroll_up', kind: 'scroll', label: 'Scroll up', delta: -paneStep(paneUp), at: paneUp.at });
   actions.push({ id: 'wait', kind: 'wait', label: 'Wait for the page to update' });
   return {
     url: location.href,
@@ -541,7 +562,7 @@
     h: innerHeight,
     text,
     passwordFields,
-    scroll: { y: scrollY, height },
+    scroll: { y: scrollY, height, panes: panes.reduce((sum, { e }) => sum + e.scrollTop, 0) },
     actions,
     marker,
     page_key,

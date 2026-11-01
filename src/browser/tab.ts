@@ -48,6 +48,8 @@ export interface PageAction {
   /** Shown only while the pointer is over its container; the pointer is moved onto it before the click. */
   hover?: boolean;
   delta?: number;
+  /** A scroll's wheel point: the centre of the visible part of the pane it scrolls (viewport CSS pixels, from DOM rects). */
+  at?: { x: number; y: number };
   /** Viewport CSS pixels at observation time. */
   rect?: { x: number; y: number; w: number; h: number };
 }
@@ -388,26 +390,50 @@ export class Tab {
     return isDeepStrictEqual(await this.#evaluate(MARKER).catch(() => null), page.marker);
   }
 
-  async act(action: PageAction, page: PageState, text?: string, { evenIfChanged = false }: { evenIfChanged?: boolean } = {}) {
+  /** Runs one observed action. A scroll resolves to how far it moved the page (see `#scroll`). */
+  async act(
+    action: PageAction,
+    page: PageState,
+    text?: string,
+    { evenIfChanged = false }: { evenIfChanged?: boolean } = {},
+  ): Promise<{ scrolled?: number } | void> {
     // Only a page-level action may skip the check, and only when the loop asks: Enter still needs its field focused (#pressEnter).
     const skipCheck = evenIfChanged && PAGE_LEVEL_KINDS.includes(action.kind);
     if (!skipCheck && !(await this.fresh(page, action))) throw new StalePage('Page changed since this decision');
     if (action.kind === 'wait') return sleep(100);
     if (action.kind === 'enter') return this.#pressEnter(action);
     if (action.kind === 'escape') return this.dismissPopup();
-    if (action.kind === 'scroll') {
-      await this.#call('Input.dispatchMouseEvent', {
-        type: 'mouseWheel',
-        // Inside the viewport on any device: centre column, lower half.
-        x: Math.round(page.w / 2),
-        y: Math.round(page.h * 0.6),
-        deltaX: 0,
-        deltaY: action.delta,
-      });
-    } else {
-      await this.#input(action, text);
-    }
+    let outcome: { scrolled?: number } | undefined;
+    if (action.kind === 'scroll') outcome = await this.#scroll(action, page);
+    else await this.#input(action, text);
     this.#afterInput = action;
+    return outcome;
+  }
+
+  // jev-browse: the wheel goes where the reader found the pane that scrolls (or the fixed point on a page whose document
+  // scrolls), and the offsets before and after say whether it moved anything. The wheel lands asynchronously, so the
+  // offsets are polled until they stop moving: 500 ms with no movement means nothing moved, 1.5 s at most.
+  async #scroll(action: PageAction, page: PageState): Promise<{ scrolled?: number }> {
+    const offsets = async () => Number(await this.#evaluate(SCROLL_OFFSETS).catch(() => NaN));
+    const start = await offsets();
+    await this.#call('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      // Inside the viewport on any device: centre column, lower half.
+      x: action.at?.x ?? Math.round(page.w / 2),
+      y: action.at?.y ?? Math.round(page.h * 0.6),
+      deltaX: 0,
+      deltaY: action.delta,
+    });
+    if (Number.isNaN(start)) return {};
+    let last = start;
+    for (const begun = Date.now(); Date.now() - begun < 1_500; ) {
+      await sleep(50);
+      const now = await offsets();
+      if (Number.isNaN(now)) return {};
+      if (now === last && (now !== start || Date.now() - begun >= 500)) break;
+      last = now;
+    }
+    return { scrolled: Math.round(Math.abs(last - start)) };
   }
 
   /**
@@ -611,6 +637,13 @@ const fingerprint = (state: Omit<PageState, 'fingerprint'> & { scroll?: unknown 
   createHash('sha256')
     .update(JSON.stringify([state.url, state.text, state.actions, state.scroll]))
     .digest('hex');
+
+// How far everything on the page is scrolled, summed: it changes whichever pane the wheel moved.
+const SCROLL_OFFSETS = `(() => {
+  let sum = scrollY;
+  for (const e of document.querySelectorAll('*')) if (e.scrollTop) sum += e.scrollTop;
+  return sum;
+})()`;
 
 // The element at a point, looking through open shadow roots (a plain elementFromPoint stops at the host).
 const DEEP_HIT = `(x, y) => {

@@ -59,7 +59,6 @@ const TASKS: CapabilityTask[] = [
     doneWhen: 'The detail of run nightly-047 is shown.',
     expect: ['done'],
     passes: `window.__fixture.opened === 'nightly-047'`,
-    gap: 'plan 095',
     solve: `document.querySelector('[data-id="nightly-047"]').click()`,
   },
   {
@@ -70,7 +69,6 @@ const TASKS: CapabilityTask[] = [
     doneWhen: 'Item 55 is open.',
     expect: ['done'],
     passes: `window.__fixture.opened === 'item-55'`,
-    gap: 'plan 095',
     solve: `(async () => {
       const pane = document.getElementById('pane');
       for (let i = 0; i < 20 && !document.querySelector('[data-id="item-55"]'); i++) {

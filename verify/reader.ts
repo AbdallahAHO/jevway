@@ -967,14 +967,16 @@ const checks: Check[] = [
     },
   },
   {
-    name: 'at the end of the pane only scroll up is offered, and a wheel that moves nothing reports 0',
+    name: 'at the end of the list pane, scroll down goes to the smaller pane that still can, and a wheel that moves nothing reports 0',
     file: 'nested-pane.html',
     run: async (tab) => {
       await tab.evaluate(`document.getElementById('pane').scrollTop = 1e6`);
       const page = await tab.observe();
-      assert.ok(!page.actions.some((action) => action.id === 'scroll_down'), 'scroll down offered at the end of the pane');
+      const inAside = (at?: { x: number; y: number }) => Boolean(at && at.x < 180 && at.y < 56 + 120);
+      const down = page.actions.find((action) => action.id === 'scroll_down');
+      assert.ok(inAside(down?.at), `scroll down not aimed at the side panel: ${JSON.stringify(down)}`);
       const up = page.actions.find((action) => action.id === 'scroll_up');
-      assert.ok(up?.at, 'scroll up not offered at the end of the pane');
+      assert.ok(up?.at && !inAside(up.at), `scroll up not aimed at the list pane: ${JSON.stringify(up)}`);
       // The same aim, wheeling down past the end.
       const outcome = await tab.act({ ...up, id: 'scroll_down', delta: 400 }, page);
       assert.equal(outcome?.scrolled, 0, `a wheel past the end moved ${JSON.stringify(outcome)}`);
