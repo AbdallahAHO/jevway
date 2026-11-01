@@ -3,7 +3,21 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { PageAction, PageState, Tab } from '../browser/tab.ts';
-import { escapeHtml } from './recording-page.ts';
+import {
+  BASE_STYLE,
+  clock,
+  dollars,
+  escapeHtml,
+  fact,
+  FONT_LINK,
+  playerMarkup,
+  plural,
+  PLAYER_SCRIPT,
+  seconds,
+  statusWord,
+  thousands,
+  type Viewport,
+} from './recording-page.ts';
 import type { TaskSummary } from './run-task.ts';
 
 /** What Jev is about to do on a screen, in the terms the task loop knows. */
@@ -111,6 +125,8 @@ export class Recording {
   readonly summaries: TaskSummary[] = [];
   #dir: string;
   #frames: Frame[] = [];
+  /** The page size the screencast reports (CSS pixels): the run page and the reports shape the video's frame by it. */
+  #viewport: Viewport | undefined;
   #stopListening: (() => void) | undefined;
   /** Takes the caller's secret values out of what is written (labels and addresses can echo them); screenshots are pixels and show what the page shows. */
   #scrub: (text: string) => string;
@@ -127,6 +143,8 @@ export class Recording {
     this.#stopListening = tab.onEvent((method, params) => {
       if (method !== 'Page.screencastFrame') return;
       this.#frames.push({ jpeg: params.data, at: params.metadata.timestamp });
+      const { deviceWidth, deviceHeight } = params.metadata;
+      if (!this.#viewport && deviceWidth > 0 && deviceHeight > 0) this.#viewport = { width: Math.round(deviceWidth), height: Math.round(deviceHeight) };
       tab.send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => undefined);
     });
     await tab.send('Page.enable');
@@ -176,8 +194,9 @@ export class Recording {
     this.#stopListening?.();
     this.#stopListening = undefined;
     const video = (await this.#encode()) ?? null;
-    writeFileSync(join(this.#dir, 'summary.json'), JSON.stringify({ summaries: this.summaries, video, steps: this.steps }, null, 1));
-    writeFileSync(join(this.#dir, 'index.html'), renderSteps(this.steps, this.summaries, video));
+    const viewport = this.#viewport;
+    writeFileSync(join(this.#dir, 'summary.json'), JSON.stringify({ summaries: this.summaries, video, steps: this.steps, ...(viewport && { viewport }) }, null, 1));
+    writeFileSync(join(this.#dir, 'index.html'), renderSteps(this.steps, this.summaries, video, viewport));
   }
 
   // Frames → H.264 through ffmpeg's concat list, each frame held for its duration. Without ffmpeg: no video.
@@ -212,45 +231,62 @@ export class Recording {
 
 export { escapeHtml };
 
-// Clicking a step with a video timestamp seeks the video there.
-const SEEK_SCRIPT = `<script>
-document.addEventListener('click', (event) => {
-  const step = event.target.closest('[data-at]');
-  const video = step && document.getElementById(step.dataset.video);
-  if (!video) return;
-  event.preventDefault();
-  video.currentTime = Number(step.dataset.at);
-  video.play();
-  video.scrollIntoView({ behavior: 'smooth', block: 'center' });
-});
-</script>`;
+// What a run's calls cost, summed: requests, input tokens, time, and the estimate unless a call has none.
+const costLine = (summaries: TaskSummary[]) => {
+  const sum = (pick: (s: TaskSummary) => number) => summaries.reduce((total, s) => total + pick(s), 0);
+  const cost = summaries.reduce<number | null>((total, s) => (total === null || s.jev.est_cost_usd == null ? null : total + s.jev.est_cost_usd), 0);
+  return `${plural(sum((s) => s.jev.requests), 'Jev request')} · ${thousands(sum((s) => s.jev.input_tokens))} input tokens · ${seconds(sum((s) => s.elapsed_ms))} · ${cost === null ? 'est. cost unknown' : `est. ${dollars(cost)}`}`;
+};
 
-export const renderSteps = (steps: RecordedStep[], summaries: TaskSummary[], video: string | null = null, _viewport?: { width: number; height: number }) => {
+// epoch seconds → "2026-11-01 18:39 UTC"
+const recordedAt = (at: number) => `${new Date(at * 1000).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+
+/**
+ * A run's own page (`index.html` in its record folder), in the reports' layout: how it ended, then the screencast with
+ * its steps on a timeline and a strip kept in sync, then the facts. One self-contained file next to its shots and
+ * video; it reads without JS (the script only syncs the player).
+ *
+ * @example
+ * writeFileSync('runs/a/index.html', renderSteps(steps, summaries, 'run.mp4', { width: 1120, height: 780 }));
+ */
+export const renderSteps = (steps: RecordedStep[], summaries: TaskSummary[], video: string | null = null, viewport?: Viewport) => {
   const last = summaries.at(-1);
-  const requests = summaries.reduce((sum, s) => sum + s.jev.requests, 0);
-  const figures = steps
-    .map(
-      (s, i) => `<figure><figcaption${s.video_at !== undefined && video ? ` data-video="run" data-at="${s.video_at}" title="Play from here"` : ''}>
-<b>${i + 1}</b> ${escapeHtml(s.description)}${s.unreachable ? ` <strong class="miss">✘ not reached${(s.attempts ?? 1) > 1 ? ` ×${s.attempts}` : ''}: covered</strong>` : ''}${s.confidence !== undefined ? ` <em>confidence ${s.confidence.toFixed(2)}</em>` : ''}${s.video_at !== undefined && video ? ` <em>▶ ${s.video_at.toFixed(1)} s</em>` : ''}
-<small>${escapeHtml(s.url)}</small></figcaption>
-<a href="${s.file}"><img src="${s.file}" loading="lazy" alt="Step ${i + 1}: ${escapeHtml(s.description)}"></a></figure>`,
-    )
-    .join('\n');
-  return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>jevway run</title>
-<style>
-body{font:15px/1.45 system-ui,sans-serif;margin:0 auto;max-width:1400px;padding:16px;background:#fff;color:#111}
-@media (prefers-color-scheme:dark){body{background:#111;color:#eee}figure{border-color:#333}}
-figure{margin:0 0 28px;border:1px solid #ddd;border-radius:8px;overflow:hidden}
-figcaption{padding:10px 14px;overflow-wrap:anywhere}figcaption b{margin-right:8px}figcaption[data-at]{cursor:pointer}
-em{font-style:normal;opacity:.65;font-size:13px;margin-left:6px}.miss{color:#c2410c;font-size:13px;margin-left:6px}
-small{display:block;opacity:.6;font-size:12px}img,video{display:block;width:100%;height:auto}
-video{margin:0 0 28px;border-radius:8px;background:#000}
+  const ending = last ? `Finished: ${statusWord(last.status)}` : 'jevway run';
+  const actions = summaries.reduce((total, s) => total + s.steps.length, 0);
+  const bar = `<div class="player-bar grid4"><p class="meta c1s3">${plural(steps.length, 'step')}${video ? ' · pick one to play from there' : ''}</p><span class="meta clock c4 end">${video ? clock(0) : ''}</span></div>`;
+  const player = steps.length
+    ? playerMarkup({ dir: '', video, steps, label: 'this run', featured: true, viewport, bar, preload: 'metadata' })
+    : '<div class="screen quiet"><p class="small">No step was recorded.</p></div>';
+  const facts = [
+    ...(summaries.length ? [fact('Calls', `${escapeHtml(summaries.map((s) => statusWord(s.status)).join(' → '))} · ${plural(actions, 'action')}`)] : []),
+    ...(last ? [fact('Final reason', escapeHtml(last.reason)), fact('Final address', `<span class="address">${escapeHtml(last.url)}</span>`), fact('Page title', escapeHtml(last.title))] : []),
+    ...(summaries.length ? [fact('Cost', `<span class="num">${costLine(summaries)}</span>`)] : []),
+    fact('Files', `<a href="summary.json">summary.json</a>${video ? ` · <a href="${escapeHtml(video)}">${escapeHtml(video)}</a>` : ''}`),
+  ];
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>${escapeHtml(`jevway run: ${last ? statusWord(last.status) : 'recorded'}`)}</title>
+<link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+<link rel="stylesheet" href="${FONT_LINK}">
+<style>${BASE_STYLE}
+.run-page { padding-bottom: 4rem; }
+.run-page .facts { margin-top: 4rem; }
 </style>
-<h1>${escapeHtml(last ? `${last.status}: ${last.reason}` : 'jevway run')}</h1>
-<p>${steps.length} screenshots · ${requests} Jev requests${video ? ' · click a step to play the video from there' : ' · no video (needs ffmpeg)'}</p>
-${video ? `<video id="run" src="${video}" controls muted playsinline></video>` : ''}
-${figures}
-${SEEK_SCRIPT}
+</head><body>
+<main class="wrapper run-page">
+<header class="job-head grid4">
+<p class="meta">jevway run<br>${steps.length ? recordedAt(steps[0].at) : ''}</p>
+<h1 class="job-title c2s2">${escapeHtml(ending)}</h1>
+<p class="meta c4 end">${plural(summaries.length, 'call')} · ${plural(actions, 'action')}</p>
+${last ? `<p class="small story c2s2">${escapeHtml(last.reason)}</p>` : ''}
+</header>
+<div class="run player current">
+${player}
+</div>
+<dl class="facts">${facts.join('\n')}</dl>
+</main>
+<footer><div class="wrapper"><span>Recorded by jevway for people to read; the model never sees these shots.</span><span>${plural(steps.length, 'step')}${video ? ` · ${escapeHtml(video)}` : ' · no video (needs ffmpeg)'}</span></div></footer>
+${PLAYER_SCRIPT}
+</body></html>
 `;
 };
