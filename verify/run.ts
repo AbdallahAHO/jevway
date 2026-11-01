@@ -31,18 +31,25 @@ mkdirSync(outDir, { recursive: true });
 
 // Serve the fixtures on a random local port: /canvas.html, /wide-table.html, anything else is the stays fixture.
 const fixture = readFileSync(new URL('./fixture/stays.html', import.meta.url));
-const otherFixtures: Record<string, Buffer> = {
+const otherFixtures: Record<string, Buffer | string> = {
   '/canvas.html': readFileSync(new URL('./fixture/canvas.html', import.meta.url)),
   '/wide-table.html': readFileSync(new URL('./fixture/wide-table.html', import.meta.url)),
   '/steps.html': readFileSync(new URL('./fixture/steps.html', import.meta.url)),
   '/offhost.html': readFileSync(new URL('./fixture/offhost.html', import.meta.url)),
   '/partner.html': readFileSync(new URL('./fixture/partner.html', import.meta.url)),
+  '/iframe-signup.html': readFileSync(new URL('./fixture/iframe-signup.html', import.meta.url), 'utf8'),
 };
-const server = createServer((request, response) =>
-  response.writeHead(200, { 'content-type': 'text/html' }).end(otherFixtures[request.url ?? ''] ?? fixture),
-);
+const server = createServer((request, response) => {
+  const page = otherFixtures[request.url ?? ''] ?? fixture;
+  response.writeHead(200, { 'content-type': 'text/html' }).end(typeof page === 'string' ? page.replaceAll('{{CROSS_ORIGIN}}', crossOrigin) : page);
+});
 await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 const fixtureUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/stays.html`;
+// The embedded signup form, on a second port reached as localhost: another origin and site, so it runs out of process.
+const signupForm = readFileSync(new URL('./fixture/iframe-signup-form.html', import.meta.url));
+const frameServer = createServer((_, response) => response.writeHead(200, { 'content-type': 'text/html' }).end(signupForm));
+await new Promise<void>((resolve) => frameServer.listen(0, '127.0.0.1', resolve));
+const crossOrigin = `http://localhost:${(frameServer.address() as { port: number }).port}`;
 
 const chrome = await connectChrome(source);
 const results: { scenario: string; passed: boolean; summary?: Partial<TaskSummary>; error?: string }[] = [];
@@ -266,6 +273,28 @@ await scenario('fixture: a link to another host ends the run blocked (allowed ho
   return summary;
 });
 
+// A newsletter form in a cross-origin iframe: the frame is read like the page, typed into and submitted.
+await scenario('fixture: signup form inside a cross-origin iframe', async () => {
+  const tab = await Tab.open(chrome.cdp, fixtureUrl.replace('/stays.html', '/iframe-signup.html'));
+  const task = new BrowserTask(tab, ask, {
+    ...profileOptions(profile),
+    minConfidence,
+    screenshots,
+    goal: 'Subscribe to the newsletter with my email address using the signup form on this page.',
+    values: { email: 'ada@example.com' },
+    doneWhen: 'The signup form says ada@example.com is subscribed.',
+    maxSteps: 6,
+  });
+  const summary = await task.run();
+  saveTrace('iframe-signup', task, [summary]);
+  const state = await groundTruth(tab.targetId, 'window.__fixture');
+  await tab.close();
+  expectStatus(summary, 'done');
+  assert.equal(state.subscribed, 'ada@example.com', `subscribed ${state.subscribed}: ${summary.reason}`);
+  assert.equal(state.shared, false, 'clicked an unrelated control on the page');
+  return summary;
+});
+
 await scenario('live web: Wikipedia search → Gödel’s incompleteness theorems article', async () => {
   const tab = await Tab.open(chrome.cdp, 'https://en.wikipedia.org/wiki/Main_Page');
   const task = new BrowserTask(tab, ask, {
@@ -412,6 +441,7 @@ await scenario('MCP stdio: tools list + browser_task + browser_task_end', async 
 });
 
 server.close();
+frameServer.close();
 writeFileSync(new URL('report.json', outDir), JSON.stringify(results, null, 2));
 const failed = results.filter((result) => !result.passed);
 process.stdout.write(

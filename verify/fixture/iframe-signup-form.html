@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Newsletter</title>
+<style>
+  body { margin: 12px; font: 14px system-ui, sans-serif; }
+  label { display: block; margin: 8px 0 4px; }
+  input { width: 240px; padding: 6px 8px; }
+  button { margin-top: 10px; }
+</style>
+</head>
+<body>
+<h2>Get the newsletter</h2>
+<form id="signup">
+  <label for="email">Email address</label>
+  <input id="email" type="email" autocomplete="email">
+  <button type="submit">Subscribe</button>
+</form>
+<p id="status" role="status"></p>
+<script>
+  document.getElementById('signup').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const email = document.getElementById('email').value.trim();
+    document.getElementById('status').textContent = email ? `Thanks! ${email} is subscribed.` : 'Enter an email address.';
+    if (email) parent.postMessage({ fixture: { subscribed: email } }, '*');
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Field notes</title>
+<style>
+  body { margin: 24px; font: 15px system-ui, sans-serif; max-width: 720px; }
+  iframe { display: block; width: 420px; height: 220px; border: 1px solid #bbb; border-radius: 6px; margin-top: 16px; }
+</style>
+</head>
+<body>
+<h1>Field notes</h1>
+<p>Short essays on maps, trails and weather, every second Sunday.</p>
+<button type="button" onclick="window.__fixture.shared = true">Share this page</button>
+<iframe src="{{CROSS_ORIGIN}}/iframe-signup-form.html" title="Newsletter signup"></iframe>
+<script>
+  // The signup form lives on another origin and reports what it did to this page.
+  window.__fixture = { subscribed: null, shared: false };
+  addEventListener('message', (event) => Object.assign(window.__fixture, event.data?.fixture));
+</script>
+</body>
+</html>
