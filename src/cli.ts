@@ -10,6 +10,7 @@ const USAGE = `jev-browse --goal "<outcome>" (--url <url> | --tab <url part>) [o
   --model jev|pplx-decider|clef-omni|clef|clef-flash|gpt-6-luna   decision model (default: jev, or $JEV_MODEL)
   --screenshots off|fallback|always   marked screenshots, vision models only (default: per model, or $JEV_SCREENSHOTS)
   --max-steps 40
+  --max-seconds 300               time budget; past it the run ends step_budget (Ctrl-C ends it blocked)
   --keep-open                     leave the tab open (auto/remote browsers)
   --allow-coordinate-clicks       click a boxed control the DOM never reported (canvas, iframe); Jev 1.14 direct only
   --record <dir>                  sharp screenshot before every action + final page, summary.json, index.html
@@ -28,6 +29,7 @@ const { values: args } = parseArgs({
     model: { type: 'string' },
     screenshots: { type: 'string' },
     'max-steps': { type: 'string' },
+    'max-seconds': { type: 'string' },
     'keep-open': { type: 'boolean' },
     'allow-coordinate-clicks': { type: 'boolean' },
     record: { type: 'string' },
@@ -60,10 +62,14 @@ try {
     values: args.values ? JSON.parse(args.values) : undefined,
     doneWhen: args['done-when'],
     maxSteps: args['max-steps'] ? Number(args['max-steps']) : undefined,
+    maxSeconds: args['max-seconds'] ? Number(args['max-seconds']) : undefined,
     allowCoordinateClicks: args['allow-coordinate-clicks'],
     recordDir: args.record,
   });
-  const summary = await task.run();
+  // Ctrl-C stops the run at its next check (an action under way finishes), so the summary still prints and the tab closes.
+  const cancel = new AbortController();
+  process.once('SIGINT', () => cancel.abort());
+  const summary = await task.run({ signal: cancel.signal });
   if (args.url && !args['keep-open']) await task.tab.close();
   console.log(JSON.stringify(summary, null, 2));
   process.exitCode = summary.status === 'done' ? 0 : 1;

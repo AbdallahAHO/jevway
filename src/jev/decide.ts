@@ -128,14 +128,16 @@ export interface Decision {
   latencyMs: number;
 }
 
+/** One System One request; `signal` cancels it, its retries and any Retry-After sleep (the run's cancel or time budget). */
 export type Ask = (
   request: SystemOneRequest,
+  options?: { signal?: AbortSignal },
 ) => Promise<{ answers: Record<string, any>; usage: { input_tokens: number | null } }>;
 
 export const askWith =
   (client: TypeSafeClient): Ask =>
-  (request) =>
-    client.systemOne(request);
+  (request, options) =>
+    client.systemOne(request, options);
 
 /**
  * One Jev round trip per step: the operation head plus speculative target, value, commit-risk and

@@ -5,6 +5,7 @@ import { centerOf, contains } from '../jev/box.ts';
 import { decide, foldedFavourite, overflowFolds, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
 import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
 import { Recording } from './recording.ts';
+import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
 
 export interface TaskOptions {
   goal: string;
@@ -14,6 +15,8 @@ export interface TaskOptions {
   doneWhen?: string;
   /** Maximum executed browser actions per call. */
   maxSteps?: number;
+  /** Time budget per call, in seconds: past it the run ends `step_budget` at its next check (never mid-input). */
+  maxSeconds?: number;
   /** Operation or target confidence below this stops and hands the decision back. */
   minConfidence?: number;
   /**
@@ -84,6 +87,8 @@ const SEEN_LINES_PER_PATH = 4000;
 
 const DEFAULTS = {
   maxSteps: 40,
+  // 5× the longest call measured over every verify run to 2026-10-18 (59.6 s of 26 164): a backstop, never a pace (plan 088).
+  maxSeconds: 300,
   minConfidence: 0.3,
   screenshots: 'off' as ScreenshotMode,
   compactRules: '',
@@ -227,6 +232,8 @@ export class BrowserTask {
   #tab: Tab;
   #ask: Ask;
   #recording: Recording | undefined;
+  /** This call's stop signal (caller cancel or time budget); set while a call runs. */
+  #limit: RunLimit | undefined;
 
   constructor(tab: Tab, ask: Ask, { recordDir, ...options }: TaskOptions) {
     this.#tab = tab;
@@ -253,22 +260,28 @@ export class BrowserTask {
     } else if (!this.#confirmedCommit) this.#confirmIgnored = this.#lastStatus;
   }
 
-  async run(): Promise<TaskSummary> {
+  /**
+   * Runs until done or a hand-back. `signal` is the caller's cancel (the MCP request's): the run stops at its next
+   * check, `blocked` "Cancelled by the caller"; an input already under way finishes first.
+   */
+  async run({ signal }: { signal?: AbortSignal } = {}): Promise<TaskSummary> {
     // The recording is for people: a browser failure while recording must not change or hang the run's outcome.
     await this.#recording?.start(this.#tab).catch(() => undefined);
-    const summary = await this.#loop();
+    const summary = await this.#loop(signal);
     await this.#recording?.finish(this.#tab, summary).catch(() => undefined);
     return summary;
   }
 
-  async #loop(): Promise<TaskSummary> {
+  async #loop(signal?: AbortSignal): Promise<TaskSummary> {
     this.#tab.want(Object.values(this.#options.values));
     const started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
-    const { maxSteps, values, doneWhen, screenshots } = this.#options;
+    const { maxSteps, maxSeconds, values, doneWhen, screenshots } = this.#options;
     // `stop` reads the page, so it needs a stand-in until the first observe succeeds.
     let page: PageState = BLANK_PAGE;
     let executed = 0;
+    // Caller cancel or time budget: checked before every decision and every input, never during one.
+    const limit = (this.#limit = startRunLimit({ signal, maxSeconds, actions: () => executed }));
     let decisions = 0;
     let staleRefusals = 0;
     let rejectedDone = 0;
@@ -314,7 +327,7 @@ export class BrowserTask {
       const node = [...this.#openedByRun].find(
         (n) => !this.#closedBeforeDone.has(n) && page.actions.some((a) => a.node === n && a.expanded === 'true'),
       );
-      if (node === undefined) return false;
+      if (node === undefined || limit.stopped()) return false;
       this.#closedBeforeDone.add(node);
       await this.#recording?.step(this.#tab, page, { operation: 'PRESS_ESCAPE' });
       await this.#tab.dismissPopup();
@@ -348,6 +361,8 @@ export class BrowserTask {
       if (repeatedAtStart) return stop('blocked', repeatedAtStart);
       page = await this.#tab.observe();
       while (executed < maxSteps) {
+        const halt = limit.stopped();
+        if (halt) return stop(halt.status, halt.reason);
         // The arm belongs to one step: a click that never reached the page leaves none for the next decision.
         this.#tab.disarmConfirm();
         if (++decisions > maxSteps * 2) return stop('step_budget', `Made ${maxSteps * 2} decisions without finishing`);
@@ -413,7 +428,7 @@ export class BrowserTask {
             not_executed: `rejected: "${doneWhen}" is not visible yet; ${advice}`,
             confidence: round(decision.confidence),
           });
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          await limit.pause(300);
           page = await this.#tab.observe();
           continue;
         }
@@ -531,6 +546,13 @@ export class BrowserTask {
             },
             decision.operation === 'CLICK_AT' ? decision.nextClick!.rect : action.rect,
           );
+          // The last check before an input: a stop that came during the decision ends the run here, with nothing clicked.
+          const halt = limit.stopped();
+          if (halt) {
+            this.#recording?.discardLast();
+            record(false);
+            return stop(halt.status, halt.reason, decision);
+          }
           if (decision.operation === 'CLICK_AT') {
             const point = centerOf(decision.nextClick!.rect);
             element = `${await this.#tab.clickAt(point, page)} @ ${Math.round(point.x)},${Math.round(point.y)}`;
@@ -561,6 +583,8 @@ export class BrowserTask {
           // target, as a person would; no model output is involved. Then Jev re-decides on the cleared page.
           const popupOpen = error.byPopup || page.actions.some((a) => a.expanded === 'true');
           if (this.#unreachable.node !== action.node && popupOpen) {
+            const halt = limit.stopped();
+            if (halt) return stop(halt.status, halt.reason, decision);
             this.#unreachable = { node: action.node, count: 1 };
             await this.#recording?.step(this.#tab, page, { operation: 'PRESS_ESCAPE' });
             await this.#tab.dismissPopup();
@@ -686,9 +710,12 @@ export class BrowserTask {
       }
       return stop('step_budget', `Reached ${maxSteps} actions without finishing`);
     } catch (error) {
+      if (error instanceof RunStopped) return stop(error.status, error.reason);
       return stop('blocked', describeError(error));
     } finally {
       this.#tab.disarmConfirm();
+      limit.dispose();
+      this.#limit = undefined;
     }
   }
 
@@ -737,11 +764,12 @@ export class BrowserTask {
     return ticked ? `unsaved changes to "${ticked.label}"` : undefined;
   }
 
-  // Keeps observing a page that still looks like `before`; stops at the first change or after changeWaitMs.
+  // Keeps observing a page that still looks like `before`; stops at the first change, after changeWaitMs, or when the call is stopped.
   async #awaitChange(before: string, page: PageState): Promise<PageState> {
     const deadline = performance.now() + this.#options.changeWaitMs;
-    while (page.fingerprint === before && performance.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, CHANGE_POLL_MS));
+    while (page.fingerprint === before && performance.now() < deadline && !this.#limit?.stopped()) {
+      await (this.#limit?.pause(CHANGE_POLL_MS) ?? new Promise((resolve) => setTimeout(resolve, CHANGE_POLL_MS)));
+      if (this.#limit?.stopped()) break;
       page = await this.#tab.observe();
     }
     return page;
@@ -753,7 +781,7 @@ export class BrowserTask {
       return await this.#decide(page);
     } catch (error) {
       if (!(error instanceof ModelCallError) || !TRANSIENT_MODEL_ERROR.test(error.message)) throw error;
-      await new Promise((resolve) => setTimeout(resolve, MODEL_RETRY_MS));
+      await (this.#limit?.pause(MODEL_RETRY_MS) ?? new Promise((resolve) => setTimeout(resolve, MODEL_RETRY_MS)));
       return this.#decide(page);
     }
   }
@@ -764,7 +792,9 @@ export class BrowserTask {
     if (!this.#options.doneWhen) return undefined;
     try {
       return await this.#decide(page, { lastLook: true });
-    } catch {
+    } catch (error) {
+      // A cancel or time stop is not the look failing: it ends the call.
+      if (error instanceof RunStopped) throw error;
       return undefined;
     }
   }
@@ -773,11 +803,14 @@ export class BrowserTask {
   async #decide(page: PageState, { lastLook = false } = {}): Promise<Decision> {
     const { goal, values, doneWhen, screenshots, compactRules, elementRisk, pageRisk, imageTransport, box, minConfidence } = this.#options;
     this.#rememberLines(page);
+    const limit = this.#limit;
+    // Every request carries the call's stop signal (it cancels the HTTP request, its retries and a Retry-After sleep), and
+    // is raced against it as well, so a stop never waits on the model.
+    const ask: Ask = limit ? (request) => limit.within(this.#ask(request, { signal: limit.signal })) : this.#ask;
     const decideOn = async (withScreenshot: boolean) => {
-      const screenshot = withScreenshot
-        ? await this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page)
-        : undefined;
-      const decision = await decide(this.#ask, {
+      const shot = withScreenshot ? this.#tab.markedScreenshot(buildActionSpace(page.actions).marks, page) : undefined;
+      const screenshot = shot && (await (limit ? limit.within(shot) : shot));
+      const decision = await decide(ask, {
         page: this.#withSaid(this.#withKeys(page)),
         goal,
         values,
@@ -791,6 +824,7 @@ export class BrowserTask {
         unsureBelow: minConfidence,
         ...(elementRisk && { elementRisk: 'chosen' as const, pageRisk }),
       }).catch((error) => {
+        if (error instanceof RunStopped) throw error;
         // Only the model call is tagged: a failed screenshot above is a browser error and keeps its own type.
         throw new ModelCallError(messageOf(error));
       });
