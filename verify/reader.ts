@@ -1174,6 +1174,22 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'a frame cut by the top of the viewport adds only the text that shows',
+    file: 'iframe-scrolled.html',
+    run: async (tab) => {
+      // The page is scrolled until only the bottom 60 px of the orders frame are left on screen.
+      await tab.evaluate(`(() => { const f = document.querySelector('iframe'); scrollTo(0, scrollY + f.getBoundingClientRect().bottom - 60); })()`);
+      await pause(100);
+      const page = await tab.observe();
+      const listed = page.actions.filter((action) => action.role === 'link').length;
+      const section = page.text.split('[Frame: Orders]')[1] ?? '';
+      const rows = section.split('\n').filter((line) => /^Order \d+$/.test(line)).length;
+      assert.ok(listed > 0, `no row of the visible strip is listed: ${labelsOf(page.actions)}`);
+      // Rows cut at the strip's edge may show text but no centre: at most one more than the listed rows.
+      assert.ok(rows <= listed + 1, `the frame adds ${rows} rows of text but only ${listed} rows show: ${section}`);
+    },
+  },
+  {
     name: 'an iframe under a modal is not listed until the modal closes, and a banner over it is a cover',
     file: 'iframe-modal.html',
     run: async (tab) => {
