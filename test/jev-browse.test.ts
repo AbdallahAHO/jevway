@@ -3927,3 +3927,96 @@ describe('a run stops when the caller cancels or the time budget passes, never m
     expect((await task.run()).status).toBe('done');
   });
 });
+
+describe('a run stays on the allowed hosts and off the blocked ones', () => {
+  const click = { operation: 'CLICK', click_target: '1' };
+  const ON_SITE = { allowed: ['fixture'], blocked: [] };
+  const offSite = (url: string) => page({ url, fingerprint: url });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it('ends blocked, naming the host, when a click lands on another host, and decides nothing there', async () => {
+    const { ask, requests } = scriptedJev([click]);
+    const { asTab, acted } = fakeTab([page(), offSite('https://partner.example/offer')]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Claim the offer', hosts: ON_SITE, changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toBe(
+      'After "Open Full name" the page left the allowed hosts: partner.example is outside the allowed hosts (fixture); the run stopped without going back',
+    );
+    expect(summary.url).toBe('https://partner.example/offer');
+    expect(acted).toEqual([{ label: 'Open Full name' }]);
+    expect(requests).toHaveLength(1);
+  });
+
+  it('ends blocked before any request when the page is already outside (an open tab, a redirect)', async () => {
+    const { ask, requests } = scriptedJev([click]);
+    const { asTab, acted } = fakeTab([offSite('https://sso.example/login')]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open', hosts: ON_SITE, changeWaitMs: 0 }).run();
+    expect(summary).toMatchObject({
+      status: 'blocked',
+      reason: 'Left the allowed hosts: sso.example is outside the allowed hosts (fixture); the run stopped without going back',
+    });
+    expect(requests).toHaveLength(0);
+    expect(acted).toEqual([]);
+  });
+
+  it('ends blocked on a blocked host matched by a wildcard', async () => {
+    const { ask } = scriptedJev([click]);
+    const { asTab } = fakeTab([page(), offSite('https://ads.tracker.io/r')]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open', hosts: { blocked: ['*.tracker.io'] }, changeWaitMs: 0 }).run();
+    expect(summary.reason).toBe(
+      'After "Open Full name" the page left the allowed hosts: ads.tracker.io is a blocked host (*.tracker.io); the run stopped without going back',
+    );
+  });
+
+  it('carries on across hosts when no lists are set', async () => {
+    const { ask } = scriptedJev([click, { operation: 'DONE', done_check: 0.95 }]);
+    const { asTab } = fakeTab([page(), offSite('https://partner.example/offer')]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open', doneWhen: 'Open', changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('done');
+  });
+
+  it('lets a later call narrow the lists, and refuses one that widens them', async () => {
+    const { ask, requests } = scriptedJev([click]);
+    const { asTab } = fakeTab([page()]);
+    const task = new BrowserTask(asTab, ask, { goal: 'Open', hosts: { allowed: ['fixture', 'other.example'], blocked: [] }, maxSteps: 1, changeWaitMs: 0 });
+    expect(() => task.update({ allowedHosts: ['*.fixture'] })).toThrow(/a call can only narrow them/);
+    task.update({ allowedHosts: ['other.example'] });
+    const summary = await task.run();
+    expect(summary.reason).toBe('Left the allowed hosts: fixture is outside the allowed hosts (other.example); the run stopped without going back');
+    expect(requests).toHaveLength(0);
+  });
+
+  describe('a new session started through the runner', () => {
+    const startAt = async (url: string, hosts: { allowedHosts?: string[]; blockedHosts?: string[] }) => {
+      const { ask } = scriptedJev([click]);
+      vi.spyOn(model, 'createAsk').mockReturnValue(ask);
+      vi.spyOn(chrome, 'connectChrome').mockResolvedValue({ cdp: {} } as chrome.ChromeHandle);
+      const open = vi.spyOn(Tab, 'open').mockResolvedValue(fakeTab([page({ url })]).asTab);
+      const task = createRunner('launch-headless').start({ goal: 'Open', url, maxSteps: 1, changeWaitMs: 0, ...hosts });
+      return { task, open };
+    };
+
+    it('never opens a start URL outside the allowed hosts', async () => {
+      const { task, open } = await startAt('https://evil.example/', { allowedHosts: ['fixture'] });
+      await expect(task).rejects.toThrow('Not opened: evil.example is outside the allowed hosts (fixture)');
+      expect(open).not.toHaveBeenCalled();
+    });
+
+    it("applies the server's JEV_ALLOWED_HOSTS and JEV_BLOCKED_HOSTS, which a call can narrow but never widen", async () => {
+      vi.stubEnv('JEV_ALLOWED_HOSTS', '*.example.com');
+      vi.stubEnv('JEV_BLOCKED_HOSTS', 'ads.example.com');
+      await expect((await startAt('https://evil.example/', {})).task).rejects.toThrow('evil.example is outside the allowed hosts (*.example.com)');
+      await expect((await startAt('https://ads.example.com/', {})).task).rejects.toThrow('ads.example.com is a blocked host (ads.example.com)');
+      await expect((await startAt('https://shop.example.com/', { allowedHosts: ['evil.example'] })).task).rejects.toThrow(
+        /a call can only narrow them/,
+      );
+      const { task, open } = await startAt('https://shop.example.com/', { allowedHosts: ['shop.example.com'] });
+      await expect(task).resolves.toBeInstanceOf(BrowserTask);
+      expect(open).toHaveBeenCalled();
+    });
+  });
+});
