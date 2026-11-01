@@ -1,3 +1,3 @@
-# jev-browse
+# jevway
 
 @AGENTS.md

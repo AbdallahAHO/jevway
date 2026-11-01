@@ -1,13 +1,13 @@
 # Prior art (2026-11-01)
 
-What other open-source projects that put Jev behind a browser do, and which of their ideas jev-browse should take.
-This is a dated review of ten repositories, read at the commits below; each idea was checked against jev-browse's own
+What other open-source projects that put Jev behind a browser do, and which of their ideas jevway should take.
+This is a dated review of ten repositories, read at the commits below; each idea was checked against jevway's own
 code at `4c7f34d`. The candidate plans that come out of it are listed in
 [plans/README.md](../plans/README.md#backlog-from-the-prior-art-review-2026-11-01).
 
 ## Sources
 
-All ten are MIT-licensed (each ships a `LICENSE` file). Adapting their code with attribution is allowed, as jev-browse
+All ten are MIT-licensed (each ships a `LICENSE` file). Adapting their code with attribution is allowed, as jevway
 already does for jev-ultrafast; for anything that touches the loop guards or the consent rule, reimplement against our
 invariants instead of porting.
 
@@ -28,7 +28,7 @@ Citations below read `repo path:line` at the commit in this table.
 
 ### Vercel's agent-browser (checked at v0.41.0)
 
-agent-browser has no goal-to-summary mode like `browser_task`. Its closest feature, `agent-browser chat "<instruction>"`,
+agent-browser has no goal-to-summary mode like `jevway_task`. Its closest feature, `agent-browser chat "<instruction>"`,
 runs a general LLM (default `anthropic/claude-sonnet-4.6` through the AI Gateway) with one tool that executes any
 agent-browser command, so the per-step cost stays a full LLM turn, there is no structured status, no `done_when` check
 and no irreversible-click gate. A request for a Jev-driven `run "<goal>"` (vercel-labs/agent-browser#1949) was closed
@@ -37,7 +37,7 @@ DOM changes and `screenshot --if-changed` (v0.38).
 
 ## How to read the entries
 
-- **Today**: what jev-browse does now, with the file that shows it.
+- **Today**: what jevway does now, with the file that shows it.
 - **Jev request**: *changes* means the idea alters what Jev is asked, so Jev's verified baseline moves; it needs the
   full gate re-run, and the held-back Vikunja jobs stay frozen. *no* means the request is untouched.
 - **Value / effort**: value is high, med or low; effort is in working time, before verify runs.
@@ -63,7 +63,7 @@ DOM changes and `screenshot --if-changed` (v0.38).
 - **Seen in**: jkudish/jev-browser `src/navigate.ts:593-614`, `:1074-1076`, `src/index.ts:237`; forvela
   `src/loop.js:50`, `:226-240`, `src/browser.js:94-110`; nexibeo `extension/lib/agent.js:47-50`; fastbrowse
   `README.md:374-383`.
-- **Today**: the `browser_task` handler takes no `extra`, so the SDK's `signal` is ignored (`src/mcp.ts:74`); the loop is
+- **Today**: the `jevway_task` handler takes no `extra`, so the SDK's `signal` is ignored (`src/mcp.ts:74`); the loop is
   bounded by `max_steps` only (`src/task/run-task.ts:350`). A client that times out leaves the run clicking.
 - **Invariants**: never abort an input in flight (the `InputNotDelivered` rule); a timeout is its own status or reason,
   not the "protocol call timed out → browser error" path. The SDK may sleep up to 60 s on a `Retry-After`; cap it by the
@@ -71,14 +71,14 @@ DOM changes and `screenshot --if-changed` (v0.38).
 - **Jev request**: no. **Value**: high. **Effort**: ½ day.
 
 <a id="s2"></a>
-### S2. Allowed and blocked hosts for `browser_task`
+### S2. Allowed and blocked hosts for `jevway_task`
 
 - **Idea**: the caller (and optionally a server env setting) gives allowed and blocked hosts; the page's URL is checked
   before each decision and after every step, and leaving the envelope hands back `blocked`.
 - **Seen in**: jiawei686 `jev_ultrafast_mcp/safety.py:32-46`; wy-coliney `skills/jev-browser-use/bridge.mjs:42-48`;
   nexibeo `extension/background.js:64`, `:72`; MaciejWiatr `server/browser_tools.py:56-65`; wingman
   `src/core/policy.ts`. fastbrowse blocks at the network layer with `Fetch` (`docs/design.md:207-219`).
-- **Today**: journeys have `stay_within` (`src/mcp.ts:170`); `browser_task` has nothing. In `auto` mode the run is in
+- **Today**: journeys have `stay_within` (`src/mcp.ts:170`); `jevway_task` has nothing. In `auto` mode the run is in
   the user's signed-in Chrome.
 - **Notes**: jiawei686 checks only explicit navigations, so a click that leaves the domain gets through; check after
   every step. `Fetch`-level blocking is a later step.
@@ -146,7 +146,7 @@ DOM changes and `screenshot --if-changed` (v0.38).
 <a id="s8"></a>
 ### S8. Server ceilings a call can lower but not raise
 
-- **Idea**: env settings such as a step or time ceiling, or confirmations off entirely (`JEV_ALLOW_CONFIRM=0`), that a
+- **Idea**: env settings such as a step or time ceiling, or confirmations off entirely (`JEVWAY_ALLOW_CONFIRM=0`), that a
   call may tighten but never loosen.
 - **Seen in**: nexibeo `README.md:160`; fastbrowse `README.md:374-383`.
 - **Today**: none. **Jev request**: no. **Value**: low-med. **Effort**: 1–2 h, with [S1](#s1).
@@ -176,7 +176,7 @@ These close items in README "Limits". Build [V1](#v1) first so each has an accep
 - **Today**: popup tabs are unsupported (`src/mcp.ts:36`).
 - **Notes**: in raw CDP, `Target.setDiscoverTargets` plus `targetCreated` filtered by `openerId` = our tab (in `auto`
   mode never follow the user's own tabs). The new tab needs the input-delivery counter and dialog handling installed
-  before its scripts run; the confirmation state carries over; `browser_task_end` and `keep_tab` need a rule for the
+  before its scripts run; the confirmation state carries over; `jevway_end` and `keep_tab` need a rule for the
   session's new tab.
 - **Jev request**: no. **Value**: med. **Effort**: 1 day.
 
@@ -295,7 +295,7 @@ Vikunja.
 - **Jev request**: no. **Value**: med. **Effort**: 1–2 h, with [S4](#s4).
 
 <a id="k4"></a>
-### K4. Console errors and failed requests on `browser_task`
+### K4. Console errors and failed requests on `jevway_task`
 
 - **Idea**: collect console errors, page errors and failed requests per step, capped, and return them to the caller
   only.
@@ -316,17 +316,17 @@ Vikunja.
 <a id="k6"></a>
 ### K6. A look tool with no model call
 
-- **Idea**: `browser_look(session)` returns `page_text`, the listed elements and the URL, for checking a page or
+- **Idea**: `jevway_look(session)` returns `page_text`, the listed elements and the URL, for checking a page or
   diagnosing a hand-back.
 - **Seen in**: jiawei686 `jev_ultrafast_mcp/server.py:246`, `:264`.
 - **Today**: `tab.observe()` exists (`src/browser/tab.ts:105`), but page text only comes back at the end of a
-  `browser_task`, and `verify:agent` gives the agent no way to look again.
+  `jevway_task`, and `verify:agent` gives the agent no way to look again.
 - **Invariants**: password fields stay filled/empty only. **Jev request**: no. **Value**: med. **Effort**: 2–3 h.
 
 <a id="k7"></a>
 ### K7. MCP tool annotations
 
-- **Idea**: `destructiveHint` and `openWorldHint` on `browser_task`, local hints on `browser_task_end`.
+- **Idea**: `destructiveHint` and `openWorldHint` on `jevway_task`, local hints on `jevway_end`.
 - **Seen in**: jiawei686 `jev_ultrafast_mcp/server.py:95-103`.
 - **Today**: none in `src/mcp.ts`. **Jev request**: no. **Value**: low-med. **Effort**: 15 min.
 
@@ -346,12 +346,12 @@ Vikunja.
 <a id="v2"></a>
 ### V2. A baseline route in `verify:agent`
 
-- **Idea**: run the same chores with the calling agent on chrome-devtools alone, interleaved with the jev-browse route;
+- **Idea**: run the same chores with the calling agent on chrome-devtools alone, interleaved with the jevway route;
   report cold and warm prompt-cache runs apart, cost with cache writes priced at the read rate, and Jev's spend added to
   the agent's. Hash the run config and refuse a baseline from a different one.
 - **Seen in**: wingman `README.md:9-17`, `:277-287`, `bench/run.ts:870-875`, `bench/CLAUDE.md`.
 - **Today**: `verify/agent.ts:453` records `total_cost_usd` only.
-- **Value**: high (the number that says whether jev-browse pays off). **Effort**: 1 day.
+- **Value**: high (the number that says whether jevway pays off). **Effort**: 1 day.
 
 <a id="v3"></a>
 ### V3. Replay recorded Jev answers offline
@@ -368,7 +368,7 @@ Vikunja.
 <a id="d1"></a>
 ### D1. Publish and one-line installs
 
-- **Idea**: publish to npm; one-liners for `claude mcp add … -- npx -y jev-browse-mcp`, Codex TOML and OpenCode; note
+- **Idea**: publish to npm; one-liners for `claude mcp add … -- npx -y jevway-mcp`, Codex TOML and OpenCode; note
   that some clients filter the environment, so pass `TYPESAFE_API_KEY` explicitly.
 - **Seen in**: jkudish/jev-browser `README.md:38-120`; wy-coliney `README.md:17-62`.
 - **Today**: `pnpm build` plus a hand-edited absolute path; README says "once the package is published".
@@ -381,7 +381,7 @@ Vikunja.
   install brings the MCP server and the skill; `npx skills add` for the skill alone.
 - **Seen in**: MaciejWiatr `.claude-plugin/`, `.mcp.json`; nexibeo `.claude-plugin/marketplace.json`,
   `mcp/.claude-plugin/plugin.json`.
-- **Today**: `skill/jev-browse/` is copied by hand. Needs [D1](#d1).
+- **Today**: `skill/jevway/` is copied by hand. Needs [D1](#d1).
 - **Value**: med. **Effort**: 1–2 h.
 
 <a id="d3"></a>
@@ -409,7 +409,7 @@ Vikunja.
   happened"; continue a session that made progress instead of starting over.
 - **Seen in**: wy-coliney `skills/jev-browser-use/SKILL.md:102-110`; fastbrowse `skills/fastbrowse/SKILL.md:89-90`;
   wingman `src/surfaces/tool-text.ts:44`.
-- **Today**: `skill/jev-browse/SKILL.md` covers the split and the consent rule. **Value**: low. **Effort**: 1 h.
+- **Today**: `skill/jevway/SKILL.md` covers the split and the consent rule. **Value**: low. **Effort**: 1 h.
 
 <a id="d6"></a>
 ### D6. Keep the other browser server's action tools away from the agent
@@ -419,7 +419,7 @@ Vikunja.
   read, tab, dialog and wait tools.
 - **Seen in**: wingman `src/cli/with-chrome.ts:121-122`, `:302-341`, `profiles/playwright-mcp.json`,
   `src/core/classify-tools.ts:48-115`.
-- **Today**: the split is instruction-only (`skill/jev-browse/SKILL.md`).
+- **Today**: the split is instruction-only (`skill/jevway/SKILL.md`).
 - **Value**: med. **Effort**: 1 h (deny list), 2–3 days (proxy).
 
 ## Later, with conditions

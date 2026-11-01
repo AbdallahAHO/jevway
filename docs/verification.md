@@ -9,7 +9,7 @@ Setup: headless Chrome 152 on macOS (arm64), model `jev-latest` (answered by jev
 | Same session: email supplied → `needs_confirmation` on "Confirm booking and pay €412" (risk 0.88) | booking **not** confirmed | ✔ 0.61 s | ✔ 0.65 s | ✔ 0.87 s |
 | Same session: `confirm_irreversible` → booking done | name, email, `confirmed: true` | ✔ 0.68 s | ✔ 0.60 s | ✔ 0.61 s |
 | Live web: Wikipedia search → Gödel's incompleteness theorems | exact `/wiki/…` path | ✔ 2.19 s | ✔ 2.56 s | ✔ 2.42 s |
-| MCP stdio: list tools → `browser_task` → `browser_task_end` | status `done`, session ended | ✔ 2.78 s | ✔ 2.77 s | ✔ 3.10 s |
+| MCP stdio: list tools → `jevway_task` → `jevway_end` | status `done`, session ended | ✔ 2.78 s | ✔ 2.77 s | ✔ 3.10 s |
 
 Result: **18/18 passed.** Median Jev latency per request was 256–564 ms (typically about 300 ms). The Wikipedia task used about 40k input tokens, and the full fixture flow about 24k.
 
@@ -33,7 +33,7 @@ Setup: headless Chrome on macOS (arm64). Every model is reached through OpenRout
 
 ### Probe (one Airbnb screenshot with a cookie wall)
 
-| `JEV_MODEL` | OpenRouter id | Image | One-option choice | Notes |
+| `JEVWAY_MODEL` | OpenRouter id | Image | One-option choice | Notes |
 | --- | --- | --- | --- | --- |
 | `jev` | `typesafe/jev-1.13` | ✘ HTTP 400 | ✔ | ~300 ms per request |
 | `clef` | `cloudflare/clef` | billed 16k tokens, 2.7 s | ✔ | images effectively unusable; 0.8–2.7 s per request |
@@ -47,7 +47,7 @@ Images cost 360–1,000 input tokens. Requests cost $0.000006–$0.0001 each.
 ### What the non-Jev models needed
 
 1. **No one-option choices.** A lone target is now picked directly instead of asked about. Jev passed 6/6 with this change on `typesafe/jev-1.13` via OpenRouter. Direct `jev-latest` (the September baseline) was not re-run.
-2. **Per-element commit risk.** The page-level `commit_risk` head asks about "the click that best advances the goal". Clef-omni scored the real "Confirm and pay" 0.065 on it, and the journey autopilot paid. Every model except Jev now gets one follow-up request that asks about each click candidate by name: the chosen click in `browser_task`, the top 12 ranked taps in the autopilot. An unscored or malformed answer counts as risky.
+2. **Per-element commit risk.** The page-level `commit_risk` head asks about "the click that best advances the goal". Clef-omni scored the real "Confirm and pay" 0.065 on it, and the journey autopilot paid. Every model except Jev now gets one follow-up request that asks about each click candidate by name: the chosen click in `jevway_task`, the top 12 ranked taps in the autopilot. An unscored or malformed answer counts as risky.
 3. **Per-model thresholds.** Clef and Clef-omni report confidence on a compressed scale: their correct steps scored 0.09–0.3. Both use 0.05. The others keep 0.3.
 4. **Flat rules for Clef-omni.** On the fixture's autocomplete step, `NEXT_ACTION` gives SELECT 0.58 / CLICK 0.29, while the 3-line `NEXT_ACTION_COMPACT` gives CLICK 0.62.
 5. **No boxes on covered elements.** Elements under a popover get no box.
