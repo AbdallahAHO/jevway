@@ -141,9 +141,12 @@ describe('a request never recorded', () => {
     expect(miss.message).toContain('step 3');
     expect(miss.message).toContain('decision');
     expect(miss.message).toContain('state.page.text');
-    expect(miss.message).toMatch(/only recorded:[\s\S]*Casa Azul/);
-    expect(miss.message).toMatch(/only now:[\s\S]*Casa Verde/);
-    expect(miss.message).not.toContain('Nothing alike');
+    // Page lines stay out of the message: the run retries a model error whose message reads like a timeout.
+    const pageDiff = miss.pageDiff.join('\n');
+    expect(pageDiff).toMatch(/only recorded:[\s\S]*Casa Azul/);
+    expect(pageDiff).toMatch(/only now:[\s\S]*Casa Verde/);
+    expect(miss.message).not.toContain('Casa Verde');
+    expect(`${miss.message}${pageDiff}`).not.toContain('Nothing alike');
     expect(stderr).toHaveBeenCalledWith(expect.stringMatching(/^replay miss: .*Find stays in Lisbon.*step 3/));
   });
 

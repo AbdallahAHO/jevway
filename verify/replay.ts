@@ -2,7 +2,7 @@
  * Replays recorded Jev answers through the fixture suites, offline and free: no key, no network call to a model.
  *
  *   pnpm verify:replay verify/out/replay/2026-11-01            # replay: verify, gotchas, redteam, capabilities
- *   pnpm verify:replay -- --record verify/out/replay/2026-11-01  # record them first (live: spends Jev credits)
+ *   pnpm verify:replay --record verify/out/replay/2026-11-01     # record them first (live: spends Jev credits)
  *   JEVWAY_REPLAY_ONLY=gotchas,redteam pnpm verify:replay verify/out/replay/2026-11-01
  *   node verify/replay.ts --self-check                          # offline proof: a scripted run recorded, then replayed
  *
@@ -17,6 +17,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
+import { createInterface } from 'node:readline';
 import { join, resolve } from 'node:path';
 import { connectChrome } from '../src/browser/chrome.ts';
 import { Tab } from '../src/browser/tab.ts';
@@ -57,12 +58,14 @@ const runSuite = (suite: Suite, mode: 'record' | 'replay', dir: string) =>
     const args = [...(mode === 'record' ? ['--env-file-if-exists=.env'] : []), new URL(SUITES[suite], import.meta.url).pathname];
     const child = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
     const misses: string[] = [];
-    const scan = (sink: NodeJS.WriteStream) => (chunk: Buffer) => {
-      sink.write(chunk);
-      for (const line of chunk.toString().split('\n')) if (line.startsWith(MISS)) misses.push(line);
-    };
-    child.stdout.on('data', scan(process.stdout));
-    child.stderr.on('data', scan(process.stderr));
+    // Line by line, so a miss line split across two chunks is still counted.
+    const scan = (input: NodeJS.ReadableStream, sink: NodeJS.WriteStream) =>
+      createInterface({ input, crlfDelay: Infinity }).on('line', (line) => {
+        sink.write(`${line}\n`);
+        if (line.startsWith(MISS)) misses.push(line);
+      });
+    scan(child.stdout, process.stdout);
+    scan(child.stderr, process.stderr);
     child.on('close', (code) => done({ suite, exitCode: code ?? 1, misses }));
   });
 
@@ -190,7 +193,7 @@ const selfCheck = async () => {
       answered++;
       return answer;
     } catch (error) {
-      if (error instanceof ReplayMiss) misses.push(error.message);
+      if (error instanceof ReplayMiss) misses.push([error.message, ...error.pageDiff].join('\n'));
       throw error;
     }
   };

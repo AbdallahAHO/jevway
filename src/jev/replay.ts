@@ -27,9 +27,18 @@ interface Entry {
   answer: Answer;
 }
 
-/** A request the recording never saw: the run can't be answered offline. */
+/**
+ * A request the recording never saw: the run can't be answered offline. The message names the request and the changed
+ * paths; the page-text lines are in `pageDiff` only, because the run retries a model error whose message reads like a
+ * timeout, and a page can say "timed out".
+ */
 export class ReplayMiss extends Error {
   override name = 'ReplayMiss';
+  readonly pageDiff: string[];
+  constructor(message: string, pageDiff: string[] = []) {
+    super(message);
+    this.pageDiff = pageDiff;
+  }
 }
 
 const DEFAULT_DIR = 'verify/out/replay/default';
@@ -179,9 +188,9 @@ export const replayingAsk = (model: string, dir = replayDir()): Ask => {
       served.set(key, turn + 1);
       return structuredClone(recorded[Math.min(turn, recorded.length - 1)]);
     }
-    const { headline, brief, diff } = describeMiss(canonical, model, ofModel);
-    process.stderr.write(`replay miss: ${headline} · ${brief}\n`);
-    throw new ReplayMiss(`Replay miss: ${headline}\n${diff.join('\n')}`);
+    const { headline, brief, paths, pageDiff } = describeMiss(canonical, model, ofModel);
+    process.stderr.write(`replay miss: ${headline} · ${brief}\n${[...paths, ...pageDiff].map((line) => `    ${line}\n`).join('')}`);
+    throw new ReplayMiss(`Replay miss: ${headline}\n${paths.join('\n')}`, pageDiff);
   };
 };
 
@@ -223,21 +232,22 @@ const MAX_LINES = 6;
 const describeMiss = (canonical: Canonical, model: string, recorded: Entry[]) => {
   const asked = describeRequest(canonical);
   const headline = [`"${cut(asked.goal ?? 'no goal', 80)}"`, ...(asked.step ? [`step ${asked.step}`] : []), asked.kind].join(' · ');
-  if (!recorded.length) return { headline, brief: `nothing was recorded for ${model}`, diff: [`nothing was recorded for ${model}`] };
+  if (!recorded.length) return { headline, brief: `nothing was recorded for ${model}`, paths: [`nothing was recorded for ${model}`], pageDiff: [] };
   const sameGoal = recorded.filter((entry) => describeRequest(entry.request).goal === asked.goal);
   const askedLeaves = leaves(canonical);
   const [nearest] = (sameGoal.length ? sameGoal : recorded)
     .map((entry) => ({ entry, changed: changedPaths(leaves(entry.request), askedLeaves) }))
     .sort((a, b) => a.changed.length - b.changed.length);
-  const diff = [
+  const paths = [
     `nearest recorded request${sameGoal.length ? ' with the same goal' : ''} differs at ${nearest.changed.length} paths:`,
     ...nearest.changed.slice(0, MAX_PATHS).map((path) => `  ${path}`),
   ];
+  const pageDiff: string[] = [];
   const before = describeRequest(nearest.entry.request).pageText;
   if (before !== undefined && asked.pageText !== undefined && before !== asked.pageText) {
     const [was, now] = [before.split('\n'), asked.pageText.split('\n')];
     const onlyIn = (lines: string[], other: string[]) => lines.filter((line) => !other.includes(line)).slice(0, MAX_LINES).map((line) => `  ${cut(line, 120)}`);
-    diff.push('page text only recorded:', ...onlyIn(was, now), 'page text only now:', ...onlyIn(now, was));
+    pageDiff.push('page text only recorded:', ...onlyIn(was, now), 'page text only now:', ...onlyIn(now, was));
   }
-  return { headline, brief: `differs at ${nearest.changed.slice(0, 3).join(', ')}`, diff };
+  return { headline, brief: `differs at ${nearest.changed.slice(0, 3).join(', ')}`, paths, pageDiff };
 };
