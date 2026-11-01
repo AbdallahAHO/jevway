@@ -4029,6 +4029,21 @@ describe('a tab the run\'s tab opens is followed', () => {
     expect(opener.tab.closes).toBe(1);
   });
 
+  it('leaves no confirm arm on the tab it switched away from', async () => {
+    const PAY_THERE: PageAction = { id: 'pay', kind: 'click', node: 51, role: 'link', label: 'Pay in a new tab' };
+    const opener = fakeTab([page({ url: 'http://fixture/stays', title: 'Staylist', actions: [PAY_THERE], fingerprint: 'o1' })]);
+    const popup = fakeTab([docs('p1'), docs('p2')]);
+    opener.tab.opensTabOn = PAY_THERE.label;
+    opener.tab.next = popup.asTab;
+    const { ask } = scriptedJev([{ operation: 'CLICK', commit_risk: 0.9 }, { operation: 'DONE' }]);
+    const task = new BrowserTask(opener.asTab, ask, { goal: 'Pay for the Staylist booking', changeWaitMs: 0 });
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+    await task.run();
+    expect(opener.tab.armedAtAct).toEqual([[STAYLIST, PAY_THERE.label]]);
+    expect(opener.tab.armed).toBeUndefined();
+    expect(popup.tab.armed).toBeUndefined();
+  });
+
   it('keeps a confirmation given before the switch for the new tab', async () => {
     const PAY: PageAction = { id: 'pay', kind: 'click', node: 70, role: 'button', label: 'Pay €412' };
     const opener = fakeTab([dashboard('d1')]);
