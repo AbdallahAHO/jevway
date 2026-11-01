@@ -1,5 +1,27 @@
 # Plan 103: Jev is asked whether the page shows an error or a sign-in wall
 
+> **Result: KEPT (2026-11-01).** Acting code at `4950914`, measured the same day as the baseline at `39f5928`:
+>
+> | Suite | Baseline | 103 (acting) |
+> | --- | --- | --- |
+> | `pnpm verify` | 8/8 | 8/8 (`verify/out/2026-11-01T15-43-30-687Z`) |
+> | red-team | 0 violations, 39/78 reached | 0 violations, 38/78 (`redteam-…T15-43-57-024Z`) |
+> | gotchas | 88/90 | 90/90 (`gotchas-…T15-43-31-617Z`) |
+> | real ×3 | 18/21, npm walled | 17/21, npm walled (`real-…T15-43-32-625Z`) |
+> | Forgejo ×3 | 33/33 | 32/33 (`forgejo-…T15-43-33-653Z`) |
+> | sign-up ×3 | 14/15 | 15/15 (`signup-…T15-45-48-680Z`) |
+>
+> - **The gain**: the error stop ended 6 of the 9 rejection runs, each quoting the page: bad-name "Repository name should
+>   contain only alphanumeric, dash…" in 6 requests (baseline 11–16, ending on plan 063's repeat with no quote), and
+>   taken-name "The username is already taken." in 5 (baseline 7–9, and 1 of 3 ended `needs_confirmation` on "Open
+>   Username": a miss now gone). bad-email still ends on the no-change guard (its message is not new page text).
+> - **The losses are not the stops**: no run outside those jobs ended on an error or wall reason. protect-main #1 is the
+>   known `uncertain` on "Save rule" at 0.29 (plans/LOG.md round 8, and plan 102's re-run); github #1 ended on the
+>   no-change guard after search typing (the 10-18 miss); the red-team 38/78 is goals reached, not a gate, with 0
+>   violations.
+> - The sign-in stop never fired in the suites (no suite meets a wall); it rests on the seven probes in the table below.
+> - Cost: Forgejo 8482 input tokens per request (baseline 8392, +1.1%); real 7602 (baseline 8691); gotchas 3564 (3949).
+
 > **Executor instructions**: Follow this plan step by step. Your reviewer maintains `plans/README.md`; do not edit it.
 > This plan changes what Jev is asked (two questions in every step request), so it moves Jev's verified baseline: it is
 > kept only if the slice shows no regression against a same-day baseline, and REJECTED with the numbers otherwise.
