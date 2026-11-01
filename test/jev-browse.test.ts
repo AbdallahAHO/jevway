@@ -4342,3 +4342,119 @@ describe('a needs_input names the fields it wants', () => {
     expect(summary).not.toHaveProperty('missing');
   });
 });
+
+describe("the caller's checks on the final page", () => {
+  const confirmed = { type: 'text_contains', text: 'Booking confirmed' } as const;
+  const onStays = { type: 'url_contains', text: '/stays' } as const;
+  const showsDetails = { type: 'text_contains', text: 'your details' } as const;
+
+  it('turns a done whose check fails into uncertain, naming the failed check', async () => {
+    const { ask } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
+    const { asTab } = fakeTab();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [confirmed, onStays], changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('uncertain');
+    expect(summary.reason).toMatch(/^Jev reported done, but 1 of 2 checks failed on the final page: text_contains "Booking confirmed"/);
+    expect(summary.checks).toEqual([
+      expect.objectContaining({ type: 'text_contains', text: 'Booking confirmed', pass: false }),
+      expect.objectContaining({ type: 'url_contains', text: '/stays', pass: true }),
+    ]);
+  });
+
+  it('keeps a done whose checks all pass, and returns each result', async () => {
+    const { ask } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
+    const { asTab } = fakeTab();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [onStays, showsDetails], changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('done');
+    expect(summary.checks?.map((check) => check.pass)).toEqual([true, true]);
+  });
+
+  it('turns an unsure hand-back into done when every check passes and done_when scored 0.5+ on that page', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1', confidence: 0.1, done_check: 0.6 }]);
+    const { asTab, acted } = fakeTab();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'The details form shows', checks: [onStays, showsDetails], changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('done');
+    expect(summary.reason).toMatch(/^All 2 checks passed on the final page and "The details form shows" scored 0\.6 there \(the run had ended uncertain: /);
+    expect(summary).not.toHaveProperty('stuck');
+    expect(acted).toEqual([]);
+  });
+
+  it('turns a blocked run into done the same way', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1', done_check: 0.6 }]);
+    const { tab, asTab } = fakeTab(['a', 'b', 'c', 'd'].map((fingerprint) => page({ fingerprint })));
+    tab.unreachable = 10;
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [showsDetails], changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('done');
+    expect(summary.reason).toMatch(/the run had ended blocked: "Open Full name" could not be reached 3 times/);
+  });
+
+  it('never turns a hand-back into done without done_when', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1', confidence: 0.1, done_check: 0.9 }]);
+    const { asTab } = fakeTab();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', checks: [onStays, showsDetails], changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('uncertain');
+    expect(summary.checks?.every((check) => check.pass)).toBe(true);
+  });
+
+  it('never turns a hand-back into done when done_when scored under 0.5', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1', confidence: 0.1, done_check: 0.3 }]);
+    const { asTab } = fakeTab();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [onStays], changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('uncertain');
+  });
+
+  it('never counts a done_when score made before the last action ran', async () => {
+    // Three clicks change nothing; the last look scores 0.3, so the guard stops on the third click's decision (0.6, made before it ran).
+    const { ask } = scriptedJev([
+      { operation: 'CLICK', click_target: '1', done_check: 0.6 },
+      { operation: 'CLICK', click_target: '1', done_check: 0.6 },
+      { operation: 'CLICK', click_target: '1', done_check: 0.6 },
+      { operation: 'CLICK', click_target: '1', done_check: 0.3 },
+    ]);
+    const { asTab, acted } = fakeTab(['a', 'a', 'a', 'a', 'a'].map((fingerprint) => page({ fingerprint })));
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [onStays], changeWaitMs: 0 }).run();
+    expect(acted).toHaveLength(3);
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toBe('The last 3 actions did not change the page');
+  });
+
+  it('needs the done_when score at 0.75 while an edit is unsaved', async () => {
+    const run = async (doneCheck: number) => {
+      const { ask } = scriptedJev([
+        { operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: 'name' },
+        { operation: 'CLICK', click_target: '1', confidence: 0.1, done_check: doneCheck },
+      ]);
+      const { asTab } = fakeTab(['a', 'b', 'c'].map((fingerprint) => page({ fingerprint })));
+      return new BrowserTask(asTab, ask, { goal: 'Name', values: { name: 'Ada' }, doneWhen: 'x', checks: [onStays], changeWaitMs: 0 }).run();
+    };
+    expect((await run(0.6)).status).toBe('uncertain');
+    expect((await run(0.8)).status).toBe('done');
+  });
+
+  it('leaves a question for the caller as it is, whatever the checks say', async () => {
+    const { ask } = scriptedJev([{ operation: 'BLOCKED', done_check: 0.6 }]);
+    const { asTab } = fakeTab();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [onStays], changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('needs_input');
+    expect(summary.checks?.[0].pass).toBe(true);
+  });
+
+  it("never sends the checks to Jev", async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
+    const { asTab } = fakeTab();
+    await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [{ type: 'text_absent', text: 'zebra-crossing' }], changeWaitMs: 0 }).run();
+    expect(JSON.stringify(requests)).not.toContain('zebra-crossing');
+  });
+
+  it('keeps the checks for the session until a call replaces them', async () => {
+    const { ask } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
+    const { asTab } = fakeTab();
+    const task = new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [confirmed], changeWaitMs: 0 });
+    expect((await task.run()).status).toBe('uncertain');
+    task.update({ goal: 'Book again' });
+    expect((await task.run()).status).toBe('uncertain');
+    task.update({ checks: [] });
+    const cleared = await task.run();
+    expect(cleared.status).toBe('done');
+    expect(cleared).not.toHaveProperty('checks');
+  });
+});
