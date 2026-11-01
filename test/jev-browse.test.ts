@@ -5027,3 +5027,103 @@ describe('Jev is asked whether the page shows an error or a sign-in wall', () =>
     expect(task.trace[0].decision.answers).toMatchObject({ page_error: { noul: 1 }, sign_in_wall: { noul: 1 } });
   });
 });
+
+describe('a page error or a sign-in wall ends the run', () => {
+  const FORM = 'http://fixture/repo/new';
+  const nameField = (value: string): PageAction => ({ id: 'n', kind: 'fill', node: 1, role: 'textbox', label: 'Repository name', value });
+  const create: PageAction = { id: 'c', kind: 'click', node: 2, role: 'button', label: 'Create repository' };
+  const check: PageAction = { id: 'k', kind: 'click', node: 3, role: 'button', label: 'Check name' };
+  const formPage = (fingerprint: string, text: string, value = 'my repo') =>
+    page({ url: FORM, fingerprint, text, actions: [nameField(value), create, check] });
+  const options = { goal: 'Create a repository named my repo', doneWhen: 'The repository page is open', changeWaitMs: 0 };
+  const ERROR = 0.99;
+
+  it('quotes the page message after a confirmed submit the page rejected', async () => {
+    const { ask } = scriptedJev([
+      { operation: 'CLICK', click_target: '2', commit_risk: 0.9 },
+      { operation: 'CLICK', click_target: '3', page_error: ERROR },
+    ]);
+    const { asTab, acted } = fakeTab([formPage('a', 'New repository'), formPage('b', 'New repository\nThe repository name is invalid.')]);
+    const task = new BrowserTask(asTab, ask, options);
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+    const summary = await task.run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toBe(
+      'The page shows an error after "Create repository": "The repository name is invalid."; tell the user what it says, or call again with other values.',
+    );
+    expect(acted.map((a) => a.label)).toEqual(['Create repository']);
+  });
+
+  it('quotes the new words the last action brought when no page message is shown', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '3' }, { operation: 'CLICK', click_target: '2', page_error: ERROR }]);
+    const { asTab } = fakeTab([formPage('a', 'New repository'), formPage('b', 'New repository\nName already taken')]);
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain('after "Check name": "Name already taken"');
+  });
+
+  it('goes on when nothing new on the page could be the error', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '3' }, { operation: 'DONE', page_error: ERROR, done_check: 0.95 }]);
+    const { asTab } = fakeTab([formPage('a', 'New repository\nNames must be lowercase'), formPage('b', 'New repository\nNames must be lowercase')]);
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(summary.status).toBe('done');
+  });
+
+  it('never stops before this call has acted', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '3', page_error: ERROR }, { operation: 'DONE', done_check: 0.95 }]);
+    const { asTab, acted } = fakeTab([formPage('a', 'New repository\nName already taken'), formPage('b', 'Repository created')]);
+    const summary = await new BrowserTask(asTab, ask, options).run();
+    expect(summary.status).toBe('done');
+    expect(acted.map((a) => a.label)).toEqual(['Check name']);
+  });
+
+  it('lets a met completion condition win over an error score', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '3' }, { operation: 'DONE', page_error: ERROR, done_check: 0.95 }]);
+    const { asTab } = fakeTab([formPage('a', 'New repository'), formPage('b', 'Repository created\nWarning: no README')]);
+    expect((await new BrowserTask(asTab, ask, options).run()).status).toBe('done');
+  });
+
+  describe('a sign-in wall', () => {
+    const SIGN_IN = 'http://fixture/user/login?redirect_to=%2Frepo%2Fnew';
+    const loginField = (label: string, node: number, value = ''): PageAction => ({ id: `l${node}`, kind: 'fill', node, role: 'textbox', label, value });
+    const signIn: PageAction = { id: 's', kind: 'click', node: 9, role: 'button', label: 'Sign in' };
+    const loginPage = (username = '', password = false) =>
+      page({
+        url: SIGN_IN,
+        fingerprint: `login-${username}-${password}`,
+        text: 'Sign in',
+        actions: [loginField('Username or email address', 5, username), signIn],
+        passwordFields: [{ name: 'Password', filled: password }],
+      });
+
+    it('hands back naming the wall when no supplied value fits its fields', async () => {
+      const { ask } = scriptedJev([{ operation: 'BLOCKED', sign_in_wall: ERROR }]);
+      const { asTab } = fakeTab([loginPage()]);
+      const summary = await new BrowserTask(asTab, ask, options).run();
+      expect(summary).toMatchObject({
+        status: 'blocked',
+        reason: 'The page asks to sign in at http://fixture and no supplied value fits its fields; sign in there (or pass the values), then call again.',
+        wall: { kind: 'sign_in', origin: 'http://fixture' },
+      });
+    });
+
+    it('goes on when a supplied value fits the sign-in field', async () => {
+      const { ask } = scriptedJev([
+        { operation: 'TYPE_TEXT', sign_in_wall: ERROR, value_for_1: 'username' },
+        { operation: 'DONE', done_check: 0.95 },
+      ]);
+      const { asTab, acted } = fakeTab([loginPage(), loginPage('ada', true)]);
+      const summary = await new BrowserTask(asTab, ask, { ...options, values: { username: 'ada' } }).run();
+      expect(summary).not.toHaveProperty('wall');
+      expect(acted).toEqual([{ label: 'Username or email address', text: 'ada' }]);
+    });
+
+    it('goes on when the user already filled every field ("I typed the password; sign in")', async () => {
+      const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '2', sign_in_wall: ERROR }, { operation: 'DONE', done_check: 0.95 }]);
+      const { asTab, acted } = fakeTab([loginPage('ada', true), page({ fingerprint: 'in', text: 'Dashboard' })]);
+      const summary = await new BrowserTask(asTab, ask, { ...options, goal: 'Sign in' }).run();
+      expect(summary.status).toBe('done');
+      expect(acted.map((a) => a.label)).toEqual(['Sign in']);
+    });
+  });
+});
