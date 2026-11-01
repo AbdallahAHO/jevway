@@ -1,7 +1,10 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { renderReport, wilson, type JobResult, type RunResult } from '../verify/jobs/report.ts';
-import { reportFromResults } from '../verify/jobs/rerender.ts';
+import { renderFolder, reportFromResults } from '../verify/jobs/rerender.ts';
 import { HASH_TARGET, SCRIPT } from '../verify/jobs/report-page.ts';
 import type { RecordedStep } from '../src/task/recording.ts';
 import type { TaskStatus, TaskSummary } from '../src/task/run-task.ts';
@@ -539,5 +542,32 @@ describe('re-rendering a saved results.json', () => {
     const input = reportFromResults({ ...saved, title: 'Forgejo: 2 write jobs with jev-browse' }, 'forgejo-x');
     const page = text(renderReport({ ...input, readRecording: () => undefined }));
     expect(page).toContain('Two write jobs on Forgejo.');
+  });
+
+  it('rebuilds the agent suite\'s page from its rows and each run\'s stream, and a run folder\'s own page', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jevway-rerender-'));
+    try {
+      const outDir = join(dir, 'agent-2026-11-01T18-39-09-098Z');
+      mkdirSync(join(outDir, 'triage/run-1'), { recursive: true });
+      const call = { type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'mcp__jev-browse__browser_look', input: { url: 'http://app.test/' } }] } };
+      const answer = { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: '{"url":"http://app.test/","title":"Home"}' }] }] } };
+      writeFileSync(join(outDir, 'triage/run-1/stream.jsonl'), `${JSON.stringify(call)}\n${JSON.stringify(answer)}\n`);
+      const rowOf = { chore: 'triage', run: 1, prompt: 'Label it.', verdict: 'pass', check: 'labelled', passes: 'labelled', calls: [], handBacks: [], inventedValues: [], confirmOffTarget: false, confirmTargets: [], sessionsEnded: 0, otherTools: [], denials: [], answer: 'Done.', outcome: 'success', turns: 2, costUsd: 0.01, durationMs: 4000, dir: 'triage/run-1/' };
+      const totals = { passed: 1, ran: 1, costUsd: 0.01, runsOfUnknownCost: 0, handBacks: 0, unusableHandBacks: 0, handBacksNeedingReplan: 0, confirmCalls: 0, confirmCallsHonoured: 0, confirmCallsIgnored: 0, confirmsWithoutTarget: 0, confirmTargetsNotInPrompt: 0, confirmTargetsRefused: 0 };
+      writeFileSync(join(outDir, 'results.json'), JSON.stringify({ model: 'sonnet', runsPerChore: 1, ...totals, rows: [rowOf] }));
+      const agent = renderFolder(outDir);
+      expect(agent.file).toBe(join(outDir, 'report.html'));
+      expect(text(agent.html)).toMatch(/01 · browser_look[\s\S]*read[\s\S]*Home/);
+      expect(text(agent.html)).toContain('2026-11-01 18:39 UTC');
+
+      const runDir = join(dir, 'forgejo-x/new-issue/run-1');
+      mkdirSync(runDir, { recursive: true });
+      writeFileSync(join(runDir, 'summary.json'), JSON.stringify({ summaries: [summary('done', 'Verified.', 1)], video: 'run.mp4', steps: writeSteps }));
+      const page = renderFolder(runDir);
+      expect(page.file).toBe(join(runDir, 'index.html'));
+      expect(page.html.indexOf('<video src="run.mp4"')).toBeLessThan(page.html.indexOf('<dl'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

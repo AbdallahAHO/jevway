@@ -1,14 +1,20 @@
 /**
- * Rebuilds a jobs suite's `report.html` from what its out folder kept: `results.json` and each run's `summary.json`.
- * Old runs get the current page without running anything again. Facts an older `results.json` never saved (the model,
- * the screenshots mode) show as unknown, never guessed; the title is made from the folder name and the job count.
+ * Rebuilds a page from what an out folder kept, without running anything again:
+ * - a jobs suite's `report.html` from `results.json` and each run's `summary.json`. Facts an older `results.json` never
+ *   saved (the model, the screenshots mode) show as unknown, never guessed; the title is made from the folder name and
+ *   the job count;
+ * - the agent suite's `report.html` (its `results.json` has `rows`) from each run's `stream.jsonl`;
+ * - one run folder's `index.html` from its `summary.json`.
  *
  * @example
  * // node verify/jobs/rerender.ts verify/out/forgejo-2026-11-01T15-43-33-653Z
- * // pnpm report:render verify/out/forgejo-2026-11-01T15-43-33-653Z
+ * // pnpm report:render verify/out/agent-2026-11-01T18-39-09-098Z
+ * // pnpm report:render verify/out/forgejo-2026-11-01T15-43-33-653Z/new-issue/run-1
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
+import { renderSteps } from '../../src/task/recording.ts';
+import { agentRunReader, renderAgentReport, type ChoreRun, type Totals } from '../agent-report.ts';
 import type { Phrasing, ReportJob, ReportResult, RunResult } from './report.ts';
 import { renderReport } from './report.ts';
 
@@ -61,14 +67,25 @@ export const reportFromResults = (saved: SavedResults, folder: string) => {
   };
 };
 
-if (import.meta.main) {
-  const [dir] = process.argv.slice(2);
-  if (!dir) {
-    process.stderr.write('usage: node verify/jobs/rerender.ts <verify/out/folder>\n');
-    process.exit(2);
-  }
+/**
+ * The page an out folder (or a run folder) rebuilds into, and where it goes.
+ *
+ * @example
+ * renderFolder('verify/out/agent-2026-11-01T18-39-09-098Z') // { file: '…/report.html', html: '<!doctype html>…' }
+ */
+export const renderFolder = (dir: string) => {
   const outDir = resolve(dir);
-  const saved = JSON.parse(readFileSync(join(outDir, 'results.json'), 'utf8')) as SavedResults;
+  const results = join(outDir, 'results.json');
+  if (!existsSync(results)) {
+    const { steps, summaries, video, viewport } = JSON.parse(readFileSync(join(outDir, 'summary.json'), 'utf8'));
+    return { file: join(outDir, 'index.html'), html: renderSteps(steps, summaries, video ?? null, viewport) };
+  }
+  const saved = JSON.parse(readFileSync(results, 'utf8'));
+  const file = join(outDir, 'report.html');
+  if (Array.isArray(saved.rows)) {
+    const { rows, model, ...totals } = saved as Totals & { rows: ChoreRun[]; model?: string };
+    return { file, html: renderAgentReport({ rows, totals, model: model ?? 'unknown', outFolder: basename(outDir), readRun: agentRunReader(outDir) }) };
+  }
   const readRecording = (runDir: string) => {
     try {
       return JSON.parse(readFileSync(join(outDir, runDir, 'summary.json'), 'utf8'));
@@ -76,7 +93,16 @@ if (import.meta.main) {
       return undefined;
     }
   };
-  const report = join(outDir, 'report.html');
-  writeFileSync(report, renderReport({ ...reportFromResults(saved, basename(outDir)), readRecording }));
-  process.stdout.write(`${report}\n`);
+  return { file, html: renderReport({ ...reportFromResults(saved as SavedResults, basename(outDir)), readRecording }) };
+};
+
+if (import.meta.main) {
+  const [dir] = process.argv.slice(2);
+  if (!dir) {
+    process.stderr.write('usage: node verify/jobs/rerender.ts <verify/out/folder | a run folder>\n');
+    process.exit(2);
+  }
+  const { file, html } = renderFolder(dir);
+  writeFileSync(file, html);
+  process.stdout.write(`${file}\n`);
 }

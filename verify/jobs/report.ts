@@ -220,7 +220,7 @@ const suiteSentence = (title: string, jobCount: number) => {
 };
 // verify/out/<suite>-<ISO time with - for : and .>: the suite and when it started.
 const FOLDER = /^(?:(.+)-)?(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-\d{2}-\d{3}Z$/;
-const startedAt = (outFolder?: string) => {
+export const startedAt = (outFolder?: string) => {
   const parts = outFolder && FOLDER.exec(outFolder);
   return parts ? `started ${parts[2]} ${parts[3]}:${parts[4]} UTC` : 'time unknown';
 };
@@ -244,7 +244,8 @@ const keyValues = (values: Record<string, string>) =>
     .join('<br>');
 // --- the overview
 
-const figure = (value: string, label: string) => `<p><span class="figure">${value}</span> <span class="meta">${label}</span></p>`;
+/** One figure of an overview's totals row: the number large, what it counts small under it. */
+export const figure = (value: string, label: string) => `<p><span class="figure">${value}</span> <span class="meta">${label}</span></p>`;
 
 const overviewRow = (result: ReportResult, recording: Recording | undefined, suiteWrites: boolean, featured: RunResult, device: Viewport) => {
   const { job, runs } = result;

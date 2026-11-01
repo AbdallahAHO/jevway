@@ -26,7 +26,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { connectChrome, stopChrome } from '../src/browser/chrome.ts';
 import { Tab } from '../src/browser/tab.ts';
-import { escapeHtml as escape } from '../src/task/recording.ts';
 import {
   ADA,
   comments,
@@ -40,8 +39,8 @@ import {
   stackIsUp,
   type Issue,
 } from './apps/forgejo/seed.ts';
-import { confirmCounts, confirmTargets, confirmsOffTarget, describeConfirmTarget, flaggedCalls, type BrowserCall, type ConfirmTarget } from './agent-confirms.ts';
-import { wilson } from './jobs/report.ts';
+import { confirmCounts, confirmTargets, confirmsOffTarget, describeConfirmTarget, flaggedCalls, type BrowserCall } from './agent-confirms.ts';
+import { agentRunReader, confirmSummary, dollars, handBackSummary, renderAgentReport, seconds, type ChoreRun, type Totals } from './agent-report.ts';
 
 const ROOT = new URL('../', import.meta.url).pathname;
 const MODEL = process.env.JEVWAY_AGENT_MODEL ?? 'sonnet';
@@ -570,124 +569,6 @@ const handBacksNeedingReplan = (calls: BrowserCall[]) =>
     return status === 'needs_input' && Boolean(calls[i + 1]) && Object.keys(calls[i + 1].args.values ?? {}).length === 0;
   }).length;
 
-interface ChoreRun {
-  chore: string;
-  run: number;
-  prompt: string;
-  verdict: 'pass' | 'fail' | 'skipped' | 'error';
-  check: string;
-  passes: string;
-  expectsHandBack?: string;
-  calls: BrowserCall[];
-  handBacks: string[];
-  inventedValues: string[];
-  /** confirm_irreversible was set in a session that was not acting on a deletion the prompt named. */
-  confirmOffTarget: boolean;
-  /** One per `confirm_irreversible` call: the target the agent chose, and whether the prompt and the page backed it. */
-  confirmTargets: ConfirmTarget[];
-  sessionsEnded: number;
-  otherTools: string[];
-  denials: string[];
-  answer: string;
-  outcome: string;
-  turns: number;
-  costUsd: number | null;
-  durationMs: number;
-  /** The run folder (stream, stderr logs), relative to the report. */
-  dir: string;
-}
-
-const seconds = (ms: number) => `${(ms / 1000).toFixed(0)} s`;
-const dollars = (usd: number | null, digits = 3) => (usd === null ? '$? (unknown)' : `$${usd.toFixed(digits)}`);
-
-interface Totals {
-  passed: number;
-  ran: number;
-  costUsd: number;
-  /** Runs that never sent a final event: their spend is in neither `costUsd` nor the budget check. */
-  runsOfUnknownCost: number;
-  handBacks: number;
-  /** Gate R4: hand-backs after which the run ended without its goal. */
-  unusableHandBacks: number;
-  /** For tracking: hand-backs that needed a re-plan (see `handBacksNeedingReplan`). */
-  handBacksNeedingReplan: number;
-  /** `confirm_irreversible` calls, and how many had no target, a target the prompt does not contain, or one jevway refused. */
-  confirmCalls: number;
-  /** ...of which jevway honoured, and ignored (a flag outside a first call or an answer is a no-op). */
-  confirmCallsHonoured: number;
-  confirmCallsIgnored: number;
-  confirmsWithoutTarget: number;
-  confirmTargetsNotInPrompt: number;
-  confirmTargetsRefused: number;
-  stoppedBecause?: string;
-}
-
-const percentOf = (part: number, whole: number) => (whole === 0 ? '0%' : `${Math.round((part / whole) * 100)}%`);
-
-const handBackSummary = (totals: Totals) =>
-  `hand-backs ${totals.handBacks}: unusable (the run then ended without its goal) ${totals.unusableHandBacks} (${percentOf(totals.unusableHandBacks, totals.handBacks)}), needing a re-plan ${totals.handBacksNeedingReplan} (${percentOf(totals.handBacksNeedingReplan, totals.handBacks)})`;
-
-const confirmSummary = (totals: Totals) =>
-  `confirm calls ${totals.confirmCalls} (honoured ${totals.confirmCallsHonoured}, ignored ${totals.confirmCallsIgnored}); of the honoured: without a target ${totals.confirmsWithoutTarget}, target not in the prompt ${totals.confirmTargetsNotInPrompt}, refused by jevway ${totals.confirmTargetsRefused}`;
-
-const renderReport = (rows: ChoreRun[], totals: Totals) => {
-  const { low, high } = wilson(totals.passed, totals.ran);
-  const callList = (calls: BrowserCall[]) =>
-    calls
-      .map((call, i) => {
-        const args = Object.entries(call.args)
-          .filter(([key]) => key !== 'goal')
-          .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
-          .join(' ');
-        const steps = call.result?.steps?.length;
-        return `<li><b>${escape(call.result?.status ?? 'error')}</b> ${escape(call.result?.reason ?? call.error ?? '')}${steps === undefined ? '' : ` <small>(${steps} actions)</small>`}
-<div class="meta">call ${i + 1}: ${escape(call.args.goal ?? '')}</div><div class="meta"><code>${escape(args)}</code></div></li>`;
-      })
-      .join('');
-  const section = (row: ChoreRun) => `<section id="${row.chore}-${row.run}">
-<h2><span class="${row.verdict}">${row.verdict}</span> ${escape(row.chore)} <small>run ${row.run} · ${row.calls.length} calls · ${row.turns} turns · ${dollars(row.costUsd)} · ${seconds(row.durationMs)} · ${escape(row.outcome)}</small></h2>
-<dl>
-<dt>Prompt</dt><dd>${escape(row.prompt)}</dd>
-<dt>Passes when</dt><dd>${escape(row.passes)}</dd>
-<dt>Judge saw</dt><dd>${escape(row.check)}</dd>
-${row.expectsHandBack ? `<dt>Expected hand-back</dt><dd>${escape(row.expectsHandBack)}</dd>` : ''}
-${row.handBacks.length ? `<dt>Hand-backs</dt><dd>${row.handBacks.map(escape).join('<br>')}</dd>` : ''}
-${row.inventedValues.length ? `<dt>Values not in the prompt</dt><dd class="fail">${escape(row.inventedValues.join(', '))}</dd>` : ''}
-${row.confirmTargets.length ? `<dt>Confirm calls</dt><dd>${row.confirmTargets.map((c) => `<span class="${c.honoured && (c.target === undefined || !c.inPrompt) ? 'fail' : ''}">${escape(describeConfirmTarget(c))}</span>`).join('<br>')}</dd>` : ''}
-${row.confirmOffTarget ? `<dt>Warning</dt><dd class="fail">confirm_irreversible honoured on something the request did not name</dd>` : ''}
-${row.otherTools.length || row.denials.length ? `<dt>Other tools</dt><dd class="fail">used ${escape(row.otherTools.join(', ') || 'none')} · denied ${escape(row.denials.join(', ') || 'none')}</dd>` : ''}
-<dt>Final answer</dt><dd class="answer">${escape(row.answer)}</dd>
-<dt>Run folder</dt><dd><a href="${row.dir}stream.jsonl">${escape(row.dir)}</a> <small>(stream.jsonl, claude-stderr.log, claude-debug.log, mcp-stderr.log)</small></dd>
-</dl>
-<ol>${callList(row.calls)}</ol>
-</section>`;
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Real agent suite</title>
-<style>
-:root{--bg:#fafaf9;--card:#fff;--fg:#1c1917;--muted:#78716c;--line:#e7e5e4;--pass:#15803d;--some:#b45309;--fail:#b91c1c}
-@media (prefers-color-scheme:dark){:root{--bg:#0c0a09;--card:#1c1917;--fg:#f5f5f4;--muted:#a8a29e;--line:#292524;--pass:#4ade80;--some:#fbbf24;--fail:#f87171}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
-main{max-width:1000px;margin:0 auto;padding:32px 16px 80px}h1{font-size:26px;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 24px}
-table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);margin:0 0 32px}
-th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:500;font-size:13px}td a{color:inherit}
-.pass{color:var(--pass)}.fail,.error{color:var(--fail)}.skipped{color:var(--some)}
-section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;margin:0 0 20px}
-h2{margin:0 0 12px;font-size:18px}h2 small{color:var(--muted);font-weight:400;font-size:13px}
-dl{display:grid;grid-template-columns:150px 1fr;gap:6px 16px;margin:0 0 12px}dt{color:var(--muted);font-size:13px}dd{margin:0;overflow-wrap:anywhere}
-.answer{white-space:pre-wrap}ol{margin:0;padding-left:22px}li{margin:0 0 8px}.meta{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
-@media (max-width:640px){dl{grid-template-columns:1fr}}
-</style></head><body><main>
-<h1>Real agent suite</h1>
-<p class="sub">Claude Code (${escape(MODEL)}) drives jevway over MCP · ${totals.passed}/${totals.ran} runs passed (95% CI ${Math.round(low * 100)}–${Math.round(high * 100)}%) · ${dollars(totals.costUsd, 2)}${totals.runsOfUnknownCost ? ` (+ ${totals.runsOfUnknownCost} run(s) of unknown cost)` : ''} · ${escape(handBackSummary(totals))} · ${escape(confirmSummary(totals))} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC${totals.stoppedBecause ? ` · stopped early: ${escape(totals.stoppedBecause)}` : ''}</p>
-<table><thead><tr><th>Chore</th><th>Run</th><th>Verdict</th><th>Calls</th><th>Statuses</th><th>Cost</th><th>Time</th></tr></thead><tbody>
-${rows.map((row) => `<tr><td><a href="#${row.chore}-${row.run}">${escape(row.chore)}</a></td><td>${row.run}</td><td class="${row.verdict}">${row.verdict}</td><td>${row.calls.length}</td><td>${escape(row.calls.map((c) => c.result?.status ?? 'error').join(' → '))}</td><td>${dollars(row.costUsd)}</td><td>${seconds(row.durationMs)}</td></tr>`).join('\n')}
-</tbody></table>
-${rows.map(section).join('\n')}
-</main></body></html>
-`;
-};
-
 // The suite
 
 if (!(await stackIsUp())) {
@@ -708,7 +589,8 @@ const langfuseUp = chores.some((chore) => chore.app === 'langfuse')
     )
   : false;
 
-const outDir = new URL(`out/agent-${new Date().toISOString().replace(/[:.]/g, '-')}/`, import.meta.url);
+const outFolder = `agent-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+const outDir = new URL(`out/${outFolder}/`, import.meta.url);
 mkdirSync(outDir, { recursive: true });
 process.stdout.write(`agent: claude -p --model ${MODEL} · ${RUNS} runs each · budget $${SUITE_BUDGET_USD} · ${chores.map((c) => c.id).join(', ')}\n`);
 
@@ -817,7 +699,7 @@ const totals: Totals = {
   stoppedBecause,
 };
 writeFileSync(new URL('results.json', outDir), JSON.stringify({ model: MODEL, runsPerChore: RUNS, ...totals, rows }, null, 1));
-writeFileSync(new URL('report.html', outDir), renderReport(rows, totals));
+writeFileSync(new URL('report.html', outDir), renderAgentReport({ rows, totals, model: MODEL, outFolder, readRun: agentRunReader(outDir.pathname) }));
 if (stoppedBecause) process.stdout.write(`suite stopped early: ${stoppedBecause}\n`);
 process.stdout.write(`${handBackSummary(totals)}\n${confirmSummary(totals)}\n`);
 process.stdout.write(`${passed}/${judged.length} runs passed · ${dollars(costUsd, 2)}${runsOfUnknownCost ? ` (+ ${runsOfUnknownCost} run(s) of unknown cost)` : ''} · ${new URL('report.html', outDir).pathname}\n`);
