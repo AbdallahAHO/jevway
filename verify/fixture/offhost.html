@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Deals</title>
+  </head>
+  <body>
+    <h1>Today's deals</h1>
+    <p>Our partner has an offer for you.</p>
+    <!-- Same server, another host: 127.0.0.1 serves this page, localhost serves the partner's. -->
+    <a id="partner" href="#">See the partner offer</a>
+    <script>
+      document.getElementById('partner').href = `http://localhost:${location.port}/partner.html`;
+    </script>
+  </body>
+</html>

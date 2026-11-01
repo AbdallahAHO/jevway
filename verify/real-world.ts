@@ -4,6 +4,7 @@
  *   pnpm verify:real                                   # every scenario, 5 runs each, the profile's screenshot mode
  *   JEV_SCREENSHOTS=always JEV_REAL_RUNS=3 pnpm verify:real
  *   JEV_REAL_ONLY=npm,mdn pnpm verify:real
+ *   JEV_ALLOWED_HOSTS=en.wikipedia.org JEV_REAL_ONLY=wikipedia pnpm verify:real   # runs inside the server's host lists
  *
  * Every task stops before any login, payment or submission. Jev's own DONE never counts as a pass.
  */
@@ -12,6 +13,7 @@ import { connectChrome, type BrowserSource } from '../src/browser/chrome.ts';
 import { Tab } from '../src/browser/tab.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
 import { createAsk, profileOptions, resolveModel } from '../src/jev/model.ts';
+import { hostsFromEnv } from '../src/task/hosts.ts';
 import { BrowserTask, type TaskSummary } from '../src/task/run-task.ts';
 
 // Calendars label days like "Thursday, October 29, 2026".
@@ -151,6 +153,8 @@ for (const scenario of SCENARIOS.filter((s) => !only || only.includes(s.name))) 
         doneWhen: scenario.doneWhen,
         maxSteps: 25,
         screenshots,
+        // JEV_ALLOWED_HOSTS / JEV_BLOCKED_HOSTS, as the MCP server would apply them.
+        hosts: hostsFromEnv(),
       });
       const summary = await task.run();
       // Ground truth comes from a separate read of the page, not from the task's summary.

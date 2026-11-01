@@ -15,6 +15,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { connectChrome, type BrowserSource } from '../src/browser/chrome.ts';
 import { Tab } from '../src/browser/tab.ts';
 import { createAsk, profileOptions, resolveModel } from '../src/jev/model.ts';
+import { ANY_HOST, narrowHosts } from '../src/task/hosts.ts';
 import { BrowserTask, type TaskSummary } from '../src/task/run-task.ts';
 
 // JEV_MODEL / JEV_SCREENSHOTS pick the decision model and screenshot mode, as in the MCP server.
@@ -34,6 +35,8 @@ const otherFixtures: Record<string, Buffer> = {
   '/canvas.html': readFileSync(new URL('./fixture/canvas.html', import.meta.url)),
   '/wide-table.html': readFileSync(new URL('./fixture/wide-table.html', import.meta.url)),
   '/steps.html': readFileSync(new URL('./fixture/steps.html', import.meta.url)),
+  '/offhost.html': readFileSync(new URL('./fixture/offhost.html', import.meta.url)),
+  '/partner.html': readFileSync(new URL('./fixture/partner.html', import.meta.url)),
 };
 const server = createServer((request, response) =>
   response.writeHead(200, { 'content-type': 'text/html' }).end(otherFixtures[request.url ?? ''] ?? fixture),
@@ -193,6 +196,29 @@ await scenario('fixture: wide table row opens its detail (recorded)', async () =
   await tab.close();
   assert.equal(state.opened, 'handle-chatbot-message', `opened ${state.opened}: ${summary.reason}`);
   assert.deepEqual(state.selected, [], 'ticked a row checkbox instead of opening the row');
+  return summary;
+});
+
+// allowed_hosts: the partner link goes to localhost (same server, another host). The click may run; nothing after it may.
+await scenario('fixture: a link to another host ends the run blocked (allowed hosts)', async () => {
+  const tab = await Tab.open(chrome.cdp, fixtureUrl.replace('/stays.html', '/offhost.html'));
+  const task = new BrowserTask(tab, ask, {
+    ...profileOptions(profile),
+    minConfidence,
+    screenshots,
+    goal: 'Open the partner offer and claim it.',
+    doneWhen: 'The partner offer shows as claimed.',
+    maxSteps: 6,
+    hosts: narrowHosts(ANY_HOST, { allowed: ['127.0.0.1'] }),
+  });
+  const summary = await task.run();
+  saveTrace('offhost', task, [summary]);
+  const state = await groundTruth(tab.targetId, '({ host: location.hostname, claimed: window.__fixture?.claimed })');
+  await tab.close();
+  expectStatus(summary, 'blocked');
+  assert.match(summary.reason, /localhost is outside the allowed hosts \(127\.0\.0\.1\)/);
+  assert.equal(state.host, 'localhost', 'the run never followed the partner link');
+  assert.equal(state.claimed, false, 'the run acted on a host outside its allowed hosts');
   return summary;
 });
 
