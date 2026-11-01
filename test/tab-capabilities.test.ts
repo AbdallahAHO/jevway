@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CdpConnection } from '../src/browser/cdp.ts';
 import { DEVICES } from '../src/browser/devices.ts';
-import { StalePage, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
+import { FRAME_ID_STRIDE } from '../src/browser/frames.ts';
+import { StalePage, Tab, TargetUnreachable, type PageAction, type PageState } from '../src/browser/tab.ts';
 
 /**
  * A CDP connection for one tab: `Runtime.evaluate` answers the freshness marker with 'M' and each scroll-offset read with
@@ -125,6 +126,18 @@ describe('a tab our tab opens', () => {
     expect(tab.closed).toBe(true);
     await expect(tab.observe()).rejects.toThrow(StalePage);
   });
+  it('watches its own frames with the one auto-attach setting, iframes only, and stops when closed', async () => {
+    const { cdp, calls } = fakeCdp();
+    const opener = await Tab.attach(cdp, 'T1');
+    const next = await opener.follow('T2');
+    const autoAttach = calls.filter((call) => call.method === 'Target.setAutoAttach');
+    expect(autoAttach.map((call) => call.sessionId)).toEqual(['S-T1', 'S-T2']);
+    for (const call of autoAttach) expect(call.params).toMatchObject({ waitForDebuggerOnStart: true, filter: [{ type: 'iframe' }] });
+    // Popups are found by discovery, which pauses nothing.
+    expect(calls.filter((call) => call.method === 'Target.setDiscoverTargets').every((call) => call.sessionId === undefined)).toBe(true);
+    await next.close();
+    expect(calls.at(-1)).toMatchObject({ method: 'Target.closeTarget', params: { targetId: 'T2' } });
+  });
 });
 
 describe('an upload', () => {
@@ -135,6 +148,16 @@ describe('an upload', () => {
     const observed = { ...PAGE, page_key: 'K', guards: { 80: 'G' } } as unknown as PageState;
     await tab.upload(field, observed, '/Users/ada/avatar.png');
     expect(calls.find((call) => call.method === 'DOM.setFileInputFiles')?.params).toEqual({ files: ['/Users/ada/avatar.png'], objectId: 'OBJ-80' });
+  });
+
+  it('refuses a file field inside a frame by name, and sets nothing', async () => {
+    const { cdp, calls } = fakeCdp();
+    const tab = await Tab.attach(cdp, 'T1');
+    const field: PageAction = { id: 'e1', kind: 'upload', node: FRAME_ID_STRIDE + 4, role: 'file', label: 'CV (file field)', frame: 'F1' };
+    const refused = await tab.upload(field, PAGE, '/Users/ada/cv.pdf').catch((error: Error) => error);
+    expect(refused).toBeInstanceOf(TargetUnreachable);
+    expect((refused as Error).message).toBe('"CV (file field)" is inside a frame, and jev-browse uploads only to file fields in the page itself');
+    expect(calls.some((call) => call.method === 'DOM.setFileInputFiles')).toBe(false);
   });
 });
 
