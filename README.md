@@ -142,6 +142,8 @@ pnpm verify:langfuse   # 10 jobs in Langfuse's demo project, signed-in Chrome on
 
 Traces go to `verify/out/`. Results are in [docs/verification.md](docs/verification.md).
 
+How jev-browse compares with other open-source Jev browser projects, and which of their ideas are planned or rejected: [docs/prior-art.md](docs/prior-art.md).
+
 ## Limits
 
 - An element whose centre is off-screen (a row wider than its scroll box) is clicked at the centre of its visible part. A target clipped by a scrolling sidebar or table is scrolled into view just before the click.

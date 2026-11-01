@@ -196,6 +196,39 @@ Goal 2, round 10 (planned at `ef49de1`, 2026-10-18): two new gates measure gener
 085 and 086 share nothing with the Forgejo stack or the Chromes on 9333 and 9444, so they can run beside the round-9
 work.
 
+### Backlog from the prior-art review (2026-11-01)
+
+Candidate plans from a review of ten open-source Jev browser projects, each checked against `4c7f34d`. The evidence,
+sources and invariant notes for each are in [docs/prior-art.md](../docs/prior-art.md); none has a plan file yet, so none
+is in the status table. Each gets a numbered plan, with its own drift check, when it is picked up. "Jev request" marks
+the ones that move Jev's verified baseline and need the full gate re-run.
+
+| Round | Candidate | Prior art | Jev request |
+|-------|-----------|-----------|-------------|
+| A | A run stops when the caller cancels the call or `max_seconds` passes, never mid-input | [S1](../docs/prior-art.md#s1) | no |
+| A | `browser_task` takes allowed and blocked hosts, checked after every step | [S2](../docs/prior-art.md#s2) | no |
+| A | A confirmation allows only the control that was flagged | [S3](../docs/prior-art.md#s3) | no |
+| A | A bot wall found in the page ends the run `blocked`, and `done` never lands on a challenge | [S5](../docs/prior-art.md#s5) | no |
+| A | The MCP tools carry destructive and open-world hints | [K7](../docs/prior-art.md#k7) | no |
+| A | Values the caller marks secret reach Jev by key only and are scrubbed from every output; `needs_input` names its field | [S4](../docs/prior-art.md#s4), [K3](../docs/prior-art.md#k3) | marked keys only |
+| B | A capability and negative suite reports false `done` first | [V1](../docs/prior-art.md#v1) | no |
+| B | A scroll goes to the area that scrolls, and a scroll that moved nothing says so | [C1](../docs/prior-art.md#c1) | no |
+| B | A tab our tab opens is followed | [C2](../docs/prior-art.md#c2) | no |
+| B | Files upload only from paths the caller declares | [C3](../docs/prior-art.md#c3) | yes |
+| B | Every frame is read with the same reader | [C4](../docs/prior-art.md#c4) | no |
+| C | The caller's checks on the final page confirm or overturn `done` | [K1](../docs/prior-art.md#k1) | no |
+| C | `done` carries the page quote that proves it | [K2](../docs/prior-art.md#k2) | adds one |
+| C | A look tool returns the page with no model call | [K6](../docs/prior-art.md#k6) | no |
+| D | Jev is told what the last action changed | [J1](../docs/prior-art.md#j1) | yes |
+| D | Jev is asked whether the page shows an error or a sign-in wall | [J2](../docs/prior-art.md#j2) | yes |
+| D | The yes/no questions state what true and false mean | [J4](../docs/prior-art.md#j4) | yes |
+| D | A stuck question is recorded in traces before it gates anything | [J3](../docs/prior-art.md#j3) | yes |
+| E | `verify:agent` measures a chrome-devtools-only baseline, with cold and warm cache apart | [V2](../docs/prior-art.md#v2) | no |
+| E | Recorded Jev answers replay offline | [V3](../docs/prior-art.md#v3) | no |
+| F | Publish, one-line installs, plugin packaging, an install guide for agents, `doctor` | [D1–D6](../docs/prior-art.md#d1) | no |
+
+Smaller items (S6–S8, J5, K4, K5) and the conditional ones (L1, L2) are in the same document.
+
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
 ## Follow-ups found while executing
@@ -333,6 +366,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   368 risky-click hand-backs it caught new-issue's misses, and also 18 passing runs: delete-repo's correct wrong-repo
   hand-backs, and agents that split a chore across calls. new-issue's early submit stays a model miss (1 of 3 in the
   R1 gate).
+- (prior-art review, 2026-11-01) Twenty-two ideas from other Jev browser projects, among them a second model writing
+  typed text, operator scripts Jev can pick, a Chrome extension driver, WebMCP and regex risk gates: rejected, each
+  with its reason and the invariant it would break, in [docs/prior-art.md](../docs/prior-art.md#considered-and-rejected).
 
 ## Improvement log
 
