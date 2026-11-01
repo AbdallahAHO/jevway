@@ -2,9 +2,10 @@
 import { DEVICES } from '../../src/browser/devices.ts';
 import type { Tab } from '../../src/browser/tab.ts';
 import { scrubberFor, shownValues } from '../../src/jev/secrets.ts';
-import { escapeHtml as escape, type RecordedStep } from '../../src/task/recording.ts';
+import type { RecordedStep } from '../../src/task/recording.ts';
+import { clock, escapeHtml as escape, fact, indexLabel, playerMarkup, plural, shotCard, statusWord } from '../../src/task/recording-page.ts';
 import type { TaskStatus, TaskSummary } from '../../src/task/run-task.ts';
-import { FONT_LINK, HEAD_SCRIPT, SCRIPT, STYLE } from './report-page.ts';
+import { ARROW, BACK_ARROW, FONT_LINK, HEAD_SCRIPT, SCRIPT, STYLE } from './report-page.ts';
 
 /**
  * A calling agent's second call on the same session: what it asks next, from whatever the first call left behind
@@ -153,9 +154,8 @@ export const isFlaky = (runs: RunResult[]) => {
 
 const median = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] : 0);
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
-const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
+
 const thousands = (n: number) => `${(n / 1000).toFixed(1)}k`;
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 // Two significant digits: a run costs fractions of a cent.
 const dollars = (usd: number) => (usd === 0 ? '$0' : usd < 1 ? `$${usd.toPrecision(2)}` : `$${usd.toFixed(2)}`);
 const NUMBER_WORDS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty'];
@@ -174,7 +174,6 @@ const passCount = (runs: RunResult[]) => runs.filter((r) => r.passed).length;
 // --- how a run ended, in words and marks
 
 const NOT_RUN = 'not run (suite stopped)';
-const statusWord = (status: string) => status.replaceAll('_', ' ');
 const notRun = (r: RunResult) => r.error === NOT_RUN;
 /** The run's end as one word or two: its last status, or why it has none. */
 const ending = (r: RunResult) => (ran(r) ? statusWord(r.summaries.at(-1)!.status) : notRun(r) ? 'not run' : 'error');
@@ -243,48 +242,11 @@ const screenFor = (deviceName: string) => {
 
 // --- small pieces of markup
 
-const ARROW = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>';
-const BACK_ARROW = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m11 18-6-6 6-6"/></svg>';
 const quoted = (text: string) => `“${escape(text)}”`;
-const pathOf = (url: string) => {
-  try {
-    const { pathname, search } = new URL(url);
-    return pathname + search;
-  } catch {
-    return url;
-  }
-};
 const keyValues = (values: Record<string, string>) =>
   Object.entries(values)
     .map(([key, value]) => `<span class="kv">${escape(key)}</span>${escape(value)}`)
     .join('<br>');
-const indexLabel = (i: number) => String(i + 1).padStart(2, '0');
-const isFinished = (step: RecordedStep) => step.operation === step.operation.toLowerCase();
-
-/**
- * One step as a card: the shot, then its number, video time and confidence, what happened, and where. The run's
- * Finished shots (lowercase operation, the status) read "Finished: <status>", their reason in the alt text.
- */
-const shotCard = (step: RecordedStep, i: number, dir: string, open: { href: string } | { video: boolean }) => {
-  const finished = isFinished(step);
-  const label = finished ? `Finished: ${statusWord(step.operation)}` : step.description;
-  const timed = 'video' in open && open.video && step.video_at !== undefined;
-  const meta = [
-    indexLabel(i),
-    ...(step.video_at !== undefined && ('href' in open || timed) ? [clock(step.video_at)] : []),
-    ...(step.unreachable ? [`<span class="missed">not reached${(step.attempts ?? 1) > 1 ? ` ×${step.attempts}` : ''}: covered</span>`] : step.confidence !== undefined && !finished ? [step.confidence.toFixed(2)] : []),
-  ].join(' · ');
-  const src = `${dir}${step.file}`;
-  const image = `<img src="${escape(src)}" alt="${escape(step.description)}" loading="lazy" decoding="async" width="1120" height="780">`;
-  const text = `<span class="what">${escape(label)}</span><span class="where">${escape(pathOf(step.url))}</span>`;
-  const className = `shot${finished ? ' finished' : ''}`;
-  if ('href' in open) return `<a class="${className}" href="${escape(open.href)}">${image}<span class="caption"><span class="meta num">${meta}</span>${text}</span></a>`;
-  // In a job view the whole card seeks (the button gives it a keyboard stop); the full-size link sits outside the button.
-  const data = timed ? ` data-at="${step.video_at}"` : ` data-src="${escape(src)}"`;
-  return `<div class="${className}" data-index="${i}"${data}><button type="button" class="seek" aria-label="Show step ${i + 1}">${image}</button>
-<span class="caption"><span class="meta-line"><span class="meta num">${meta}</span><a class="full-size" href="${escape(src)}" target="_blank" rel="noopener">Full size</a></span>${text}</span></div>`;
-};
-
 // --- the overview
 
 const figure = (value: string, label: string) => `<p><span class="figure">${value}</span> <span class="meta">${label}</span></p>`;
@@ -381,31 +343,8 @@ const player = (r: RunResult, recording: Recording | undefined, runs: RunResult[
     const note = notRun(r) ? 'Not run: the suite stopped before this run.' : r.error ? `This run ended in an error before it recorded anything: ${escape(r.error)}` : `No recording was found for run ${r.run}.`;
     return `<div class="screen quiet"><p class="meta">Run ${r.run}</p><p class="small">${note}</p></div>\n${bar}`;
   }
-  const poster = `${r.dir}${steps[0].file}`;
-  const timed = steps.filter((s) => s.video_at !== undefined);
-  if (!recording!.video || !timed.length) {
-    return `${screen}<img data-frame src="${escape(poster)}" alt="${escape(steps[0].description)}"></div>
-<p class="small screen-note">No video for this run (it needs ffmpeg): pick a step to see its shot.</p>
-${bar}
-<div class="strip" aria-label="Steps of run ${r.run}">${steps.map((s, i) => shotCard(s, i, r.dir, { video: false })).join('')}</div>`;
-  }
-  // The last frame holds 1.5 s (recording.ts), so this is the video's length until its metadata says otherwise.
-  const duration = Math.max(...timed.map((s) => s.video_at!)) + 1.5;
-  // Wide enough that the two closest ticks don't overlap (about 1.75rem apart); a long one scrolls inside its own box.
-  const times = timed.map((s) => s.video_at!).sort((a, b) => a - b);
-  const closest = Math.min(...times.slice(1).map((t, i) => t - times[i]).filter((gap) => gap > 0), duration);
-  const width = Math.min(200, Math.max(steps.length * 2, (1.75 * duration) / closest));
-  const ticks = steps
-    .map((s, i) => (s.video_at === undefined ? '' : `<button type="button" class="tick" aria-label="Play from step ${i + 1}" data-at="${s.video_at}" data-index="${i}" style="left:${((s.video_at / duration) * 100).toFixed(2)}%">${i + 1}</button>`))
-    .join('');
-  const posterAttribute = featured ? ` poster="${escape(poster)}"` : ` data-poster="${escape(poster)}"`;
-  return `${screen}<video src="${escape(`${r.dir}${recording!.video}`)}" preload="none"${posterAttribute} controls muted playsinline aria-label="Screencast of run ${r.run}"></video></div>
-<div class="timeline-scroll"><div class="timeline" style="min-width:${width.toFixed(1)}rem"><div class="track"></div><div class="played"></div><div class="ticks">${ticks}</div></div></div>
-${bar}
-<div class="strip" aria-label="Steps of run ${r.run}">${steps.map((s, i) => shotCard(s, i, r.dir, { video: true })).join('')}</div>`;
+  return playerMarkup({ dir: r.dir, video: recording!.video, steps, label: `run ${r.run}`, featured, screen, bar });
 };
-
-const fact = (label: string, body: string) => `<div class="fact grid4"><dt>${label}</dt><dd class="c2s3">${body}</dd></div>`;
 
 /** The run's facts as hairline rows: what Jev was given, how the run was judged, what it did and what it cost. */
 const runFacts = (job: ReportJob, r: RunResult, runs: RunResult[], phrasing: Phrasing) => {

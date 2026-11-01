@@ -3,6 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { PageAction, PageState, Tab } from '../browser/tab.ts';
+import { escapeHtml } from './recording-page.ts';
 import type { TaskSummary } from './run-task.ts';
 
 /** What Jev is about to do on a screen, in the terms the task loop knows. */
@@ -209,8 +210,7 @@ export class Recording {
   }
 }
 
-export const escapeHtml = (text: string) =>
-  text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+export { escapeHtml };
 
 // Clicking a step with a video timestamp seeks the video there.
 const SEEK_SCRIPT = `<script>
