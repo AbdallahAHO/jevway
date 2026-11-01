@@ -166,7 +166,7 @@ Cancelling the MCP request (or Ctrl-C in the CLI) stops the run before its next 
 
 Every tool carries MCP hints for clients that ask before a call: `jevway_task` and `jevway_journey_step` are destructive and open-world (they can submit, pay or delete on any site), `jevway_journey_start` and `jevway_journey_autopilot` are open-world but not destructive, `jevway_look` is read-only, and `jevway_end`, `jevway_journey_annotate` and `jevway_journey_finish` only touch jevway's own state.
 
-**Recording:** `record_dir` (CLI `--record <dir>`) saves a screencast video (`run.mp4`, needs `ffmpeg` on the PATH, otherwise skipped), a 2× JPEG before every action with its target outlined, the final page, `summary.json`, and an `index.html` viewer. These shots are for people; the model still gets its own 1024 px screenshots.
+**Recording:** `record_dir` (CLI `--record <dir>`) saves a screencast video (`run.mp4`, needs `ffmpeg` on the PATH, otherwise skipped), a 2× JPEG before every action with its target outlined, the final page, `summary.json`, and an `index.html` page that opens on the video with its steps on a timeline and a strip kept in sync, then the run's calls, reason, address and cost. These shots are for people; the model still gets its own 1024 px screenshots.
 
 ## Safety
 
@@ -183,7 +183,7 @@ pnpm test      # offline: action space, request shape, answer validation, task-l
 pnpm verify    # live: headless Chrome + real Jev, checked against independent ground truth
 pnpm verify:real   # live public sites, a fresh browser per run, 5 runs each (JEVWAY_REAL_RUNS, JEVWAY_REAL_ONLY)
 pnpm verify:langfuse   # 10 jobs in Langfuse's demo project, signed-in Chrome on :9333, recorded into report.html
-pnpm report:render verify/out/<folder>   # rebuild a jobs suite's report.html from its results.json, offline
+pnpm report:render verify/out/<folder>   # rebuild a suite's report.html (or a run folder's index.html), offline
 pnpm verify:replay --record verify/out/replay/<name>   # live: record every Jev answer of the fixture suites
 pnpm verify:replay verify/out/replay/<name>            # offline: replay them, no key, no credits
 ```
@@ -200,7 +200,7 @@ pnpm verify:replay verify/out/replay/<name>            # offline: replay them, n
 
 **Replay.** `pnpm verify:replay` re-runs the fixture suites (`verify`, `verify:gotchas`, `verify:redteam`, `verify:capabilities`) against recorded Jev answers, so a loop or guard change can be regression-tested offline and for free. `JEVWAY_REPLAY=record` saves each answer under the sha256 of its request (keys sorted, screenshots left out, local fixture ports normalised) in `JEVWAY_REPLAY_DIR`; `JEVWAY_REPLAY=replay` answers only from there, with no key and no network. A request never recorded is a miss that names the goal and step and shows what changed against the nearest recording, and any miss fails the suite. A change to what Jev is asked is meant to miss: record again after it. Gotchas replay their `normal` profile (the `churn` and `slow` pages change with timing), and the live Wikipedia scenario always misses.
 
-Traces go to `verify/out/`. A jobs suite's `report.html` opens on an overview of its jobs, each with its featured run's step shots; a job's view starts with the run's video, its steps on a timeline and a strip that follow the video, every run one click away, then what Jev was given and how the run was judged. Each run's cost row shows its estimated cost (the sum of its calls' `est_cost_usd`), and the overview the median per run and the suite's total; a run saved before summaries carried a cost, or on a model without a price, shows "unknown". Results are in [docs/verification.md](docs/verification.md).
+Traces go to `verify/out/`. A jobs suite's `report.html` opens on an overview of its jobs, each with its featured run's step shots; a job's view starts with the run's video, its steps on a timeline and a strip that follow the video, every run one click away, then what Jev was given and how the run was judged. A step shot on the overview opens its run at that step (`#<job>-r<run>-s<step>`), and a phone recording sits in a frame of its own aspect. `verify:agent`'s page has the same layout: each chore's runs, with the agent's tool calls, their arguments and statuses, its final answer and the judgement. Each run's cost row shows its estimated cost (the sum of its calls' `est_cost_usd`), and the overview the median per run and the suite's total; a run saved before summaries carried a cost, or on a model without a price, shows "unknown". Results are in [docs/verification.md](docs/verification.md).
 
 How jevway compares with other open-source Jev browser projects, and which of their ideas are planned or rejected: [docs/prior-art.md](docs/prior-art.md).
 
