@@ -107,6 +107,23 @@ Probed on Chrome 156 headless (scratch script, before any code):
 9. **Still unsupported:** closed shadow roots, canvas, frames past the caps above, CSS-transformed or scaled iframes
    (offsets assume no transform), and frames whose read times out. Coordinate clicks stay the opt-in fallback.
 
+### Built as planned, except
+
+- **A press into a frame first waits two animation frames there** (`Frames.painted`). Chrome routes a press into a
+  frame by what was last painted: right after an out-of-process frame loaded, 4 of 8 clicks fell through to the page
+  (the frame's counter, correctly, said not delivered). With the wait, 0 of 40. Never a retry: the press is sent once.
+- **Frame text keeps to the frame's visible part.** The tab sets `window.__jevView` (the visible region in the frame's
+  own coordinates) and the snapshot's text walk uses it instead of the frame's whole viewport: a second line in
+  `snapshot.js`, a no-op for the main frame. Found on w3schools' iframe page, whose embedded tutorial added text from
+  below the fold.
+- **Frames are read side by side** (`Promise.all`, each capped), so a page of slow frames costs one cap, not their sum.
+- **The frame listener is dropped when the tab closes** (`Frames.stop`).
+- **Also unsupported:** a frame still at `about:blank` that a script writes into (some rich-text editors) is skipped;
+  `tab.want`'s "at most 5 off-screen matches" counts per frame; a native select inside a frame is applied without the
+  parent cover hop (the reader already leaves covered frame controls out).
+- **In `auto` mode** the page session's auto-attach stays on for a `Tab.find` tab while the server lives: the user's own
+  out-of-process frames start through our handler, which always resumes them.
+
 ## Scope
 
 **In scope:** `src/browser/frames.ts` (new: frame tracking, worlds, offsets, merge), hook points in `src/browser/tab.ts`,
