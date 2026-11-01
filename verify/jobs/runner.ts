@@ -35,6 +35,7 @@ import { DEVICES, type DeviceName } from '../../src/browser/devices.ts';
 import { Tab } from '../../src/browser/tab.ts';
 import { createAsk, profileOptions, resolveModel } from '../../src/jev/model.ts';
 import { shownValues } from '../../src/jev/secrets.ts';
+import type { Check } from '../../src/task/checks.ts';
 import { BrowserTask, type TaskSummary } from '../../src/task/run-task.ts';
 import { goalFor, isFlaky, renderReport, wilson, type Confirmation, type Job, type JobResult, type Phrasing } from './report.ts';
 
@@ -115,9 +116,11 @@ export interface RunJobsOptions {
   before?: (tab: Tab, job: Job) => Promise<void>;
   /** Puts the app back in its seeded state before each run (write suites). A throw aborts the whole suite, like `before`. */
   reset?: (job: Job, run: number) => Promise<void>;
+  /** The caller's checks (plan 099) to pass with a job's calls, by job id: what a calling agent would check. Judging is unchanged. */
+  checks?: Record<string, Check[]>;
 }
 
-export const runJobs = async ({ name, title, startUrl, browser, jobs, before, reset }: RunJobsOptions) => {
+export const runJobs = async ({ name, title, startUrl, browser, jobs, before, reset, checks }: RunJobsOptions) => {
   const knob = (suffix: string) => `JEV_${name.toUpperCase()}_${suffix}`;
   const { profile, screenshots } = resolveModel();
   const ask = createAsk(profile);
@@ -188,6 +191,7 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
             values: job.values,
             secretKeys: job.secretKeys,
             doneWhen: job.firstDoneWhen ?? job.doneWhen,
+            checks: checks?.[job.id],
             maxSteps: 20,
             screenshots,
             recordDir: new URL(dir, outDir).pathname,

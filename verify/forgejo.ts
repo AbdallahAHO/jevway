@@ -26,6 +26,7 @@ import {
   resetDemo,
   stackIsUp,
 } from './apps/forgejo/seed.ts';
+import type { Check } from '../src/task/checks.ts';
 import type { Job } from './jobs/report.ts';
 import { runJobs } from './jobs/runner.ts';
 
@@ -221,8 +222,36 @@ if (!(await stackIsUp())) {
   process.exit(1);
 }
 
+// JEV_FORGEJO_CHECKS=1: pass the caller's checks (plan 099) where a job's own ground truth shows on its final page, as a
+// calling agent would. The jobs and their judging stay as they are. Left out: description and wiki-off (they end on the
+// repository page or its settings, which show the change differently), protect-main (the rule's page doesn't name it as
+// saved), and the jobs that must hand back (checks never change a hand-back).
+const CHECKS: Record<string, Check[]> = {
+  'new-issue': [
+    { type: 'title_contains', text: ISSUE_TITLE },
+    { type: 'text_contains', text: `added the ${BUG_LABEL} label` },
+  ],
+  comment: [
+    { type: 'title_contains', text: COMMENTED_ISSUE },
+    { type: 'text_contains', text: COMMENT },
+  ],
+  'close-issue': [
+    { type: 'title_contains', text: TYPO_ISSUE },
+    { type: 'element_exists', name: 'Reopen' },
+  ],
+  'add-label': [
+    { type: 'title_contains', text: FEATURE_ISSUE },
+    { type: 'text_contains', text: `added the ${HELP_WANTED_LABEL} label` },
+  ],
+  milestone: [
+    { type: 'url_contains', text: '/ada/app/milestones' },
+    { type: 'text_contains', text: MILESTONE },
+  ],
+};
+
 await runJobs({
   name: 'forgejo',
+  ...(process.env.JEV_FORGEJO_CHECKS === '1' && { checks: CHECKS }),
   title: (jobCount) => `Forgejo: ${jobCount} write jobs with jev-browse`,
   startUrl: APP_URL,
   browser: process.env.JEV_FORGEJO_BROWSER ?? 'launch-headless',
