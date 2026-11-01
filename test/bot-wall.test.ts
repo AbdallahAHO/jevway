@@ -60,6 +60,7 @@ describe('a bot wall', () => {
   it("is npm's Cloudflare challenge, named with the markers it showed", () => {
     expect(detectBotWall(NPM_CHALLENGE)).toEqual({
       name: 'Cloudflare',
+      provider: 'cloudflare',
       evidence: ['title "just a moment..."', 'ray id:', 'performance and security by cloudflare', 'performing security verification'],
     });
   });
@@ -82,7 +83,8 @@ describe('a bot wall', () => {
 
   it("is Google's unusual-traffic page, named after the reCAPTCHA box it shows, or after its wording without one", () => {
     expect(detectBotWall(UNUSUAL_TRAFFIC)?.name).toBe('"unusual traffic" page');
-    expect(detectBotWall(UNUSUAL_TRAFFIC, ['reCAPTCHA'])?.name).toBe('reCAPTCHA');
+    expect(detectBotWall(UNUSUAL_TRAFFIC)?.provider).toBe('unusual-traffic');
+    expect(detectBotWall(UNUSUAL_TRAFFIC, ['reCAPTCHA'])).toMatchObject({ name: 'reCAPTCHA', provider: 'recaptcha' });
   });
 
   it('reads only the top of the page: challenge text below the first 600 characters is an article, not a wall', () => {
@@ -92,12 +94,13 @@ describe('a bot wall', () => {
 
   it('is a large visible challenge box with two challenge lines, named after the box', () => {
     const page = { title: 'Security check', text: 'One more step\nPlease complete the security check to continue.\nVerify you are human' };
-    expect(detectBotWall(page, ['hCaptcha'])?.name).toBe('hCaptcha');
+    expect(detectBotWall(page, ['hCaptcha'])).toMatchObject({ name: 'hCaptcha', provider: 'hcaptcha' });
+    expect(detectBotWall(page, ['Turnstile'])).toMatchObject({ name: 'Turnstile', provider: 'turnstile' });
     expect(detectBotWall(page)).toBeUndefined();
   });
 
   it("names a Cloudflare page's Turnstile box", () => {
-    expect(detectBotWall(NPM_CHALLENGE, ['Turnstile'])?.name).toBe('Cloudflare Turnstile');
+    expect(detectBotWall(NPM_CHALLENGE, ['Turnstile'])).toMatchObject({ name: 'Cloudflare Turnstile', provider: 'cloudflare' });
   });
 });
 

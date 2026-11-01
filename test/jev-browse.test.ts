@@ -4040,6 +4040,7 @@ describe('a bot wall', () => {
     expect(summary.status).toBe('blocked');
     expect(summary.reason).toContain('bot check (Cloudflare;');
     expect(summary.reason).toContain('jev-browse never tries to get past one');
+    expect(summary.wall).toEqual({ kind: 'bot_check', origin: 'https://www.npmjs.com', name: 'cloudflare' });
     expect(summary.page_text).toContain('Performing security verification');
     expect(requests).toHaveLength(0);
     expect(acted).toEqual([]);
@@ -4051,6 +4052,7 @@ describe('a bot wall', () => {
     const summary = await new BrowserTask(asTab, ask, { goal: 'Open zod', doneWhen: 'x', changeWaitMs: 0, wallWaitMs: 5000 }).run();
     expect(summary.status).toBe('done');
     expect(summary.title).toBe('zod - npm');
+    expect(summary.wall).toBeUndefined();
     expect(requests).toHaveLength(1);
     expect(JSON.stringify(requests[0])).not.toContain('Performing security verification');
   });
@@ -4063,6 +4065,7 @@ describe('a bot wall', () => {
     expect(summary.status).toBe('blocked');
     expect(summary.reason).toContain('bot check (Cloudflare;');
     expect(summary.title).toBe('Just a moment...');
+    expect(summary.wall).toMatchObject({ kind: 'bot_check', name: 'cloudflare' });
   });
 
   it('does not wait out a check a second time when it comes back in the same call', async () => {
@@ -4085,6 +4088,7 @@ describe('a bot wall', () => {
     const { asTab } = fakeTab([thread]);
     const summary = await new BrowserTask(asTab, ask, { goal: 'Open the thread', doneWhen: 'x', changeWaitMs: 0, wallWaitMs: 0 }).run();
     expect(summary.status).toBe('done');
+    expect(summary.wall).toBeUndefined();
     expect(requests).toHaveLength(1);
   });
 });
