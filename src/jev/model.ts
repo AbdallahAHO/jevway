@@ -121,6 +121,30 @@ export const MODELS = {
 export type ModelName = keyof typeof MODELS;
 
 /**
+ * USD per 1M input tokens, by the model id requests are sent with. Only prices written down are listed: a model
+ * missing here has no estimate (its cost is null), never a guessed one. Output tokens are not priced: Jev's are free.
+ */
+const INPUT_USD_PER_MILLION = new Map<string, number>([
+  // Jev's published rate, input $0.042 per 1M tokens and output free, as written for jev-1.12 in jkudish/jev-browser
+  // src/lib.ts:207 (docs/prior-art.md K5); plans 100 and 102 priced runs at it. Applied to 1.14 as an estimate, not billing.
+  // Jev through OpenRouter (typesafe/jev-1.14) has no rate written anywhere here, so it has no price.
+  ['jev-1.14.0', 0.042],
+]);
+
+/**
+ * A run's estimated cost in USD from its input tokens and the model's published rate, rounded to 6 decimals;
+ * null for a model with no price (or no model), so an unknown cost never reads as free.
+ *
+ * @example
+ * estimateCostUsd('jev-1.14.0', 7534); // 0.000316
+ * estimateCostUsd('cloudflare/clef-omni', 7534); // null
+ */
+export const estimateCostUsd = (model: string | null, inputTokens: number): number | null => {
+  const rate = model === null ? undefined : INPUT_USD_PER_MILLION.get(model);
+  return rate === undefined ? null : Math.round(inputTokens * rate) / 1e6;
+};
+
+/**
  * Resolves the model and screenshot mode from explicit choices, then `JEV_MODEL` / `JEV_SCREENSHOTS`.
  * Jev uses the TypeSafe API (images as `assets`, plus Box) when `TYPESAFE_API_KEY` is set, otherwise OpenRouter.
  * Screenshots on a model that cannot read images are a configuration error, not a silent no-op.
@@ -149,7 +173,8 @@ export const resolveModel = ({
 };
 
 /** The decision settings a profile hands to tasks and journeys. */
-export const profileOptions = ({ minConfidence, compactRules, elementRisk, pageRisk, imageTransport, box }: ModelProfile) => ({
+export const profileOptions = ({ model, minConfidence, compactRules, elementRisk, pageRisk, imageTransport, box }: ModelProfile) => ({
+  model,
   minConfidence,
   compactRules,
   elementRisk,

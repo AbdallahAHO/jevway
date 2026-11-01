@@ -156,6 +156,8 @@ const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 const thousands = (n: number) => `${(n / 1000).toFixed(1)}k`;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// Two significant digits: a run costs fractions of a cent.
+const dollars = (usd: number) => (usd === 0 ? '$0' : usd < 1 ? `$${usd.toPrecision(2)}` : `$${usd.toFixed(2)}`);
 const NUMBER_WORDS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty'];
 const counted = (n: number) => NUMBER_WORDS[n] ?? String(n);
 
@@ -163,6 +165,9 @@ const ran = (r: RunResult) => r.summaries.length > 0;
 const elapsed = (r: RunResult) => r.summaries.reduce((t, s) => t + s.elapsed_ms, 0);
 const requests = (r: RunResult) => r.summaries.reduce((t, s) => t + s.jev.requests, 0);
 const inputTokens = (r: RunResult) => r.summaries.reduce((t, s) => t + s.jev.input_tokens, 0);
+// Unknown (null) when any call has no estimate: a model without a price, or a summary saved before summaries carried one.
+const estCost = (r: RunResult) => r.summaries.reduce<number | null>((t, s) => (t === null || s.jev.est_cost_usd == null ? null : t + s.jev.est_cost_usd), 0);
+const costWords = (cost: number | null) => (cost === null ? 'est. cost unknown' : `est. ${dollars(cost)}`);
 const actions = (r: RunResult) => r.summaries.reduce((t, s) => t + s.steps.length, 0);
 const passCount = (runs: RunResult[]) => runs.filter((r) => r.passed).length;
 
@@ -321,6 +326,11 @@ const overviewView = (
   const failed = results.filter((r) => passCount(r.runs) === 0).length;
   const handBacks = results.filter((r) => r.job.expect).length;
   const latency = median(runs.flatMap((r) => r.summaries.map((s) => s.jev.median_latency_ms)));
+  const priced = finished.map(estCost).filter((cost) => cost !== null);
+  const pricedOf = priced.length < finished.length ? ` of ${plural(priced.length, 'priced run')}` : '';
+  const cost = priced.length
+    ? figure(dollars(median(priced)), `est. cost per run, median${pricedOf} · ${dollars(priced.reduce((t, c) => t + c, 0))} total`)
+    : figure('unknown', 'est. cost per run');
   const filters = [
     ['all', 'All', results.length],
     ['held', 'Every run held', held],
@@ -338,8 +348,8 @@ const overviewView = (
 <div class="figures grid4" aria-label="Totals">
 ${figure(`${passed}/${runs.length}`, `runs passed · ${interval(passed, runs.length)}`)}
 ${figure(String(flaky), `flaky ${flaky === 1 ? 'job' : 'jobs'} of ${results.length}`)}
-${figure(seconds(median(finished.map(elapsed))), 'median run')}
-${figure(String(median(finished.map(requests))), `Jev requests per run, ${latency} ms each`)}
+${figure(seconds(median(finished.map(elapsed))), `median run · ${plural(median(finished.map(requests)), 'Jev request')} per run, ${latency} ms each`)}
+${cost}
 </div>
 <section class="section" id="jobs" aria-labelledby="jobs-title">
 <div class="section-head grid4"><p class="small c2">Jobs<br>${runsPerJob}</p><h2 class="section-title c3s2" id="jobs-title">What jev-browse was asked to do</h2></div>
@@ -434,7 +444,7 @@ const runFacts = (job: ReportJob, r: RunResult, runs: RunResult[], phrasing: Phr
   if (r.url) rows.push(fact('Final address', `<span class="address">${escape(r.url)}</span>`));
   if (ran(r)) {
     const latency = median(r.summaries.map((s) => s.jev.median_latency_ms));
-    rows.push(fact('Cost', `<span class="num">${plural(requests(r), 'Jev request')} · ${thousands(inputTokens(r))} input tokens · ${seconds(elapsed(r))} · ${latency} ms median request</span>`));
+    rows.push(fact('Cost', `<span class="num">${plural(requests(r), 'Jev request')} · ${thousands(inputTokens(r))} input tokens · ${seconds(elapsed(r))} · ${latency} ms median request · ${costWords(estCost(r))}</span>`));
     rows.push(fact('Files', `<a href="${escape(`${r.dir}index.html`)}">${escape(r.dir)}index.html</a> · <a href="${escape(`${r.dir}summary.json`)}">summary.json</a> · <a href="${escape(`${r.dir}trace.json`)}">trace.json</a>`));
   }
   return `<dl class="facts">${rows.join('\n')}</dl>`;

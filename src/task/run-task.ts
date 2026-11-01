@@ -4,7 +4,7 @@ import { showsTarget } from '../browser/words.ts';
 import { buildActionSpace } from '../jev/action-space.ts';
 import { centerOf, contains } from '../jev/box.ts';
 import { decide, evidenceRequest, foldedFavourite, overflowFolds, readEvidence, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
-import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
+import { estimateCostUsd, type ImageTransport, type ScreenshotMode } from '../jev/model.ts';
 import { ANY_HOST, narrowHosts, outsideHosts, type HostRules } from './hosts.ts';
 import { scrubberFor } from '../jev/secrets.ts';
 import { describeFailure, runChecks, type Check, type CheckResult } from './checks.ts';
@@ -49,6 +49,8 @@ export interface TaskOptions {
   imageTransport?: ImageTransport;
   /** Box checks on screenshot decisions (see ModelProfile.box). */
   box?: boolean;
+  /** The model id requests are sent with (see ModelProfile.model): reported in the summary and priced by `estimateCostUsd`. */
+  model?: string;
   /**
    * Opt-in: when Jev is BLOCKED and the screenshot shows a control the DOM reader never reported (canvas,
    * iframe), click the centre of its box after a hit-test. Off by default: it is the one path where model
@@ -90,7 +92,8 @@ export interface TaskSummary {
   page_text: string;
   elapsed_ms: number;
   steps: (StepRecord & { confidence: number })[];
-  jev: { requests: number; input_tokens: number; median_latency_ms: number; screenshots: number };
+  /** `model` is the id requests went to (null when the task was given none); `est_cost_usd` an estimate from its published rate, null without one. */
+  jev: { requests: number; input_tokens: number; median_latency_ms: number; screenshots: number; model: string | null; est_cost_usd: number | null };
   done_probability?: number;
   /** Present whenever control returns before DONE: what Jev was deciding. */
   stuck?: { operation: string; element?: string; candidates: Candidate[] };
@@ -236,7 +239,7 @@ const BLANK_PAGE: PageState = {
  */
 export class BrowserTask {
   readonly trace: TraceEntry[] = [];
-  #options: Required<Omit<TaskOptions, 'doneWhen' | 'recordDir'>> & Pick<TaskOptions, 'doneWhen'>;
+  #options: Required<Omit<TaskOptions, 'doneWhen' | 'recordDir' | 'model'>> & Pick<TaskOptions, 'doneWhen' | 'model'>;
   #history: (StepRecord & { confidence: number })[] = [];
   #latencies: number[] = [];
   #inputTokens = 0;
@@ -312,6 +315,12 @@ export class BrowserTask {
     this.#ask = ask;
     this.#options = { ...DEFAULTS, values: {}, secretKeys: [], ...definedOnly(options), files: checkUploadFiles(options.files) };
     if (recordDir) this.#recording = new Recording(recordDir, (text) => this.#scrub(text));
+  }
+
+  /** The model a call's requests went to, and what its input tokens cost at that model's published rate. */
+  #costOf(inputTokens: number) {
+    const model = this.#options.model ?? null;
+    return { model, est_cost_usd: estimateCostUsd(model, inputTokens) };
   }
 
   /** Replaces every value the caller marked secret with its marker, in a string or a plain object's strings. */
@@ -493,6 +502,7 @@ export class BrowserTask {
           input_tokens: this.#inputTokens - tokensBefore,
           median_latency_ms: median(this.#latencies.slice(firstRequest)),
           screenshots: this.#screenshots - screenshotsBefore,
+          ...this.#costOf(this.#inputTokens - tokensBefore),
         },
         ...(decision?.doneProbability !== undefined && { done_probability: round(decision.doneProbability) }),
         ...(status !== 'done' && decision && { stuck: stuckOn(decision) }),
@@ -1050,6 +1060,7 @@ export class BrowserTask {
         requests: summary.jev.requests + 1,
         input_tokens: summary.jev.input_tokens + inputTokens,
         median_latency_ms: median(this.#latencies.slice(firstRequest)),
+        ...this.#costOf(summary.jev.input_tokens + inputTokens),
       },
     };
     let chosen: ReturnType<typeof readEvidence>;

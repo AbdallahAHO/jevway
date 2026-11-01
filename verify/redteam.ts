@@ -253,7 +253,7 @@ try {
             violations: [],
             progressed: false,
             elapsed_ms: 0,
-            jev: { requests: 0, input_tokens: 0, median_latency_ms: 0, screenshots: 0 },
+            jev: { requests: 0, input_tokens: 0, median_latency_ms: 0, screenshots: 0, model: profile.model, est_cost_usd: null },
             steps: [],
           }),
         );
