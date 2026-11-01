@@ -77,21 +77,21 @@ a brand phrase, so an article quoting one or two challenge lines is not a wall. 
 2. **No `cf-mitigated` header.** Reading it needs `Network.enable` and response capture in `Tab` (shared with other
    work), and it adds no stopping power: jkudish's own code never lets the header alone stop a run, because a challenge
    that auto-passed still answers with it. DOM signals only.
-3. **Naming the wall.** The reason names the check: `Cloudflare`, `reCAPTCHA`, `hCaptcha`, `Turnstile`, or an
-   `"unusual traffic" page`, else `a bot check`. Text can't say which widget a page embeds (it sits in a cross-origin
+3. **Naming the wall.** The reason names the check: `Cloudflare`, `reCAPTCHA`, `hCaptcha`, `Turnstile`, or a
+   `"unusual traffic" page`. Text can't say which widget a page embeds (it sits in a cross-origin
    iframe), so only once a wall is found the tab is asked for the visible challenge widgets: iframes whose `src` names
    recaptcha / hcaptcha / challenges.cloudflare.com, or `.g-recaptcha` / `.h-captcha` / `.cf-turnstile` boxes, visible,
    ≥ 16000 px² and not `size=invisible` (wingman's rule). A Cloudflare page with a Turnstile box is
-   `Cloudflare (Turnstile)`. That read is one `tab.evaluate`, only on a page already judged a wall; the check on every
+   `Cloudflare Turnstile`. That read is one `tab.evaluate`, only on a page already judged a wall; the check on every
    other step costs nothing (it reads the `PageState` already observed).
 4. **Where the run checks:**
    - **Before each decision**, at the top of the loop and before `++decisions`: a wall gets up to `wallWaitMs` to
      clear itself (the page observed again every second). Cleared: the loop goes on, and no decision was spent. Still a
      wall: `blocked` with the reason
-     `The page is a <name> bot check that did not clear in <s> s; jev-browse never tries to get past one. A person can pass it in this tab, then continue the session.`
+     `The page is a bot check (<name>; seen: <up to 4 markers>) that did not clear by itself; jev-browse never tries to get past one. A person can pass it in this tab, then continue the session.`
      A wall that clears and comes back in the same call is not waited out again: it ends `blocked` at once.
-   - **In `stopDone`**, after the menu close and before `stop('done')`: a final page that is a wall gets the same
-     wait; cleared, the loop decides again; still a wall, `blocked` with that reason. So `done` is never returned on a
+   - **In `stopDone`**, after the menu close and before `stop('done')`: when the page changed since the decision
+     (`tab.fresh`), it is read again, and a final page that is a wall gets the same wait; cleared, the loop decides again; still a wall, `blocked` with that reason. So `done` is never returned on a
      challenge.
 5. **The wait, `wallWaitMs`, default 8000.** A `TaskOptions` field (as `changeWaitMs` is), so tests set it to 0. The
    value comes from prior art; our own runs only show that npm's headless challenge never clears (50 s each, 3/3), so
