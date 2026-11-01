@@ -1,6 +1,6 @@
 # A throwaway Forgejo (SQLite) plus Mailpit for jevway's write suites. Started with `pnpm apps:forgejo:up`,
 # removed with its data by `pnpm apps:forgejo:down`. Local test data only: nothing here is a real secret.
-name: jev-forgejo
+name: jevway-forgejo
 
 services:
   forgejo:

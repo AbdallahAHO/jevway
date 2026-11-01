@@ -1,6 +1,6 @@
 # A throwaway Vikunja (SQLite) for jevway's held-back suite. Started with `pnpm apps:vikunja:up`, removed with its
 # data by `pnpm apps:vikunja:down`. Local test data only: nothing here is a real secret.
-name: jev-vikunja
+name: jevway-vikunja
 
 services:
   vikunja:

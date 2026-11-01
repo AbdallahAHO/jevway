@@ -8,7 +8,7 @@
  *   JEVWAY_LANGFUSE_PHRASING=terse pnpm verify:langfuse                            # only the jobs that have a terseGoal
  *
  * Needs a Chrome signed in to cloud.langfuse.com on a debugging port (default http://127.0.0.1:9333, override
- * with JEVWAY_LANGFUSE_BROWSER); see the jev-browse skill's "Run without permission prompts". Opens report.html.
+ * with JEVWAY_LANGFUSE_BROWSER); see the jevway skill's "Run without permission prompts". Opens report.html.
  */
 import type { Job } from './jobs/report.ts';
 import { runJobs } from './jobs/runner.ts';

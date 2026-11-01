@@ -6,7 +6,7 @@
  * `/checkout-complete.html`. `missing-zip` and `locked-out` expect a hand-back, not `done`.
  *
  * The harness signs in before each run (jevway never lists password fields; the calling agent signs in with its
- * own tool, per skill/jev-browse/SKILL.md), so every goal starts on the product list. `locked-out` signs in as the
+ * own tool, per skill/jevway/SKILL.md), so every goal starts on the product list. `locked-out` signs in as the
  * locked-out account instead, leaving the login page with its error.
  *
  *   pnpm verify:checkout                                   # every job, 3 runs each

@@ -23,7 +23,7 @@ const MAILPIT_API = 'http://127.0.0.1:8325/api/v1';
 export const ADA = { username: 'ada', password: 'ada-pass-1234', email: 'ada@jev.test' };
 const ADMIN = { username: 'jev-admin', password: 'jev-admin-pass-1', email: 'jev-admin@jev.test' };
 const API = `${ORIGIN}/api/v1`;
-const COMPOSE = ['compose', '-p', 'jev-forgejo', '-f', new URL('compose.yml', import.meta.url).pathname];
+const COMPOSE = ['compose', '-p', 'jevway-forgejo', '-f', new URL('compose.yml', import.meta.url).pathname];
 const run = promisify(execFile);
 
 export interface Issue {
