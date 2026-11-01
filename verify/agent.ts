@@ -1,6 +1,6 @@
 /**
  * A real agent drives jev-browse: Claude Code, headless (`claude -p`), with jev-browse as its only MCP server and only
- * its two tools (`browser_task`, `browser_task_end`), does eight chores that a person would phrase to an assistant. It
+ * its three tools (`browser_task`, `browser_task_end`, the read-only `browser_look`), does eight chores that a person would phrase to an assistant. It
  * has to pick the goal and values, supply what a hand-back asks for only when the prompt gave it, ask the user for what
  * the prompt did not give, and set `confirm_irreversible` only for the irreversible action and target the request names
  * (deleting repository X: the clicks that delete X), stopping to ask for anything else. Each run is judged by the app's
@@ -58,6 +58,7 @@ const APP_URL = `${ORIGIN}/${ADA.username}/app`;
 // The only tools the agent gets; the server's journey tools are taken away, since --allowedTools alone leaves them listed.
 const BROWSER_TASK = 'mcp__jev-browse__browser_task';
 const BROWSER_TASK_END = 'mcp__jev-browse__browser_task_end';
+const BROWSER_LOOK = 'mcp__jev-browse__browser_look';
 const JOURNEY_TOOLS = ['start', 'step', 'autopilot', 'annotate', 'finish'].map((name) => `mcp__jev-browse__journey_${name}`);
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -486,7 +487,7 @@ const runAgent = async (prompt: string, endpoint: string, runDir: string): Promi
       '-p', prompt,
       '--mcp-config', config,
       '--strict-mcp-config',
-      '--allowedTools', BROWSER_TASK, BROWSER_TASK_END,
+      '--allowedTools', BROWSER_TASK, BROWSER_TASK_END, BROWSER_LOOK,
       '--disallowedTools', ...JOURNEY_TOOLS,
       '--tools', '',
       '--setting-sources', 'project',
