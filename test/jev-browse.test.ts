@@ -7,7 +7,7 @@ import * as chrome from '../src/browser/chrome.ts';
 import { jpegSize, PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
 import { messageNames, showsTarget } from '../src/browser/words.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
-import { buildRequest, decide, foldedFavourite, NO_SUPPLIED_VALUE, overflowFolds, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
+import { buildRequest, decide, foldedFavourite, NO_SUPPLIED_FILE, NO_SUPPLIED_VALUE, overflowFolds, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
 import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
 import * as model from '../src/jev/model.ts';
 import { resolveModel } from '../src/jev/model.ts';
@@ -166,6 +166,12 @@ const fakeTab = (pages: PageState[] = [page()]) => {
     opensTabOn: undefined as string | undefined,
     next: undefined as unknown,
     takeOpened: () => tab.opened.splice(0),
+    /** Files the run set on file fields, with the path it passed. */
+    uploads: [] as { label: string; path: string }[],
+    upload: async (action: PageAction, _page: PageState, path: string) => {
+      tab.uploads.push({ label: action.label, path });
+    },
+    wantedFiles: false,
     follow: async () => tab.next,
     closed: false,
     closes: 0,
@@ -187,8 +193,9 @@ const fakeTab = (pages: PageState[] = [page()]) => {
     observe: async () => pages[Math.min(observed++, pages.length - 1)],
     fresh: async () => true,
     wanted: [] as string[],
-    want: (texts: string[]) => {
+    want: (texts: string[], options?: { files?: boolean }) => {
       tab.wanted = texts;
+      tab.wantedFiles = Boolean(options?.files);
     },
     dismissPopup: async () => {
       acted.push({ label: 'dismissPopup' });
@@ -4034,6 +4041,60 @@ describe('a tab the run\'s tab opens is followed', () => {
     const summary = await task.run();
     expect(summary.status).toBe('done');
     expect(popup.acted.map((a) => a.label)).toEqual(['Pay €412']);
+  });
+});
+
+describe('an upload uses a file the caller declared', () => {
+  const AVATAR = new URL('../verify/fixture/capabilities/avatar.png', import.meta.url).pathname;
+  const PICKER: PageAction = { id: 'e9', kind: 'upload', node: 80, role: 'file', label: 'Upload a profile picture (file field)', value: '' };
+  const CHOOSE: PageAction = { id: 'e10', kind: 'click', node: 81, role: 'button', label: 'Upload a profile picture' };
+  const profile = (fingerprint: string) => page({ url: 'http://fixture/profile', title: 'Profile', actions: [CHOOSE, PICKER], fingerprint });
+  const upload = { operation: 'UPLOAD', file_for_2: 'avatar' };
+
+  it('offers UPLOAD with file heads over the declared keys, sending each file\'s name and never its path', () => {
+    const space = buildActionSpace(profile('a').actions);
+    const request = buildRequest({ page: profile('a'), goal: 'Set my picture', history: [], checkCommitRisk: true, values: {}, files: { avatar: 'avatar.png' } }, space);
+    expect(Object.keys((request.questions.operation as any).criteria)).toContain('UPLOAD');
+    expect(Object.keys((request.questions.file_for_2 as any).criteria)).toEqual(['avatar', NO_SUPPLIED_FILE]);
+    expect((request.state as any).supplied_files).toEqual({ avatar: 'avatar.png' });
+  });
+
+  it('sets the declared path on the chosen field and says which key it used', async () => {
+    const { ask, requests } = scriptedJev([upload, { operation: 'DONE' }]);
+    const { tab, asTab } = fakeTab([profile('a'), profile('b')]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Set my picture', files: { avatar: AVATAR }, changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('done');
+    expect(tab.wantedFiles).toBe(true);
+    expect(tab.uploads).toEqual([{ label: PICKER.label, path: AVATAR }]);
+    expect(summary.steps[0]).toMatchObject({ operation: 'UPLOAD', element: PICKER.label, file_key: 'avatar' });
+    for (const request of requests) expect(JSON.stringify(request)).not.toContain(AVATAR);
+  });
+
+  it('feeds back a field no declared file fits once, then asks the caller', async () => {
+    const noFile = { operation: 'UPLOAD', file_for_2: NO_SUPPLIED_FILE };
+    const { ask, requests } = scriptedJev([noFile, noFile]);
+    const { tab, asTab } = fakeTab([profile('a'), profile('b'), profile('c')]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Attach my CV', files: { avatar: AVATAR }, changeWaitMs: 0 }).run();
+    expect(requests[1].state.recent_actions.at(-1).not_executed).toMatch(/^no supplied file fits this field/);
+    expect(summary).toMatchObject({ status: 'needs_input', reason: `No supplied file fits the file field "${PICKER.label}"` });
+    expect(tab.uploads).toEqual([]);
+  });
+
+  it('never uploads a value: a key from values is not a file', async () => {
+    const { ask } = scriptedJev([{ operation: 'UPLOAD', file_for_2: 'secret' }]);
+    const { tab, asTab } = fakeTab([profile('a')]);
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Set my picture', values: { secret: '/etc/passwd' }, files: { avatar: AVATAR }, changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('blocked');
+    expect(tab.uploads).toEqual([]);
+  });
+
+  it('lists no file fields and offers no UPLOAD when no files are declared', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'DONE' }]);
+    const { tab, asTab } = fakeTab([page()]);
+    await new BrowserTask(asTab, ask, { goal: 'Book it', changeWaitMs: 0 }).run();
+    expect(tab.wantedFiles).toBe(false);
+    expect(Object.keys((requests[0].questions.operation as any).criteria)).not.toContain('UPLOAD');
+    expect(requests[0].state).not.toHaveProperty('supplied_files');
   });
 });
 

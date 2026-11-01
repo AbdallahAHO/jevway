@@ -17,7 +17,9 @@ const fakeCdp = ({ offsets = [0] }: { offsets?: number[] } = {}) => {
       if (method !== 'Runtime.evaluate') return {};
       const expression = String(params.expression);
       if (expression.includes('state?.marker')) return { result: { value: 'M' } };
+      if (expression.includes('c.pageKey()')) return { result: { value: ['K', 'G'] } };
       if (expression.includes('scrollTop')) return { result: { value: offsets.length > 1 ? offsets.shift() : offsets[0] } };
+      if (expression.includes('nodes.get(80)')) return { result: { objectId: 'OBJ-80' } };
       if (expression === 'location.href') return { result: { value: 'http://fixture/docs' } };
       if (expression === 'document.readyState') return { result: { value: 'complete' } };
       return { result: {} };
@@ -104,5 +106,16 @@ describe('a tab our tab opens', () => {
     emit('Target.targetDestroyed', { targetId: 'T1' });
     expect(tab.closed).toBe(true);
     await expect(tab.observe()).rejects.toThrow(StalePage);
+  });
+});
+
+describe('an upload', () => {
+  it('sets the declared path on the observed file input', async () => {
+    const { cdp, calls } = fakeCdp();
+    const tab = await Tab.attach(cdp, 'T1');
+    const field: PageAction = { id: 'e1', kind: 'upload', node: 80, role: 'file', label: 'Avatar (file field)' };
+    const observed = { ...PAGE, page_key: 'K', guards: { 80: 'G' } } as unknown as PageState;
+    await tab.upload(field, observed, '/Users/ada/avatar.png');
+    expect(calls.find((call) => call.method === 'DOM.setFileInputFiles')?.params).toEqual({ files: ['/Users/ada/avatar.png'], objectId: 'OBJ-80' });
   });
 });
