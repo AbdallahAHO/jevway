@@ -28,6 +28,8 @@ export interface Probes {
   /** True when anything answers HTTP at the URL (any status): a chrome://inspect Chrome answers /json/version with 404. */
   answers: (url: string) => Promise<boolean>;
   hasFfmpeg: () => Promise<boolean>;
+  /** `JEVWAY_REPLAY` as set (any value) and the recording folder, when replay or recording is on. */
+  replay?: { mode: string; dir: string };
 }
 
 const ok = (area: string, message: string): Finding => ({ level: 'ok', area, message });
@@ -151,7 +153,18 @@ export const diagnose = async (probes: Probes): Promise<Finding[]> => [
   ...envFileFinding(probes.envFile),
   await browserFinding(probes),
   await ffmpegFinding(probes),
+  ...replayFinding(probes.replay),
 ];
+
+// Replay is a test harness switch: left on, jevway answers from recordings (or writes them) instead of plain use.
+const replayFinding = (replay: Probes['replay']): Finding[] => {
+  if (!replay) return [];
+  const message =
+    replay.mode === 'record'
+      ? `JEVWAY_REPLAY=record: jevway saves every Jev answer into ${replay.dir}`
+      : `JEVWAY_REPLAY=${replay.mode}: jevway answers from recordings in ${replay.dir}, not from Jev`;
+  return [warn('Replay', message, 'Unset JEVWAY_REPLAY for real use')];
+};
 
 /** 0 when nothing blocks (warnings allowed), 1 otherwise. */
 export const exitCode = (findings: Finding[]) => (findings.some(({ level }) => level === 'fail') ? 1 : 0);

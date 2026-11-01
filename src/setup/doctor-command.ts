@@ -3,6 +3,7 @@ import { statSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { devToolsActivePort, findChrome } from '../browser/chrome.ts';
 import { createLiveAsk, resolveModel } from '../jev/model.ts';
+import { replayDir } from '../jev/replay.ts';
 import { diagnose, exitCode, liveCheck, planSteps, render, type Probes } from './doctor.ts';
 import { envFilePath, shownEnvFilePath } from './env-file.ts';
 
@@ -36,6 +37,7 @@ const realProbes = (browser: string, model: string | undefined, fromEnvFile: str
   devToolsActivePort,
   answers: (url) => fetch(url, { signal: AbortSignal.timeout(2_000) }).then(() => true, () => false),
   hasFfmpeg: () => new Promise((resolve) => execFile('ffmpeg', ['-version'], (error) => resolve(!error))),
+  ...(process.env.JEVWAY_REPLAY?.trim() && { replay: { mode: process.env.JEVWAY_REPLAY.trim(), dir: replayDir() } }),
 });
 
 /**

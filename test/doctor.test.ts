@@ -230,3 +230,32 @@ describe('jevway doctor --live: one real round trip', () => {
     expect(finding.fix).toMatch(/key/);
   });
 });
+
+describe('jevway doctor under JEVWAY_REPLAY', () => {
+  it('warns that answers come from recordings, without blocking', async () => {
+    vi.stubEnv('TYPESAFE_API_KEY', 'ts-1');
+    const findings = await diagnose(healthy({ replay: { mode: 'replay', dir: '/work/verify/out/replay/default' } }));
+    expect(findingFor(findings, 'Replay')).toMatchObject({
+      level: 'warn',
+      message: 'JEVWAY_REPLAY=replay: jevway answers from recordings in /work/verify/out/replay/default, not from Jev',
+      fix: 'Unset JEVWAY_REPLAY for real use',
+    });
+    expect(exitCode(findings)).toBe(0);
+  });
+
+  it('says so while recording too, and says nothing when it is unset', async () => {
+    vi.stubEnv('TYPESAFE_API_KEY', 'ts-1');
+    const recording = await diagnose(healthy({ replay: { mode: 'record', dir: '/work/rec' } }));
+    expect(findingFor(recording, 'Replay').message).toBe('JEVWAY_REPLAY=record: jevway saves every Jev answer into /work/rec');
+    expect(findingFor(await diagnose(healthy()), 'Replay')).toBeUndefined();
+  });
+
+  it('checks the real key and route, not the recorded ones', async () => {
+    vi.stubEnv('JEVWAY_REPLAY', 'replay');
+    vi.stubEnv('JEVWAY_REPLAY_DIR', '/nonexistent/replay');
+    vi.stubEnv('OPENROUTER_API_KEY', 'or-1');
+    const findings = await diagnose(healthy({ replay: { mode: 'replay', dir: '/nonexistent/replay' } }));
+    expect(findingFor(findings, 'Model')).toBeUndefined();
+    expect(findingFor(findings, 'Key').level).toBe('ok');
+  });
+});
