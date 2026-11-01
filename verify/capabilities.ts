@@ -88,7 +88,6 @@ const TASKS: CapabilityTask[] = [
     expect: ['done'],
     passes: `window.__fixture?.searched === 'webhooks'`,
     inOpenedTab: true,
-    gap: 'plan 096',
     solve: `document.querySelector('a[target="_blank"]').click()`,
     solveOpened: `(() => { const input = document.querySelector('input[name="q"]'); input.value = 'webhooks'; input.form.requestSubmit(); })()`,
   },

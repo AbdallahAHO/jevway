@@ -16,7 +16,7 @@ const USAGE = `jev-browse --goal "<outcome>" (--url <url> | --tab <url part>) [o
   --allowed-hosts a.com,*.b.com   hosts the run may be on (narrows $JEV_ALLOWED_HOSTS); leaving them ends it blocked
   --blocked-hosts ads.com         hosts it must never be on (adds to $JEV_BLOCKED_HOSTS)
   --max-seconds 300               time budget; past it the run ends step_budget (Ctrl-C ends it blocked)
-  --keep-open                     leave the tab open (auto/remote browsers)
+  --keep-open                     leave the tabs open (auto/remote browsers), including any the run's clicks opened
   --allow-coordinate-clicks       click a boxed control the DOM never reported (canvas, iframe); Jev 1.14 direct only
   --record <dir>                  sharp screenshot before every action + final page, summary.json, index.html
 
@@ -91,7 +91,7 @@ try {
   const cancel = new AbortController();
   process.once('SIGINT', () => cancel.abort());
   const summary = await task.run({ signal: cancel.signal });
-  if (args.url && !args['keep-open']) await task.tab.close();
+  if (!args['keep-open']) await task.closeTabs({ keepFirst: !args.url });
   console.log(JSON.stringify(summary, null, 2));
   process.exitCode = summary.status === 'done' ? 0 : 1;
 } catch (error) {

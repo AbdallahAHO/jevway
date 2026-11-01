@@ -14,7 +14,7 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 | --- | --- |
 | Get to a page state: search, forms, filters, pagination, open a result | `browser_task` |
 | Look at it: console, network, performance, Lighthouse, screenshots, DOM details | chrome-devtools (same Chrome; `list_pages` → `select_page` by the summary's `url`) |
-| Iframes, shadow DOM, canvas, uploads, popup tabs, drag | chrome-devtools directly |
+| Iframes, shadow DOM, canvas, uploads, drag | chrome-devtools directly |
 
 ## Call it well
 
@@ -40,7 +40,9 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 
 To see a page again without acting (after a hand-back, or to check a result), call `browser_look` with the `session` (or `tab`, or a `url` it opens and closes): it returns `url`, `title`, `page_text` and the listed controls with their state, with no Jev call.
 
-End with `browser_task_end` when finished (it closes the tab it opened unless `keep_tab: true`).
+A link that opens a new tab is followed: the step says `new tab opened: <url>`, the session continues there (the summary's `url` is that tab), and it returns to the opener if that tab closes.
+
+End with `browser_task_end` when finished (it closes the tab it opened, and any tab its clicks opened, unless `keep_tab: true`).
 
 ## Show what happened
 

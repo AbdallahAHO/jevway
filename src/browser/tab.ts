@@ -114,6 +114,12 @@ export class Tab {
   #dialogs: DialogRecord[] = [];
   /** The phrases the next confirm dialog must name to get OK; set only around a click the caller confirmed. */
   #confirmArm: string[] | undefined;
+  /** The device this tab emulates, for a tab it opens. */
+  #device: Device | undefined;
+  /** Page tabs this tab opened (target=_blank, window.open) that the run has not taken yet, oldest first. */
+  #opened: string[] = [];
+  #closed = false;
+  #unsubscribe: (() => void)[] = [];
   private cdp: CdpConnection;
   readonly targetId: string;
   private sessionId: string;
@@ -151,6 +157,7 @@ export class Tab {
     await this.#call('Emulation.setTouchEmulationEnabled', { enabled: mobile, maxTouchPoints: mobile ? 5 : 1 });
     if (userAgent) await this.#call('Emulation.setUserAgentOverride', { userAgent });
     this.#touch = mobile;
+    this.#device = device;
   }
 
   /** Viewport screenshot as base64. `scale` < 1 makes a light preview for the agent. */
@@ -274,10 +281,57 @@ export class Tab {
     await tab.#call('Page.enable');
     await tab.#call('Page.addScriptToEvaluateOnNewDocument', { source: INPUT_COUNTER });
     await tab.#call('Runtime.evaluate', { expression: INPUT_COUNTER }).catch(() => undefined);
-    tab.onEvent((method, params) => {
-      if (method === 'Page.javascriptDialogOpening') tab.#answerDialog(params);
-    });
+    tab.#unsubscribe.push(
+      tab.onEvent((method, params) => {
+        if (method === 'Page.javascriptDialogOpening') tab.#answerDialog(params);
+      }),
+    );
+    // jev-browse: a tab this tab opens is noted by its opener id; discovery only reports targets, so a tab anyone else
+    // opened (the user's own, in their Chrome) is never attached, read or changed.
+    tab.#unsubscribe.push(
+      cdp.onEvent((method, params, sessionId) => {
+        const info = params?.targetInfo;
+        if (method === 'Target.targetCreated' && info?.type === 'page' && info.openerId === targetId) tab.#opened.push(info.targetId);
+        if (method === 'Target.targetDestroyed' && params?.targetId === targetId) tab.#closed = true;
+        if (method === 'Target.detachedFromTarget' && params?.sessionId === tab.sessionId && !sessionId) tab.#closed = true;
+      }),
+    );
+    await cdp.send('Target.setDiscoverTargets', { discover: true }).catch(() => undefined);
     return tab;
+  }
+
+  /** True once this tab's target was closed or detached: it can't be read again. */
+  get closed() {
+    return this.#closed;
+  }
+
+  /** The tabs this tab opened since the last call, oldest first (target ids). */
+  takeOpened(): string[] {
+    return this.#opened.splice(0);
+  }
+
+  /**
+   * Drives a tab this tab opened with the same setup (`Tab.attach`), plus this tab's device, wanted values and
+   * confirmation arm, once its first real document has loaded. The input counter is evaluated on that document again:
+   * a popup that loaded before it was attached never got it from the new-document script.
+   *
+   * @example
+   * const [opened] = tab.takeOpened();
+   * if (opened) tab = await tab.follow(opened);
+   */
+  async follow(targetId: string): Promise<Tab> {
+    const next = await Tab.attach(this.cdp, targetId);
+    if (this.#device) await next.emulate(this.#device);
+    next.#wanted = this.#wanted;
+    next.#confirmArm = this.#confirmArm;
+    // A popup is created on about:blank and then navigates: wait for its URL, then for it to load.
+    const begun = Date.now();
+    while (Date.now() - begun < POPUP_URL_MS && (await next.#evaluate('location.href').catch(() => 'about:blank')) === 'about:blank') {
+      await sleep(50);
+    }
+    await next.#waitForLoad(Date.now() + 15_000);
+    await next.#evaluate(INPUT_COUNTER).catch(() => undefined);
+    return next;
   }
 
   // jev-browse: an open dialog freezes the page for every protocol call, so it is answered at once, with the choice that
@@ -313,7 +367,10 @@ export class Tab {
 
   async navigate(url: string) {
     await this.#call('Page.navigate', { url });
-    const deadline = Date.now() + 15_000;
+    await this.#waitForLoad(Date.now() + 15_000);
+  }
+
+  async #waitForLoad(deadline: number) {
     while (Date.now() < deadline) {
       // A frozen renderer never answers: the wait ends at its deadline, not after one more 30 s protocol call.
       const state = await Promise.race([
@@ -337,6 +394,7 @@ export class Tab {
   }
 
   async observe(): Promise<PageState> {
+    if (this.#closed) throw new StalePage('The tab was closed');
     const begun = Date.now();
     await this.#settleAfterInput();
     const placeholders = await this.#waitOutPlaceholders(begun);
@@ -466,6 +524,7 @@ export class Tab {
   }
 
   async close() {
+    for (const unsubscribe of this.#unsubscribe.splice(0)) unsubscribe();
     await this.cdp.send('Target.closeTarget', { targetId: this.targetId }).catch(() => undefined);
   }
 
@@ -615,6 +674,9 @@ export const jpegSize = (base64: string) => {
   }
   return null;
 };
+
+// How long a followed tab may stay on about:blank before it is read as it is (a popup a script writes into).
+const POPUP_URL_MS = 3_000;
 
 // A finger's tap lasts tens of milliseconds; a zero-length tap made some widgets open and close at once.
 const TAP_MS = 60;

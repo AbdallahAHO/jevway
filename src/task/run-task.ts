@@ -286,6 +286,8 @@ export class BrowserTask {
    */
   #ending: { page: PageState; decision?: Decision; firstRequest: number; overridable: boolean } | undefined;
   #tab: Tab;
+  /** Every tab this session drove, the first one first: the ones after it were opened by the session's own clicks. */
+  #tabs: Tab[];
   #ask: Ask;
   #recording: Recording | undefined;
   /** This call's stop signal (caller cancel or time budget); set while a call runs. */
@@ -293,6 +295,7 @@ export class BrowserTask {
 
   constructor(tab: Tab, ask: Ask, { recordDir, ...options }: TaskOptions) {
     this.#tab = tab;
+    this.#tabs = [tab];
     this.#ask = ask;
     this.#options = { ...DEFAULTS, values: {}, secretKeys: [], ...definedOnly(options) };
     if (recordDir) this.#recording = new Recording(recordDir, (text) => this.#scrub(text));
@@ -303,8 +306,50 @@ export class BrowserTask {
     return scrubberFor(this.#options.values, this.#options.secretKeys)(value);
   }
 
+  /** The tab the session is on now: a tab its clicks opened, once followed, or the one it started on. */
   get tab() {
     return this.#tab;
+  }
+
+  /** Every tab the session drove, the first one first. */
+  get tabs(): readonly Tab[] {
+    return this.#tabs;
+  }
+
+  /**
+   * Closes the tabs this session followed (its own clicks opened them), and the first one unless `keepFirst` (a tab the
+   * caller pointed it at, or one it should leave open).
+   *
+   * @example
+   * await task.closeTabs({ keepFirst: !ownsTab }); // browser_task_end without keep_tab
+   */
+  async closeTabs({ keepFirst }: { keepFirst: boolean }) {
+    for (const [index, tab] of this.#tabs.entries()) if (index > 0 || !keepFirst) await tab.close();
+  }
+
+  // jev-browse: a tab the session's tab opened becomes the session's tab (the newest, if several); when the tab in use
+  // closes, the run goes back to the newest one it drove that is still open. Says which happened, for the history note.
+  async #switchTabs(): Promise<'opened' | 'closed' | undefined> {
+    const opened = this.#tab.takeOpened().at(-1);
+    if (opened) {
+      this.#tab = await this.#tab.follow(opened);
+      this.#tabs.push(this.#tab);
+      return 'opened';
+    }
+    if (!this.#tab.closed) return undefined;
+    const back = this.#tabs.findLast((tab) => !tab.closed);
+    if (!back) return undefined;
+    this.#tab = back;
+    return 'closed';
+  }
+
+  // Puts a tab switch on the last step of this call, with the page now in use (read here unless the caller just did).
+  async #afterSwitch(switched: 'opened' | 'closed', firstStep: number, read?: PageState): Promise<PageState> {
+    const page = read ?? (await this.#tab.observe());
+    const note = switched === 'opened' ? `new tab opened: ${page.url}` : `the tab closed; back on ${page.url}`;
+    const last = this.#history.length - 1;
+    if (last >= firstStep) this.#history[last] = { ...this.#history[last], element: `${this.#history[last].element} (${note})`, page_changed: true };
+    return page;
   }
 
   /** Merge new values, a new goal, narrower hosts (a widening list throws), or a one-time confirmation for the next irreversible click. */
@@ -494,6 +539,9 @@ export class BrowserTask {
       while (executed < maxSteps) {
         const halt = limit.stopped();
         if (halt) return stop(halt.status, halt.reason);
+        // A tab opened (or closed) since the last look, by a late script: the checks below judge the tab in use.
+        const switchedLate = await this.#switchTabs();
+        if (switchedLate) page = await this.#afterSwitch(switchedLate, firstStep);
         // Never a decision on a page outside the hosts: a start page, a redirect or a late navigation that left them ends the run.
         const outside = outsideHosts(page.url, hosts);
         if (outside) return stop('blocked', `The page is outside this run's hosts: ${outside}; the run stopped without going back`);
@@ -790,10 +838,21 @@ export class BrowserTask {
           ...(decision.valueKey && { value_key: decision.valueKey }),
         };
         const confidence = round(Math.min(decision.confidence, decision.targetConfidence ?? 1));
+        let switched: 'opened' | 'closed' | undefined;
         try {
-          page = await this.#tab.observe();
+          // A tab the action opened is followed before the page is read; a tab it closed is left for the one before it.
+          switched = await this.#switchTabs();
+          page = await this.#tab.observe().catch(async (error) => {
+            if (!(error instanceof StalePage) || !this.#tab.closed) throw error;
+            switched = await this.#switchTabs();
+            return this.#tab.observe();
+          });
           // A slow click handler or a loading page hasn't reacted yet: a person waits a moment before trying again.
-          if (page.fingerprint === before) page = await this.#awaitChange(before, page);
+          if (!switched && page.fingerprint === before) {
+            page = await this.#awaitChange(before, page);
+            switched = await this.#switchTabs();
+            if (switched) page = await this.#tab.observe();
+          }
         } catch (error) {
           // An action that ran is reported even when the page can't be read afterwards, so the caller never repeats it blindly.
           this.#history.push({ ...ran, confidence });
@@ -807,6 +866,7 @@ export class BrowserTask {
           page_changed: page.fingerprint !== before,
           confidence,
         });
+        if (switched) page = await this.#afterSwitch(switched, firstStep, page);
         // A click can leave the site as surely as a navigation: nothing else runs on a page outside the hosts (no guard, look or Escape).
         const left = outsideHosts(page.url, hosts);
         if (left) return stop('blocked', `After "${element}" the page is outside this run's hosts: ${left}; the run stopped without going back`, decision);
