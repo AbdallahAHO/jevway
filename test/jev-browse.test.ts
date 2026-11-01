@@ -4561,3 +4561,49 @@ describe('a done carries the page quote that proves it', () => {
     expect(task.trace.at(-1)).toMatchObject({ decision: { operation: 'EVIDENCE', confidence: 0.95, inputTokens: 100, requests: 1 }, executed: false });
   });
 });
+
+describe('stops that are final stay final, whatever the caller checks say', () => {
+  // Every check passes and done_when scored 0.6 on the page the run stopped on: enough to finish a progress guard's stop.
+  const passing = [{ type: 'url_contains', text: '/' }] as const;
+
+  it('keeps a cancel that came between the decision and its input blocked', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1', done_check: 0.6 }]);
+    const { tab, asTab } = fakeTab();
+    const controller = new AbortController();
+    // The cancel lands while the click is refused as covered: the run stops at the check before the popup is closed.
+    tab.act = async () => {
+      controller.abort();
+      throw new TargetUnreachable('covered', true, []);
+    };
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [...passing], changeWaitMs: 0 }).run({ signal: controller.signal });
+    expect(summary.checks?.every((check) => check.pass)).toBe(true);
+    expect(summary).toMatchObject({ status: 'blocked', reason: 'Cancelled by the caller' });
+  });
+
+  it('keeps a stop for leaving the hosts blocked', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1', done_check: 0.6 }]);
+    const { asTab } = fakeTab([page(), page({ url: 'https://partner.example/offer', fingerprint: 'partner' })]);
+    const hosts = { allowed: ['fixture'], blocked: [] };
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [...passing], hosts, changeWaitMs: 0 }).run();
+    expect(summary.checks?.every((check) => check.pass)).toBe(true);
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain("outside this run's hosts");
+  });
+
+  it('keeps a bot wall blocked', async () => {
+    const wall = page({
+      url: 'https://www.npmjs.com/',
+      title: 'Just a moment...',
+      text: 'www.npmjs.com\nPerforming security verification\nThis website uses a security service to protect against malicious bots.\nRay ID:\na4c627515b445548\nPerformance and Security by\nCloudflare',
+      actions: [{ id: 'wait', kind: 'wait', label: 'Wait for the page to update' }],
+      fingerprint: 'wall',
+    });
+    const { ask } = scriptedJev([{ operation: 'DONE', done_check: 0.95 }]);
+    const { tab, asTab } = fakeTab([page(), wall]);
+    tab.fresh = async () => false;
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [...passing], changeWaitMs: 0, wallWaitMs: 0 }).run();
+    expect(summary.checks?.every((check) => check.pass)).toBe(true);
+    expect(summary.status).toBe('blocked');
+    expect(summary.wall).toMatchObject({ kind: 'bot_check' });
+  });
+});
