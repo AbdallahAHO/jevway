@@ -245,12 +245,16 @@ export class Frames {
       }
     };
     walk(frameTree, this.#sessionId);
-    for (const [id, { sessionId, parentFrameId }] of this.#children) {
-      const tree = await this.#send('Page.getFrameTree', {}, sessionId).catch(() => null);
-      if (!tree || !parentFrameId) continue;
-      found.set(id, { id, parentId: parentFrameId, sessionId, url: tree.frameTree.frame.url });
+    const children = [...this.#children].filter(([, child]) => child.parentFrameId);
+    const trees = await Promise.all(
+      children.map(([, { sessionId }]) => withTimeout(this.#send('Page.getFrameTree', {}, sessionId), FRAME_READ_MS).catch(() => null)),
+    );
+    children.forEach(([id, { sessionId, parentFrameId }], i) => {
+      const tree = trees[i];
+      if (!tree) return;
+      found.set(id, { id, parentId: parentFrameId!, sessionId, url: tree.frameTree.frame.url });
       walk(tree.frameTree, sessionId);
-    }
+    });
     const depth = (frame: Omit<FrameTarget, 'base'> | undefined, level = 1): number =>
       !frame || level > MAX_DEPTH ? Infinity : frame.parentId === this.#mainFrameId ? level : depth(found.get(frame.parentId), level + 1);
     this.#known = new Map();
@@ -268,12 +272,11 @@ export class Frames {
     this.#viewport = viewport;
     await this.#releaseObjects();
     const frames = await this.list().catch(() => []);
-    const read: { snapshot: FrameSnapshot; at: { x: number; y: number } }[] = [];
-    for (const frame of frames.slice(0, MAX_PLACED)) {
-      if (read.length >= MAX_FRAMES) break;
-      const one = await withTimeout(this.#readOne(frame, script, wanted), FRAME_READ_MS + 500).catch(() => null);
-      if (one) read.push(one);
-    }
+    // Read side by side, so a page full of slow frames costs one frame's cap, not their sum.
+    const reads = await Promise.all(
+      frames.slice(0, MAX_PLACED).map((frame) => withTimeout(this.#readOne(frame, script, wanted), FRAME_READ_MS + 500).catch(() => null)),
+    );
+    const read = reads.filter((one) => one !== null).slice(0, MAX_FRAMES);
     // In reading order: top to bottom, then left to right.
     return read.sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x).map(({ snapshot }) => snapshot);
   }
@@ -311,23 +314,24 @@ export class Frames {
 
   /** Sum of `script` (the placeholder count) over the listed frames; a frame that fails counts 0. */
   async countPlaceholders(script: string): Promise<number> {
-    let total = 0;
-    for (const frame of (await this.list().catch(() => [])).slice(0, MAX_FRAMES)) {
-      const response = await withTimeout(this.evaluate(frame, script, { timeout: FRAME_READ_MS }), FRAME_READ_MS + 500).catch(() => null);
-      total += Number(response?.result?.value) || 0;
-    }
-    return total;
+    const frames = (await this.list().catch(() => [])).slice(0, MAX_PLACED);
+    const counts = await Promise.all(
+      frames.map((frame) => withTimeout(this.evaluate(frame, script, { timeout: FRAME_READ_MS }), FRAME_READ_MS + 500).catch(() => null)),
+    );
+    return counts.reduce((total, response) => total + (Number(response?.result?.value) || 0), 0);
   }
 
   /** True while every frame read at observe time still shows the same document. */
   async sameDocuments(frames: { id: string; identity: unknown }[]): Promise<boolean> {
-    for (const { id, identity } of frames) {
-      const frame = this.#known.get(id);
-      if (!frame) return false;
-      const response = await this.evaluate(frame, '[performance.timeOrigin, location.href]').catch(() => null);
-      if (JSON.stringify(response?.result?.value) !== JSON.stringify(identity)) return false;
-    }
-    return true;
+    const same = await Promise.all(
+      frames.map(async ({ id, identity }) => {
+        const frame = this.#known.get(id);
+        if (!frame) return false;
+        const response = await withTimeout(this.evaluate(frame, '[performance.timeOrigin, location.href]'), FRAME_READ_MS).catch(() => null);
+        return JSON.stringify(response?.result?.value) === JSON.stringify(identity);
+      }),
+    );
+    return same.every(Boolean);
   }
 
   /** Where the frame's content starts in the viewport now, or null when it no longer shows. */
