@@ -338,6 +338,16 @@ describe('a job view', () => {
     expect(viewOf(html, 'escape')).toContain('href="#new-issue"');
   });
 
+  it('links every step to its full-size shot in a new tab, outside the button that seeks the video', () => {
+    for (const [id, steps] of [['new-issue', writeSteps], ['no-video', RECORDINGS['no-video/run-1/'].steps]] as const) {
+      const panel = panelOf(viewOf(html, id), 1);
+      for (const s of steps) {
+        expect(panel, `${id} ${s.file}`).toMatch(new RegExp(`<a [^>]*href="${id}/run-1/${s.file}" target="_blank" rel="noopener"[^>]*>Full size</a>`));
+      }
+      for (const [button] of panel.matchAll(/<button\b[\s\S]*?<\/button>/g)) expect(button).not.toContain('<a ');
+    }
+  });
+
   it('says None for a job without values', () => {
     expect(text(panelOf(viewOf(html, 'reached'), 1))).toMatch(/Values None/);
   });

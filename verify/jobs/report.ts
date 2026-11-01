@@ -270,12 +270,14 @@ const shotCard = (step: RecordedStep, i: number, dir: string, open: { href: stri
     ...(step.unreachable ? [`<span class="missed">not reached${(step.attempts ?? 1) > 1 ? ` ×${step.attempts}` : ''}: covered</span>`] : step.confidence !== undefined && !finished ? [step.confidence.toFixed(2)] : []),
   ].join(' · ');
   const src = `${dir}${step.file}`;
-  const body = `<img src="${escape(src)}" alt="${escape(step.description)}" loading="lazy" decoding="async" width="1120" height="780">
-<span class="caption"><span class="meta num">${meta}</span><span class="what">${escape(label)}</span><span class="where">${escape(pathOf(step.url))}</span></span>`;
+  const image = `<img src="${escape(src)}" alt="${escape(step.description)}" loading="lazy" decoding="async" width="1120" height="780">`;
+  const text = `<span class="what">${escape(label)}</span><span class="where">${escape(pathOf(step.url))}</span>`;
   const className = `shot${finished ? ' finished' : ''}`;
-  if ('href' in open) return `<a class="${className}" href="${escape(open.href)}">${body}</a>`;
+  if ('href' in open) return `<a class="${className}" href="${escape(open.href)}">${image}<span class="caption"><span class="meta num">${meta}</span>${text}</span></a>`;
+  // In a job view the whole card seeks (the button gives it a keyboard stop); the full-size link sits outside the button.
   const data = timed ? ` data-at="${step.video_at}"` : ` data-src="${escape(src)}"`;
-  return `<button type="button" class="${className}" data-index="${i}"${data}>${body}</button>`;
+  return `<div class="${className}" data-index="${i}"${data}><button type="button" class="seek" aria-label="Show step ${i + 1}">${image}</button>
+<span class="caption"><span class="meta-line"><span class="meta num">${meta}</span><a class="full-size" href="${escape(src)}" target="_blank" rel="noopener">Full size</a></span>${text}</span></div>`;
 };
 
 // --- the overview

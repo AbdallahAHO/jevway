@@ -115,6 +115,11 @@ nav.top .links { display: flex; gap: 1rem; color: var(--muted-foreground); }
 .shot img { width: 100%; height: auto; aspect-ratio: 1120 / 780; object-fit: cover; object-position: top; border-radius: 0.75rem; background: var(--muted); transition: opacity 160ms ease; }
 .caption { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
 .caption .meta, .caption .where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta-line { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; min-width: 0; }
+.full-size { flex: none; font-size: 0.75rem; line-height: 1rem; color: var(--muted-foreground); }
+.full-size:hover { color: var(--foreground); }
+.seek { display: block; width: 100%; border-radius: 0.75rem; }
+.player .shot { cursor: pointer; }
 .caption .where { font-size: 0.75rem; line-height: 1rem; color: var(--muted-foreground); }
 .what { font-size: 0.875rem; line-height: 1.25rem; height: 2.5rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .shot.finished .what { color: var(--muted-foreground); }
@@ -238,7 +243,8 @@ export const SCRIPT = `<script>
       video.play().catch(() => {});
     };
     ticks.forEach((tick) => tick.addEventListener('click', () => seek(Number(tick.dataset.index))));
-    shots.forEach((shot, n) => shot.addEventListener('click', () => seek(n)));
+    // A click anywhere on a card seeks, except on its full-size link.
+    shots.forEach((shot, n) => shot.addEventListener('click', (event) => { if (!event.target.closest('a')) seek(n); }));
     if (!video) return;
     const place = () => {
       if (!video.duration || !isFinite(video.duration)) return;
