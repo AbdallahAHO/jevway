@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nested pane</title>
+<style>
+  /* The document never scrolls; the list pane does. A small side panel scrolls too, but is smaller. */
+  html, body { height: 100%; margin: 0; overflow: hidden; font: 14px system-ui, sans-serif; }
+  header { height: 56px; background: #222; color: #fff; padding: 0 16px; line-height: 56px; }
+  .shell { display: flex; height: calc(100% - 56px); }
+  aside { width: 180px; height: 120px; overflow-y: auto; border-right: 1px solid #ddd; }
+  aside p { margin: 0; padding: 8px; }
+  #pane { flex: 1; overflow-y: auto; }
+  #pane a { display: block; height: 40px; line-height: 40px; padding: 0 16px; border-bottom: 1px solid #eee; }
+</style>
+</head>
+<body>
+<header>Runs</header>
+<div class="shell">
+  <aside>
+    <p>Filter one</p><p>Filter two</p><p>Filter three</p><p>Filter four</p><p>Filter five</p><p>Filter six</p>
+  </aside>
+  <div id="pane"></div>
+</div>
+<script>
+  window.__fixture = { opened: null };
+  document.getElementById('pane').innerHTML = Array.from({ length: 60 }, (_, i) => `<a href="#" data-row="${i + 1}">Row ${i + 1}</a>`).join('');
+  document.addEventListener('click', (event) => {
+    const row = event.target.closest('[data-row]');
+    if (!row) return;
+    event.preventDefault();
+    window.__fixture.opened = Number(row.dataset.row);
+  });
+</script>
+</body>
+</html>

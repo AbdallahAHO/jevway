@@ -159,6 +159,8 @@ const fakeTab = (pages: PageState[] = [page()]) => {
     unreachable: 0,
     /** The nodes of the layer covering the target, as the tab names them with each miss. */
     coverNodes: [] as number[],
+    /** How far each scroll moved the page, as the tab measures it; undefined when it can't tell. */
+    scrolled: undefined as number | undefined,
     screenshots: 0,
     recorded: 0,
     clicksAt: [] as { x: number; y: number }[],
@@ -216,6 +218,7 @@ const fakeTab = (pages: PageState[] = [page()]) => {
       }
       acted.push({ label: action.label, ...(text && { text }) });
       if (tab.dialogOnAct) tab.dialogs.push(tab.dialogOnAct);
+      if (action.kind === 'scroll' && tab.scrolled !== undefined) return { scrolled: tab.scrolled };
     },
   };
   return { tab, acted, asTab: tab as unknown as Tab };
@@ -3923,6 +3926,31 @@ describe('a checkbox or switch the run flipped is not flipped back without a wor
       expect(acted.map((a) => a.label)).toEqual([WIKI]);
       expect(notes(summary.steps)).toEqual([UNSAVED_NOTE]);
     });
+  });
+});
+
+describe('a scroll that moved nothing says so', () => {
+  const SCROLL: PageAction = { id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: 560 };
+  const scrolling = (fingerprint: string) => page({ actions: [...bookingActions, SCROLL], fingerprint });
+  const lastAction = (request: any) => request.state.recent_actions.at(-1);
+
+  it('tells Jev a scroll moved nothing, so it stops repeating it', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'SCROLL_DOWN' }, { operation: 'DONE' }]);
+    const { tab, asTab } = fakeTab([scrolling('a'), scrolling('b')]);
+    tab.scrolled = 0;
+    await new BrowserTask(asTab, ask, { goal: 'Find the row', changeWaitMs: 0 }).run();
+    expect(lastAction(requests[1])).toMatchObject({
+      operation: 'SCROLL_DOWN',
+      element: 'Scroll down (nothing moved: there is no more to scroll this way)',
+    });
+  });
+
+  it('keeps the plain label for a scroll that moved', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'SCROLL_DOWN' }, { operation: 'DONE' }]);
+    const { tab, asTab } = fakeTab([scrolling('a'), scrolling('b')]);
+    tab.scrolled = 448;
+    await new BrowserTask(asTab, ask, { goal: 'Find the row', changeWaitMs: 0 }).run();
+    expect(lastAction(requests[1])).toMatchObject({ operation: 'SCROLL_DOWN', element: 'Scroll down', page_changed: true });
   });
 });
 

@@ -948,6 +948,48 @@ const checks: Check[] = [
       assert.ok(summary.elapsed_ms >= 1500 && summary.elapsed_ms < 8000, `ended after ${summary.elapsed_ms} ms`);
     },
   },
+  {
+    name: 'a pane that scrolls on a page that does not is offered a scroll aimed at it, and scrolling it lists the rows below',
+    file: 'nested-pane.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const down = page.actions.find((action) => action.id === 'scroll_down');
+      assert.ok(down?.at, `no scroll aimed at the pane: ${JSON.stringify(page.actions.filter((a) => a.kind === 'scroll'))}`);
+      const pane = await tab.evaluate(`(() => { const r = document.getElementById('pane').getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: Math.min(r.bottom, innerHeight) }; })()`);
+      assert.ok(down.at.x > pane.left && down.at.x < pane.right && down.at.y > pane.top && down.at.y < pane.bottom, `aimed outside the pane: ${JSON.stringify(down.at)}`);
+      assert.ok(!page.actions.some((action) => action.id === 'scroll_up'), 'scroll up offered at the top');
+      assert.ok(!find(page.actions, 'link', /^Row 30$/), 'row 30 listed before scrolling');
+      const outcome = await tab.act(down, page);
+      assert.ok(outcome?.scrolled && outcome.scrolled > 0, `the pane did not move: ${JSON.stringify(outcome)}`);
+      const after = await tab.observe();
+      assert.ok(find(after.actions, 'link', /^Row 2\d$/), `no lower rows listed after scrolling: ${labelsOf(controls(after.actions))}`);
+      assert.ok(after.actions.some((action) => action.id === 'scroll_up' && action.at), 'scroll up not offered after scrolling down');
+    },
+  },
+  {
+    name: 'at the end of the pane only scroll up is offered, and a wheel that moves nothing reports 0',
+    file: 'nested-pane.html',
+    run: async (tab) => {
+      await tab.evaluate(`document.getElementById('pane').scrollTop = 1e6`);
+      const page = await tab.observe();
+      assert.ok(!page.actions.some((action) => action.id === 'scroll_down'), 'scroll down offered at the end of the pane');
+      const up = page.actions.find((action) => action.id === 'scroll_up');
+      assert.ok(up?.at, 'scroll up not offered at the end of the pane');
+      // The same aim, wheeling down past the end.
+      const outcome = await tab.act({ ...up, id: 'scroll_down', delta: 400 }, page);
+      assert.equal(outcome?.scrolled, 0, `a wheel past the end moved ${JSON.stringify(outcome)}`);
+    },
+  },
+  {
+    name: 'a page whose document scrolls keeps today\'s scroll action, with no aim of its own',
+    file: 'below-fold.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const down = page.actions.find((action) => action.id === 'scroll_down');
+      assert.ok(down, 'scroll down not offered');
+      assert.deepEqual(down, { id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: 560 });
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port.
