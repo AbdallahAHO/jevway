@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { CdpError, type CdpConnection, type CdpListener } from './cdp.ts';
 import { DEVICES, type Device } from './devices.ts';
+import { Frames, idBaseOf, mergeFrames, type FrameTarget } from './frames.ts';
 import { messageNames } from './words.ts';
 
 // Atomic DOM read from browser-use/jev-ultrafast (MIT): visible text + indexed controls + freshness guards.
@@ -52,6 +53,8 @@ export interface PageAction {
   at?: { x: number; y: number };
   /** Viewport CSS pixels at observation time. */
   rect?: { x: number; y: number; w: number; h: number };
+  /** The frame (protocol frame id) holding the element; absent in the main document. */
+  frame?: string;
 }
 
 export interface PageState {
@@ -69,6 +72,8 @@ export interface PageState {
   fingerprint: string;
   /** Visible password fields as `{ name, filled }`: whether each has dots in it, never its value. */
   passwordFields?: { name: string; filled: boolean }[];
+  /** The frames read into this state, with what their freshness checks compare. */
+  frames?: { id: string; page_key: unknown; identity: unknown }[];
 }
 
 /** A native dialog the page opened and how this tab answered it. */
@@ -125,11 +130,13 @@ export class Tab {
   private cdp: CdpConnection;
   readonly targetId: string;
   private sessionId: string;
+  #frames: Frames;
 
   private constructor(cdp: CdpConnection, targetId: string, sessionId: string) {
     this.cdp = cdp;
     this.targetId = targetId;
     this.sessionId = sessionId;
+    this.#frames = new Frames(cdp, sessionId, INPUT_COUNTER);
   }
 
   /**
@@ -160,6 +167,7 @@ export class Tab {
     if (userAgent) await this.#call('Emulation.setUserAgentOverride', { userAgent });
     this.#touch = mobile;
     this.#device = device;
+    this.#frames.touch = mobile;
   }
 
   /** Viewport screenshot as base64. `scale` < 1 makes a light preview for the agent. */
@@ -228,11 +236,13 @@ export class Tab {
 
   // A fixed Enter key into the field just typed into, only while that exact field still has focus.
   async #pressEnter(action: PageAction) {
-    const focused = await this.#evaluate(`(() => {
+    // In a frame, the frame itself must have the page's focus too, or the key would go elsewhere.
+    const frame = this.#frameOf(action.node);
+    const focused = await this.#evaluateFor(frame, `(() => {
       const e = window.__jevFast?.nodes.get(${Number(action.node)});
       let active = document.activeElement;
       while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
-      return Boolean(e) && active === e;
+      return Boolean(e) && active === e${frame ? ' && document.hasFocus()' : ''};
     })()`);
     if (!focused) throw new StalePage('The typed field lost focus');
     const key = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
@@ -283,6 +293,8 @@ export class Tab {
     await tab.#call('Page.enable');
     await tab.#call('Page.addScriptToEvaluateOnNewDocument', { source: INPUT_COUNTER });
     await tab.#call('Runtime.evaluate', { expression: INPUT_COUNTER }).catch(() => undefined);
+    // Every frame gets the same counter in its own world, and out-of-process frames are attached as they appear.
+    await tab.#frames.watch();
     tab.#unsubscribe.push(
       tab.onEvent((method, params) => {
         if (method === 'Page.javascriptDialogOpening') tab.#answerDialog(params);
@@ -445,8 +457,9 @@ export class Tab {
     const started = Date.now();
     for (let attempt = 0; attempt < 25 && Date.now() - started < OBSERVE_DEADLINE_MS; attempt++) {
       try {
-        const state = await this.#evaluate(`window.__jevWanted=${JSON.stringify(this.#wanted)};window.__jevFiles=${this.#files};${READ_STATE}`);
-        if (state) {
+        const main = await this.#evaluate(`window.__jevWanted=${JSON.stringify(this.#wanted)};window.__jevFiles=${this.#files};${READ_STATE}`);
+        if (main) {
+          const state = await this.#withFrames(main);
           const named = placeholders ? { ...state, text: `Loading: ${placeholders} placeholder blocks on screen\n${state.text}` } : state;
           return { ...named, fingerprint: fingerprint(named) };
         }
@@ -456,6 +469,12 @@ export class Tab {
       await sleep(40);
     }
     throw new StalePage(`Page did not settle within ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  }
+
+  // The main frame's state with every readable frame joined in (ids, text, password fields); unchanged on a page without them.
+  async #withFrames(main: Omit<PageState, 'fingerprint'>): Promise<Omit<PageState, 'fingerprint'>> {
+    const frames = await this.#frames.read({ w: main.w, h: main.h }, READ_STATE, this.#wanted).catch(() => []);
+    return frames.length ? { ...main, ...mergeFrames(main, frames) } : main;
   }
 
   // Polls the placeholder count from `since` until fewer than PLACEHOLDERS_MIN pulse (returns 0) or the cap runs out
@@ -472,7 +491,8 @@ export class Tab {
 
   async #countPlaceholders(): Promise<number> {
     try {
-      return Number(await this.#evaluate(COUNT_PLACEHOLDERS)) || 0;
+      const main = Number(await this.#evaluate(COUNT_PLACEHOLDERS)) || 0;
+      return main + (await this.#frames.countPlaceholders(COUNT_PLACEHOLDERS));
     } catch (error) {
       // A page mid-navigation is read by the retry loop; a call that timed out stays a browser error.
       if (error instanceof StalePage) return 0;
@@ -484,12 +504,30 @@ export class Tab {
   async fresh(page: PageState, action?: PageAction): Promise<boolean> {
     // Element-level for targeted input: busy pages (rotating banners) change the page marker constantly.
     if (action && ['click', 'select', 'fill', 'upload'].includes(action.kind)) {
+      if (action.node !== undefined && idBaseOf(action.node)) return this.#freshInFrame(page, action);
       const current = await this.#evaluate(
         `(() => { const c=window.__jevFast; return c ? [c.pageKey(), c.guard(c.nodes.get(${Number(action.node)}))] : null; })()`,
       ).catch(() => null);
       return isDeepStrictEqual(current, [page.page_key, page.guards[String(action.node)]]);
     }
-    return isDeepStrictEqual(await this.#evaluate(MARKER).catch(() => null), page.marker);
+    if (!isDeepStrictEqual(await this.#evaluate(MARKER).catch(() => null), page.marker)) return false;
+    // A frame's text may tick (ads, clocks) without making a wait or scroll wrong; only a frame that navigated does.
+    return !page.frames?.length || this.#frames.sameDocuments(page.frames);
+  }
+
+  // A target in a frame: the main page's key, the frame's own key and the target's guard must all be as observed.
+  async #freshInFrame(page: PageState, action: PageAction): Promise<boolean> {
+    const frame = this.#frames.ofNode(action.node!);
+    const observed = frame && page.frames?.find((read) => read.id === frame.id);
+    if (!frame || !observed) return false;
+    const [main, current] = await Promise.all([
+      this.#evaluate('window.__jevFast?.pageKey() ?? null').catch(() => null),
+      this.#evaluateIn(
+        frame,
+        `(() => { const c=window.__jevFast; return c ? [c.pageKey(), c.guard(c.nodes.get(${Number(action.node)}))] : null; })()`,
+      ).catch(() => null),
+    ]);
+    return isDeepStrictEqual([main, current], [page.page_key, [observed.page_key, page.guards[String(action.node)]]]);
   }
 
   /** Runs one observed action. A scroll resolves to how far it moved the page (see `#scroll`). */
@@ -578,16 +616,18 @@ export class Tab {
   // container.
   async #revealByHover(action: PageAction) {
     const node = `window.__jevFast?.nodes.get(${Number(action.node)})`;
-    const centre = await this.#evaluate(`(() => {
+    const frame = this.#frameOf(action.node);
+    const centre = await this.#evaluateFor(frame, `(() => {
       const e = ${node};
       if (!e?.isConnected) return null;
       const r = e.getBoundingClientRect();
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     })()`);
-    if (!centre) throw new TargetUnreachable('Target changed or is covered');
-    await this.#call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: centre.x, y: centre.y });
+    const offset = frame ? await this.#frames.offsetOf(frame) : { x: 0, y: 0 };
+    if (!centre || !offset) throw new TargetUnreachable('Target changed or is covered');
+    await this.#call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: centre.x + offset.x, y: centre.y + offset.y });
     for (let waited = 0; waited <= 500; waited += 50) {
-      const shown = await this.#evaluate(`${node}?.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) === true`);
+      const shown = await this.#evaluateFor(frame, `${node}?.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) === true`);
       if (shown) return;
       await sleep(50);
     }
@@ -596,18 +636,24 @@ export class Tab {
 
   async #input(action: PageAction, text?: string) {
     if (action.hover) await this.#revealByHover(action);
-    const target = await this.#evaluate(`(${RESOLVE_TARGET})(${JSON.stringify(action)})`).catch((error) => {
+    const frame = this.#frameOf(action.node);
+    const resolved = await this.#evaluateFor(frame, `(${RESOLVE_TARGET})(${JSON.stringify(action)})`).catch((error) => {
       if (action.kind === 'select') throw new Error('Dropdown execution was interrupted; inspect before retrying.');
       throw error;
     });
-    if (!target || target.covered) {
+    if (!resolved || resolved.covered) {
       if (action.kind === 'select') throw new Error('Dropdown execution was not confirmed; inspect before retrying.');
-      throw new TargetUnreachable('Target changed or is covered', Boolean(target?.byPopup), target?.coverNodes ?? []);
+      throw new TargetUnreachable('Target changed or is covered', Boolean(resolved?.byPopup), resolved?.coverNodes ?? []);
     }
     if (action.kind === 'select') return;
+    // The point inside a frame, moved into the viewport and checked against whatever covers the frame in the page around it.
+    const target = frame ? await this.#frames.toViewport(frame, resolved) : resolved;
+    if ('covered' in target) throw new TargetUnreachable('Target changed or is covered', false, target.coverNodes);
+    target.focused = resolved.focused;
     // Focused in the page already: a press on the field's plain decoration would only take the focus away again.
     if (!target.focused) {
-      const before = await this.#pressesReceived();
+      if (frame) await this.#frames.painted(frame);
+      const before = await this.#pressesReceived(frame);
       if (this.#touch) {
         await this.#call('Input.dispatchTouchEvent', {
           type: 'touchStart',
@@ -622,7 +668,7 @@ export class Tab {
       }
       // The counter was registered before the page's scripts, so only a browser that never delivered the press leaves it
       // unchanged. The press is never repeated here: a delivered click we failed to see must not run twice.
-      if (!(await this.#pageReceivedPress(before))) {
+      if (!(await this.#pageReceivedPress(before, frame))) {
         throw new InputNotDelivered(
           `The page received no input from the click on "${action.label.slice(0, 60)}": the browser dropped it, so nothing was clicked. Retry the call or check the browser.`,
         );
@@ -647,18 +693,19 @@ export class Tab {
     }
   }
 
-  // The trusted presses this document has received so far; undefined when it can't be read (no counter, navigated away).
-  async #pressesReceived(): Promise<string | undefined> {
-    return this.#evaluate(READ_INPUT).catch(() => undefined);
+  // The trusted presses this document (the frame's, for a target in a frame) has received so far; undefined when it can't be
+  // read (no counter, navigated away). A press never crosses a frame boundary, so it is counted where it landed.
+  async #pressesReceived(frame?: FrameTarget): Promise<string | undefined> {
+    return this.#evaluateFor(frame, READ_INPUT).catch(() => undefined);
   }
 
   // False only while the count stays what it was before the press, after a short grace for a busy page. An unreadable
   // count or a new document means the press was delivered or can't be judged, so it never blocks.
-  async #pageReceivedPress(before: string | undefined) {
+  async #pageReceivedPress(before: string | undefined, frame?: FrameTarget) {
     if (before === undefined) return true;
     for (let attempt = 0; attempt < INPUT_READS; attempt++) {
       if (attempt) await sleep(INPUT_POLL_MS);
-      if ((await this.#pressesReceived()) !== before) return true;
+      if ((await this.#pressesReceived(frame)) !== before) return true;
     }
     return false;
   }
@@ -668,11 +715,9 @@ export class Tab {
     const action = this.#afterInput;
     this.#afterInput = undefined;
     if (!action || action.kind === 'wait') return;
-    await this.#call('Runtime.evaluate', {
-      expression: `(${SETTLE})(${JSON.stringify(action)})`,
-      awaitPromise: true,
-      returnByValue: true,
-    }).catch((error) => {
+    const frame = action.node !== undefined && idBaseOf(action.node) ? this.#frames.ofNode(action.node) : undefined;
+    const settle = { expression: `(${SETTLE})(${JSON.stringify(action)})`, awaitPromise: true, returnByValue: true };
+    await (frame ? this.#frames.evaluate(frame, settle.expression, settle) : this.#call('Runtime.evaluate', settle)).catch((error) => {
       // Settling is best effort, but a page that does not answer at all is a browser error, not a reason to wait again.
       if (error instanceof CdpError && TIMED_OUT.test(error.message)) throw error;
     });
@@ -682,6 +727,27 @@ export class Tab {
     const response = await this.#call('Runtime.evaluate', { expression, returnByValue: true }).catch((error) => {
       // A protocol error mid-navigation means the page moved on. A call that timed out means it stopped answering (a
       // frozen renderer): that must end the call as a browser error, not be retried as "changed" 25 times at 30 s each.
+      throw error instanceof CdpError && !TIMED_OUT.test(error.message) ? new StalePage(error.message) : error;
+    });
+    if (response.exceptionDetails) throw new StalePage('Document changed during evaluation');
+    return response.result?.value;
+  }
+
+  // The frame holding an observed node: undefined for the main document. A node whose frame has gone is stale.
+  #frameOf(node?: number): FrameTarget | undefined {
+    if (node === undefined || !idBaseOf(node)) return undefined;
+    const frame = this.#frames.ofNode(node);
+    if (!frame) throw new StalePage('The frame holding this target is gone');
+    return frame;
+  }
+
+  // In the main document, or in the frame's isolated world with the same errors as #evaluate.
+  #evaluateFor(frame: FrameTarget | undefined, expression: string): Promise<any> {
+    return frame ? this.#evaluateIn(frame, expression) : this.#evaluate(expression);
+  }
+
+  async #evaluateIn(frame: FrameTarget, expression: string): Promise<any> {
+    const response = await this.#frames.evaluate(frame, expression).catch((error) => {
       throw error instanceof CdpError && !TIMED_OUT.test(error.message) ? new StalePage(error.message) : error;
     });
     if (response.exceptionDetails) throw new StalePage('Document changed during evaluation');
