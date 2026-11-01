@@ -197,7 +197,7 @@ code { font-family: var(--font-mono); font-size: 0.8125rem; }
 
 /* Type: the theme's low end, one display size */
 .meta { font-size: 0.75rem; line-height: 1rem; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.02em; }
-.small { font-size: 0.875rem; line-height: 1.375rem; color: var(--muted-foreground); }
+.small { font-size: 0.875rem; line-height: 1.375rem; color: var(--muted-foreground); overflow-wrap: anywhere; }
 .job-title { font-size: clamp(1.75rem, 1.3rem + 1.6vw, 2.5rem); font-weight: 500; line-height: 1.15; letter-spacing: -0.025em; text-wrap: balance; }
 .section-title { font-size: clamp(1.125rem, 1rem + 0.6vw, 1.5rem); font-weight: 500; line-height: 1.375; letter-spacing: -0.02em; }
 .num, .figure, .clock { font-variant-numeric: tabular-nums; }
@@ -238,9 +238,9 @@ a.shot:hover img { opacity: 0.85; }
 .screen { margin-top: 2rem; width: 100%; aspect-ratio: 16 / 10; border-radius: 2rem; overflow: hidden; background: var(--muted); }
 .screen video, .screen img { width: 100%; height: 100%; object-fit: contain; background: var(--muted); }
 /* A phone recording: as wide as its own aspect needs at a capped height, centred in the grid */
-.screen.portrait { width: auto; max-width: 100%; height: min(80svh, 52rem); margin-inline: auto; }
+.screen.portrait { width: auto; max-width: 100%; height: min(72svh, 48rem); margin-inline: auto; }
 .screen.intrinsic { aspect-ratio: auto; width: fit-content; max-width: 100%; margin-inline: auto; }
-.screen.intrinsic video, .screen.intrinsic img { width: auto; height: auto; max-height: min(80svh, 52rem); }
+.screen.intrinsic video, .screen.intrinsic img { width: auto; height: auto; max-height: min(72svh, 48rem); }
 .screen.quiet { aspect-ratio: auto; max-height: none; display: grid; align-content: center; gap: 0.5rem; min-height: 14rem; padding: 2rem; }
 .screen.quiet p { max-width: 40rem; }
 .screen-note { margin-top: 0.75rem; }
@@ -315,6 +315,11 @@ export const PLAYER_SCRIPT = `<script>
       if (!video || !shot || shot.dataset.at === undefined) return;
       video.currentTime = Number(shot.dataset.at);
       if (play) video.play().catch(() => {});
+      // A paused video shows its poster until it has data: show the linked step's own shot meanwhile.
+      else {
+        if (video.readyState < 2) video.poster = shot.querySelector('img').getAttribute('src');
+        if (clockText) clockText.textContent = clock(Number(shot.dataset.at));
+      }
     };
     // A reader's seek: plays from there, and the address names the step so it can be shared (#<view>-r<run>-s<step>).
     const choose = (index) => {

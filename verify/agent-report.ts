@@ -184,7 +184,10 @@ const mark = (row: ChoreRun) => {
 const marks = (runs: ChoreRun[]) => `<span class="marks" aria-label="${runs.filter((r) => r.verdict === 'pass').length} of ${runs.length} runs passed">${runs.map(mark).join('')}</span>`;
 // How a returned status reads: done, a read page and an end held; a hand-back is amber; a refusal or an error missed.
 const toneOf = (status = '') => (['done', 'read', 'ended', 'returned'].includes(status) ? 'held' : status.startsWith('needs_') ? 'reached' : 'missed');
-const statusChain = (row: ChoreRun) => row.calls.map((c) => statusWord(c.result?.status ?? 'error')).join(' → ') || 'no calls';
+// The run's calls in a line: a task call by its status, a look or an end by its kind, anything else by name and status.
+const callWord = (call: ToolCall) =>
+  isTask(call.tool) ? statusWord(call.status ?? 'no answer') : isLook(call.tool) && call.status === 'read' ? 'look' : isEnd(call.tool) && call.status === 'ended' ? 'end' : `${call.tool} ${statusWord(call.status ?? 'no answer')}`;
+const statusChain = (row: ChoreRun, record: AgentRunRecord) => (record.transcript ?? savedCalls(row.calls)).map(callWord).join(' → ') || 'no calls';
 const quoted = (text: string) => `“${escape(text)}”`;
 const valueText = (value: unknown) => (typeof value === 'string' ? value : JSON.stringify(value));
 const featuredRun = (runs: ChoreRun[]) => runs.find((r) => r.verdict === 'pass') ?? runs[0];
@@ -213,7 +216,7 @@ const callItem = (call: ToolCall, i: number, confirm: ConfirmTarget | undefined)
   const status = call.status ?? 'no answer';
   const detail = [call.title, call.reason, call.error].filter(Boolean).map((line) => escape(String(line))).join('<br>');
   return `<li class="call grid4">
-<p class="meta">${indexLabel(i)} · ${escape(call.tool)}</p>
+<p class="meta">${indexLabel(i)} · <code class="tool">${escape(call.tool)}</code></p>
 <div class="c2s2 call-body"><p>${primary ? escape(String(call.args[primary])) : '<span class="kv">no arguments</span>'}</p>${argumentLines(call.args, primary) ? `<p class="args">${argumentLines(call.args, primary)}</p>` : ''}${confirmLine}</div>
 <p class="c4 end call-status"><span class="${toneOf(call.status)}">${escape(statusWord(status))}</span>${call.actions === undefined ? '' : `<br><span class="meta">${plural(call.actions, 'action')}</span>`}</p>
 ${detail ? `<p class="small c2s3 call-detail">${detail}</p>` : ''}
@@ -227,7 +230,7 @@ const transcript = (row: ChoreRun, record: AgentRunRecord) => {
   let flagged = 0;
   const items = calls.map((call, i) => callItem(call, i, isTask(call.tool) && call.args.confirm_irreversible === true ? row.confirmTargets[flagged++] : undefined));
   return `<section class="transcript" aria-label="Transcript of run ${row.run}">
-<div class="section-head grid4"><p class="small c2">Transcript<br>${source}</p><h2 class="section-title c3s2">What the agent called</h2></div>
+<div class="transcript-head grid4"><p class="meta">Transcript</p><p class="small c2s3">${source}</p></div>
 ${items.length ? `<ol class="calls">${items.join('\n')}</ol>` : '<p class="small no-calls">No tool calls.</p>'}
 </section>`;
 };
@@ -264,7 +267,7 @@ const runPanel = (row: ChoreRun, runs: ChoreRun[], featured: ChoreRun, record: A
   const top = recording?.steps.length
     ? playerMarkup({ dir: row.dir, video: recording.video, steps: recording.steps, label: `run ${row.run}`, featured: row === featured, viewport: recording.viewport, bar })
     : bar.replace('class="player-bar grid4"', 'class="player-bar bar-only grid4"');
-  const headline = row.verdict === 'skipped' ? 'Skipped' : `${row.verdict === 'pass' ? 'Passed' : row.verdict === 'error' ? 'Error' : 'Failed'}, ${plural(row.calls.length, 'call')} in ${plural(row.turns, 'turn')}`;
+  const headline = row.verdict === 'skipped' ? 'Skipped' : `${row.verdict === 'pass' ? 'Passed' : row.verdict === 'error' ? 'Error' : 'Failed'}, ${plural((record.transcript ?? row.calls).length, 'tool call')} in ${plural(row.turns, 'turn')}`;
   return `<div class="run player${row === featured ? ' current' : ''}" data-run="${row.run}">
 ${top}
 <div class="run-head grid4"><p class="small c2">Run ${row.run}<br>${escape(row.outcome)}</p><h2 class="section-title c3s2">${headline} · ${dollars(row.costUsd)} · ${seconds(row.durationMs)}</h2></div>
@@ -295,14 +298,14 @@ ${runs.map((r) => runPanel(r, runs, featured, readRun(r.dir))).join('\n')}
 
 // --- the overview
 
-const choreRow = (runs: ChoreRun[]) => {
+const choreRow = (runs: ChoreRun[], readRun: (dir: string) => AgentRunRecord) => {
   const [first] = runs;
   const featured = featuredRun(runs);
   const passed = runs.filter((r) => r.verdict === 'pass').length;
   const href = `#${first.chore}`;
   const runLines = runs
     .map((r) => {
-      const facts = r.verdict === 'skipped' ? escape(r.check) : `${escape(statusChain(r))} · ${dollars(r.costUsd)} · ${seconds(r.durationMs)} · ${plural(r.turns, 'turn')} · ${escape(r.outcome)}`;
+      const facts = r.verdict === 'skipped' ? escape(r.check) : `${escape(statusChain(r, readRun(r.dir)))} · ${dollars(r.costUsd)} · ${seconds(r.durationMs)} · ${plural(r.turns, 'turn')} · ${escape(r.outcome)}`;
       return `<div class="run-line grid4"><p class="meta">Run ${r.run} ${mark(r)} ${escape(r.verdict)}</p><p class="small c2s3 num">${facts}${r.handBacks.length ? `<br>${r.handBacks.map(escape).join('<br>')}` : ''}</p></div>`;
     })
     .join('\n');
@@ -359,7 +362,7 @@ ${totals.stoppedBecause ? `<div class="method-row grid4"><p class="meta missed">
 </div>
 <section class="section" id="chores" aria-labelledby="chores-title">
 <div class="section-head grid4"><p class="small c2">Chores<br>${runsEach}</p><h2 class="section-title c3s2" id="chores-title">What the agent was asked to do</h2></div>
-${chores.map(choreRow).join('\n')}
+${chores.map((runs) => choreRow(runs, readRun)).join('\n')}
 </section>
 <section class="section" id="method" aria-labelledby="method-title">
 <div class="section-head grid4"><p class="small c2">Method<br>How a run is judged</p><h2 class="section-title c3s2" id="method-title">The app’s state, not the agent’s word</h2></div>
@@ -393,7 +396,9 @@ const AGENT_STYLE = `
 .run-line { margin-top: 1rem; }
 .job-row > .run-line:first-of-type { margin-top: 1.5rem; }
 .bar-only { margin-top: 2rem; }
-.transcript { margin-top: 1rem; }
+.bar-only + .run-head { margin-top: 2.5rem; }
+.transcript-head { margin-bottom: 1rem; }
+.call .tool { font-size: 0.75rem; text-transform: none; letter-spacing: 0; }
 .calls { margin: 0; padding: 0; list-style: none; }
 .call { border-top: 1px solid var(--muted); padding-block: 1.25rem; }
 .call-body p { font-size: 0.9375rem; line-height: 1.5rem; overflow-wrap: anywhere; }
