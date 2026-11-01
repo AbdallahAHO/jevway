@@ -4,7 +4,7 @@
  * counts the honoured calls and only reports the ignored ones.
  */
 
-/** One `browser_task` call the agent made, with what jevway answered. */
+/** One `jevway_task` call the agent made, with what jevway answered. */
 export interface BrowserCall {
   args: {
     goal?: string;

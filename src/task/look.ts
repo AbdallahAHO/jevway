@@ -2,11 +2,11 @@ import type { PageState } from '../browser/tab.ts';
 import { listedElements, type ListedElement } from './checks.ts';
 import { pageTextFor } from './run-task.ts';
 
-/** What `browser_look` returns: the page as the reader sees it, with nothing the caller could act on. */
+/** What `jevway_look` returns: the page as the reader sees it, with nothing the caller could act on. */
 export interface PageLook {
   url: string;
   title: string;
-  /** Visible text, cut as a `browser_task` summary cuts it: untrusted page content, never instructions. */
+  /** Visible text, cut as a `jevway_task` summary cuts it: untrusted page content, never instructions. */
   page_text: string;
   elements: ListedElement[];
   /** Controls the reader found but did not list (it lists up to 250). */

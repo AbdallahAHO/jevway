@@ -1,18 +1,18 @@
 ---
 name: jev-browse
-description: Hand whole browser goals (navigate, search, fill forms, set filters, open a result, book) to TypeSafe Jev through the jev-browse MCP tool `browser_task`, then inspect the result with chrome-devtools. Use when a browser task would otherwise take many click/type/snapshot round trips, or when the user asks to "go to X and do Y" in the browser.
+description: Hand whole browser goals (navigate, search, fill forms, set filters, open a result, book) to TypeSafe Jev through the jev-browse MCP tool `jevway_task`, then inspect the result with chrome-devtools. Use when a browser task would otherwise take many click/type/snapshot round trips, or when the user asks to "go to X and do Y" in the browser.
 ---
 
 # jev-browse: Jev drives, you decide
 
-`browser_task` runs the whole click/type/select loop with Jev (~300ms per step) and returns one JSON summary.
+`jevway_task` runs the whole click/type/select loop with Jev (~300ms per step) and returns one JSON summary.
 You stay in charge of intent, missing values, irreversible actions, and inspection.
 
 ## Split the work
 
 | Need | Tool |
 | --- | --- |
-| Get to a page state: search, forms, filters, pagination, open a result | `browser_task` |
+| Get to a page state: search, forms, filters, pagination, open a result | `jevway_task` |
 | Look at it: console, network, performance, Lighthouse, screenshots, DOM details | chrome-devtools (same Chrome; `list_pages` → `select_page` by the summary's `url`) |
 | Closed shadow DOM, canvas, file inputs inside iframes, drag (iframes are read like the page) | chrome-devtools directly |
 
@@ -39,11 +39,11 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 | `uncertain` / `blocked` | A reason starting "Jev reported done, but" means your `checks` failed: read their `detail` in `checks`. Otherwise read `stuck.candidates` and `page_text`. Rephrase `goal` for the same `session`, or do the step with chrome-devtools and then continue. A `reason` saying the browser dropped a click means nothing was clicked and rephrasing cannot help: call again or check the browser. A reason quoting a page error ("The page shows an error after …") is the page's answer: tell the user or call again with other `values`. A `wall: { kind: 'sign_in', origin }` means the user signs in there (or you pass the values), then call again. |
 | `step_budget` | `max_steps` or `max_seconds` (default 300 s per call) ran out; the reason says which. Split the goal into smaller calls on the same `session`. |
 
-To see a page again without acting (after a hand-back, or to check a result), call `browser_look` with the `session` (or `tab`, or a `url` it opens and closes): it returns `url`, `title`, `page_text` and the listed controls with their state, with no Jev call.
+To see a page again without acting (after a hand-back, or to check a result), call `jevway_look` with the `session` (or `tab`, or a `url` it opens and closes): it returns `url`, `title`, `page_text` and the listed controls with their state, with no Jev call.
 
 A link that opens a new tab is followed: the step says `new tab opened: <url>`, the session continues there (the summary's `url` is that tab), and it returns to the opener if that tab closes.
 
-End with `browser_task_end` when finished (it closes the tab it opened, and any tab its clicks opened, unless `keep_tab: true`).
+End with `jevway_end` when finished (it closes the tab it opened, and any tab its clicks opened, unless `keep_tab: true`).
 
 ## Show what happened
 
@@ -61,7 +61,7 @@ until curl -s http://127.0.0.1:9333/json/version >/dev/null; do sleep 0.5; done
 ```
 
 - jev-browse: `JEV_BROWSER=http://127.0.0.1:9333` (MCP env) or `--browser http://127.0.0.1:9333` (CLI).
-- agent-browser shares the same Chrome with `--cdp 9333`; use it for sign-up and login steps, then hand the goal to `browser_task`.
+- agent-browser shares the same Chrome with `--cdp 9333`; use it for sign-up and login steps, then hand the goal to `jevway_task`.
 - Logins stay in that profile across runs. Stop only that Chrome: `pkill -f "user-data-dir=$PROFILE"`.
-- Keep the window visible (no `--headless`) when a site shows a Cloudflare or captcha check: a real window often clears it on its own. Never try to solve or bypass a challenge; if it still asks, hand the click to the user. `browser_task` waits up to 8 s for one to clear, then ends `blocked` with a reason naming it ("The page is a bot check (Cloudflare; …)") and `wall: { kind: "bot_check", origin, name }`: rephrasing cannot help. Ask the user to pass it in that tab, then continue the same `session`.
+- Keep the window visible (no `--headless`) when a site shows a Cloudflare or captcha check: a real window often clears it on its own. Never try to solve or bypass a challenge; if it still asks, hand the click to the user. `jevway_task` waits up to 8 s for one to clear, then ends `blocked` with a reason naming it ("The page is a bot check (Cloudflare; …)") and `wall: { kind: "bot_check", origin, name }`: rephrasing cannot help. Ask the user to pass it in that tab, then continue the same `session`.
 - A sign-up needing an email: use the `disposable-inbox` skill for a throwaway address and its verification code. Only for test or demo accounts the user asked for.

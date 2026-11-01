@@ -366,7 +366,7 @@ export class BrowserTask {
    * caller pointed it at, or one it should leave open).
    *
    * @example
-   * await task.closeTabs({ keepFirst: !ownsTab }); // browser_task_end without keep_tab
+   * await task.closeTabs({ keepFirst: !ownsTab }); // jevway_end without keep_tab
    */
   async closeTabs({ keepFirst }: { keepFirst: boolean }) {
     for (const [index, tab] of this.#tabs.entries()) if (index > 0 || !keepFirst) await tab.close();

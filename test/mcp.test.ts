@@ -55,9 +55,9 @@ describe('tools/list', () => {
     const { tools } = await client.listTools();
     const hints = Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]));
     expect(hints).toEqual({
-      browser_task: expect.objectContaining({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }),
-      browser_task_end: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }),
-      browser_look: expect.objectContaining({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }),
+      jevway_task: expect.objectContaining({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }),
+      jevway_end: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }),
+      jevway_look: expect.objectContaining({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }),
       journey_start: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }),
       journey_step: expect.objectContaining({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }),
       journey_autopilot: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }),
@@ -67,9 +67,9 @@ describe('tools/list', () => {
   });
 });
 
-describe('browser_task over MCP', () => {
+describe('jevway_task over MCP', () => {
   const call = (args: Record<string, unknown>, signal?: AbortSignal) =>
-    client.callTool({ name: 'browser_task', arguments: { goal: 'Open', ...args } }, undefined, signal && { signal });
+    client.callTool({ name: 'jevway_task', arguments: { goal: 'Open', ...args } }, undefined, signal && { signal });
 
   it("passes the request's signal to the run, aborts it when the client cancels, and runs the session's next call only after the cancelled one ends", async () => {
     const first: any = await call({ url: 'http://fixture/' });

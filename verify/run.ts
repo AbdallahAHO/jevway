@@ -328,7 +328,7 @@ await scenario('live web: Wikipedia search → Gödel’s incompleteness theorem
 
 // The MCP server shares this Chrome, so ground truth reads the very tab it drives. A client that cancels mid-run must
 // leave nothing running: at most the press already under way lands after the cancel, and none a second later.
-await scenario('MCP stdio: a cancelled browser_task stops acting (session continues)', async () => {
+await scenario('MCP stdio: a cancelled jevway_task stops acting (session continues)', async () => {
   const recordDir = new URL('cancel/', outDir).pathname;
   const client = new Client({ name: 'jevway-verify', version: '0.0.0' });
   await client.connect(
@@ -340,7 +340,7 @@ await scenario('MCP stdio: a cancelled browser_task stops acting (session contin
     }),
   );
   const call = async (args: Record<string, unknown>, signal?: AbortSignal) => {
-    const response: any = await client.callTool({ name: 'browser_task', arguments: args }, undefined, signal && { signal });
+    const response: any = await client.callTool({ name: 'jevway_task', arguments: args }, undefined, signal && { signal });
     assert.ok(!response.isError, response.content[0].text);
     return JSON.parse(response.content[0].text);
   };
@@ -395,7 +395,7 @@ await scenario('MCP stdio: a cancelled browser_task stops acting (session contin
     expectStatus(next, 'done');
     assert.ok((await pressed()).some((press) => press.step === 10), 'Step 10 was not pressed');
     writeFileSync(new URL('cancel.json', outDir), JSON.stringify({ first, recorded, next, pressed: await pressed(), cancelledAt }, null, 2));
-    await client.callTool({ name: 'browser_task_end', arguments: { session: first.session } });
+    await client.callTool({ name: 'jevway_end', arguments: { session: first.session } });
     return { ...recorded, steps: recorded.steps };
   } finally {
     await client.close();
@@ -404,7 +404,7 @@ await scenario('MCP stdio: a cancelled browser_task stops acting (session contin
 
 await chrome.close();
 
-await scenario('MCP stdio: tools list + browser_task + browser_task_end', async () => {
+await scenario('MCP stdio: tools list + jevway_task + jevway_end', async () => {
   const client = new Client({ name: 'jevway-verify', version: '0.0.0' });
   await client.connect(
     new StdioClientTransport({
@@ -417,10 +417,10 @@ await scenario('MCP stdio: tools list + browser_task + browser_task_end', async 
   try {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
-    assert.ok(['browser_task', 'browser_task_end', 'browser_look'].every((name) => names.includes(name)), names.join(', '));
-    assert.equal(tools.find((tool) => tool.name === 'browser_look')?.annotations?.readOnlyHint, true, 'browser_look is not read-only');
+    assert.ok(['jevway_task', 'jevway_end', 'jevway_look'].every((name) => names.includes(name)), names.join(', '));
+    assert.equal(tools.find((tool) => tool.name === 'jevway_look')?.annotations?.readOnlyHint, true, 'jevway_look is not read-only');
     const response: any = await client.callTool({
-      name: 'browser_task',
+      name: 'jevway_task',
       arguments: {
         url: fixtureUrl,
         goal: 'Search stays in London with free cancellation for 1 guest.',
@@ -433,14 +433,14 @@ await scenario('MCP stdio: tools list + browser_task + browser_task_end', async 
     writeFileSync(new URL('mcp.json', outDir), JSON.stringify(summary, null, 2));
     expectStatus(summary, 'done');
     // A look at the same tab: no Jev request, the same page, nothing to act on.
-    const looked: any = await client.callTool({ name: 'browser_look', arguments: { session: summary.session } });
+    const looked: any = await client.callTool({ name: 'jevway_look', arguments: { session: summary.session } });
     assert.ok(!looked.isError, looked.content[0].text);
     const look = JSON.parse(looked.content[0].text);
     writeFileSync(new URL('mcp-look.json', outDir), JSON.stringify(look, null, 2));
     assert.equal(look.url, summary.url);
     assert.match(look.page_text, /London/);
     assert.ok(look.elements.length > 0 && !looked.content[0].text.includes('"node"'), 'the look listed node ids');
-    const ended: any = await client.callTool({ name: 'browser_task_end', arguments: { session: summary.session } });
+    const ended: any = await client.callTool({ name: 'jevway_end', arguments: { session: summary.session } });
     assert.match(ended.content[0].text, /ended/);
     return summary;
   } finally {

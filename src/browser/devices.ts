@@ -1,4 +1,4 @@
-/** Viewports the tab can emulate. Journeys default to a phone; `browser_task` keeps the desktop viewport. */
+/** Viewports the tab can emulate. Journeys default to a phone; `jevway_task` keeps the desktop viewport. */
 export interface Device {
   name: string;
   width: number;

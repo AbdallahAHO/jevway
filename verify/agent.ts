@@ -1,6 +1,6 @@
 /**
  * A real agent drives jevway: Claude Code, headless (`claude -p`), with jevway as its only MCP server and only
- * its three tools (`browser_task`, `browser_task_end`, the read-only `browser_look`), does eight chores that a person would phrase to an assistant. It
+ * its three tools (`jevway_task`, `jevway_end`, the read-only `jevway_look`), does eight chores that a person would phrase to an assistant. It
  * has to pick the goal and values, supply what a hand-back asks for only when the prompt gave it, ask the user for what
  * the prompt did not give, and set `confirm_irreversible` only for the irreversible action and target the request names
  * (deleting repository X: the clicks that delete X), stopping to ask for anything else. Each run is judged by the app's
@@ -56,9 +56,9 @@ const LANGFUSE_PROJECT = 'https://cloud.langfuse.com/project/clkpwwm0m000gmm094o
 const APP_URL = `${ORIGIN}/${ADA.username}/app`;
 
 // The only tools the agent gets; the server's journey tools are taken away, since --allowedTools alone leaves them listed.
-const BROWSER_TASK = 'mcp__jevway__browser_task';
-const BROWSER_TASK_END = 'mcp__jevway__browser_task_end';
-const BROWSER_LOOK = 'mcp__jevway__browser_look';
+const TASK_TOOL = 'mcp__jevway__jevway_task';
+const END_TOOL = 'mcp__jevway__jevway_end';
+const LOOK_TOOL = 'mcp__jevway__jevway_look';
 const JOURNEY_TOOLS = ['start', 'step', 'autopilot', 'annotate', 'finish'].map((name) => `mcp__jevway__journey_${name}`);
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -408,7 +408,7 @@ const withLangfuseBrowser = async <T>(use: (endpoint: string) => Promise<T>) => 
 const textOf = (content: unknown) =>
   typeof content === 'string' ? content : Array.isArray(content) ? content.map((part) => part?.text ?? '').join('') : '';
 
-/** Reads the `stream-json` events: each `browser_task` call paired with its result, the final answer, cost and turns. */
+/** Reads the `stream-json` events: each `jevway_task` call paired with its result, the final answer, cost and turns. */
 const readStream = (stdout: string): Omit<AgentRun, 'stderr'> => {
   const run: Omit<AgentRun, 'stderr'> = { calls: [], sessionsEnded: 0, otherTools: [], denials: [], answer: '', outcome: 'no result', turns: 0, costUsd: null, durationMs: 0 };
   const pending = new Map<string, BrowserCall>();
@@ -421,18 +421,18 @@ const readStream = (stdout: string): Omit<AgentRun, 'stderr'> => {
     }
     if (event.type === 'system' && event.subtype === 'init') {
       const server = event.mcp_servers?.find((s: any) => s.name === 'jevway');
-      if (server?.status !== 'connected' || !event.tools?.includes(BROWSER_TASK)) {
+      if (server?.status !== 'connected' || !event.tools?.includes(TASK_TOOL)) {
         run.loadError = `jevway MCP server ${server?.status ?? 'missing'}; tools: ${(event.tools ?? []).join(', ')}`;
       }
     } else if (event.type === 'assistant') {
       for (const block of event.message?.content ?? []) {
         if (block.type === 'text') run.answer = block.text;
         if (block.type !== 'tool_use') continue;
-        if (block.name === BROWSER_TASK) {
+        if (block.name === TASK_TOOL) {
           const call: BrowserCall = { args: block.input ?? {} };
           pending.set(block.id, call);
           run.calls.push(call);
-        } else if (block.name === BROWSER_TASK_END) run.sessionsEnded++;
+        } else if (block.name === END_TOOL) run.sessionsEnded++;
         else run.otherTools.push(block.name);
       }
     } else if (event.type === 'user') {
@@ -487,7 +487,7 @@ const runAgent = async (prompt: string, endpoint: string, runDir: string): Promi
       '-p', prompt,
       '--mcp-config', config,
       '--strict-mcp-config',
-      '--allowedTools', BROWSER_TASK, BROWSER_TASK_END, BROWSER_LOOK,
+      '--allowedTools', TASK_TOOL, END_TOOL, LOOK_TOOL,
       '--disallowedTools', ...JOURNEY_TOOLS,
       '--tools', '',
       '--setting-sources', 'project',

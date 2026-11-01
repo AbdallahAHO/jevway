@@ -23,7 +23,7 @@ const CHECK = z.discriminatedUnion('type', [
   }),
 ]);
 
-/** The `checks` input of `browser_task` and `--checks`: one schema for MCP, CLI and the task. */
+/** The `checks` input of `jevway_task` and `--checks`: one schema for MCP, CLI and the task. */
 export const CHECKS = z.array(CHECK);
 
 export type Check = z.infer<typeof CHECK>;

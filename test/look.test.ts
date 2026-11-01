@@ -53,7 +53,7 @@ describe('a look at the page', () => {
     for (const key of ['"node"', '"id"', '"rect"', '"guards"', 'secret-ish guard', '"marker"', '"fingerprint"']) expect(look).not.toContain(key);
   });
 
-  it('cuts the page text as a browser_task summary does', () => {
+  it('cuts the page text as a jevway_task summary does', () => {
     const text = 'line of page text\n'.repeat(200).slice(0, 3000);
     expect(lookAt(page({ text })).page_text).toBe(`${text.slice(0, 2500)}\n…[500 more characters not shown]`);
   });
