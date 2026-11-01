@@ -54,6 +54,9 @@ nav.top .links { display: flex; gap: 1rem; color: var(--muted-foreground); }
 .next-row { border-top: 1px solid var(--muted); padding-block: 2rem; }
 `;
 
+/** Which view, run and step a hash opens (stub). */
+export const HASH_TARGET = 'const hashTarget = () => null;';
+
 /**
  * The page's behaviour, all reading data- attributes of server-rendered HTML:
  * - the hash picks the view (a job id, else the overview);

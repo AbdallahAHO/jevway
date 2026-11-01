@@ -2,6 +2,7 @@ import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { renderReport, wilson, type JobResult, type RunResult } from '../verify/jobs/report.ts';
 import { reportFromResults } from '../verify/jobs/rerender.ts';
+import { HASH_TARGET, SCRIPT } from '../verify/jobs/report-page.ts';
 import type { RecordedStep } from '../src/task/recording.ts';
 import type { TaskStatus, TaskSummary } from '../src/task/run-task.ts';
 
@@ -268,6 +269,14 @@ describe('the overview', () => {
     expect(overview).toContain('new-issue/run-1/01.jpg');
   });
 
+  it('links each step shot to its job view at that run and step', () => {
+    for (let n = 1; n <= writeSteps.length; n++) expect(overview).toContain(`href="#new-issue-r1-s${n}"`);
+    // The featured run of a flaky job is its first passing one.
+    expect(overview).toContain('href="#flaky-r1-s2"');
+    // The row's title and its action still open the job itself.
+    expect(overview).toMatch(/<h3 class="row-title c2"><a href="#new-issue">/);
+  });
+
   it('offers the Flaky and Failed filters only when a job is flaky or never passed', () => {
     expect(overview).toContain('data-filter="flaky"');
     expect(overview).toContain('data-filter="failed"');
@@ -367,6 +376,57 @@ describe('a job view', () => {
 
   it('says None for a job without values', () => {
     expect(text(panelOf(viewOf(html, 'reached'), 1))).toMatch(/Values None/);
+  });
+});
+
+describe('a link to a step', () => {
+  const ids = new Set(RESULTS.map((r) => r.job.id).concat('overview', 'jobs', 'method', 'odd-r1-s2'));
+  const hashTarget = vm.runInNewContext(`${HASH_TARGET}; hashTarget`) as (hash: string, isView: (id: string) => boolean) => unknown;
+  const resolve = (hash: string) => hashTarget(hash, (id) => ids.has(id));
+
+  it('opens a job at a run and a step from #<job>-r<run>-s<step>', () => {
+    expect(resolve('flaky-r3-s2')).toEqual({ id: 'flaky', run: 3, step: 2 });
+    expect(resolve('new-issue-r1-s6')).toEqual({ id: 'new-issue', run: 1, step: 6 });
+  });
+
+  it('keeps #<job> working, opens a run alone from #<job>-r<run>, and lets an id that looks like a step link win', () => {
+    expect(resolve('flaky')).toEqual({ id: 'flaky' });
+    expect(resolve('flaky-r2')).toEqual({ id: 'flaky', run: 2 });
+    expect(resolve('odd-r1-s2')).toEqual({ id: 'odd-r1-s2' });
+  });
+
+  it('opens nothing for an unknown job or an empty hash', () => {
+    expect(resolve('nope-r1-s2')).toBeNull();
+    expect(resolve('')).toBeNull();
+  });
+
+  it('is the parser the page runs, and the page seeks that run\'s step', () => {
+    expect(SCRIPT).toContain(HASH_TARGET);
+    expect(html).toContain(HASH_TARGET);
+    // Run 3 of the flaky job: its panel holds step 2 with the time the router seeks to.
+    expect(panelOf(viewOf(html, 'flaky'), 3)).toMatch(/<div class="shot finished" data-index="1" data-at="1.9">/);
+  });
+});
+
+describe('a phone recording', () => {
+  const phoneRecording = (dir: string) => {
+    const recording = RECORDINGS[dir];
+    return recording && dir.startsWith('flaky/run-1') ? { ...recording, viewport: { width: 393, height: 852 } } : recording;
+  };
+  const phone = render({ device: 'iphone-15', results: [RESULTS[1]], readRecording: phoneRecording });
+
+  it('frames the video in the recording\'s own aspect, capped and centred, not the grid\'s width', () => {
+    expect(panelOf(viewOf(phone, 'flaky'), 1)).toMatch(/<div class="screen portrait" style="aspect-ratio:393 \/ 852">/);
+  });
+
+  it('falls back to the suite\'s device when the recording does not say', () => {
+    expect(panelOf(viewOf(phone, 'flaky'), 3)).toMatch(/<div class="screen portrait" style="aspect-ratio:393 \/ 852">/);
+    expect(panelOf(viewOf(html, 'new-issue'), 1)).toMatch(/<div class="screen" style="aspect-ratio:1120 \/ 780">/);
+  });
+
+  it('gives the step shots the same aspect', () => {
+    expect(panelOf(viewOf(phone, 'flaky'), 1)).toMatch(/<div class="strip portrait" style="--shot-aspect:393 \/ 852"/);
+    expect(phone.slice(phone.indexOf('id="overview"'))).toMatch(/<div class="strip portrait" style="--shot-aspect:393 \/ 852"/);
   });
 });
 

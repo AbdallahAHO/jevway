@@ -225,7 +225,7 @@ document.addEventListener('click', (event) => {
 });
 </script>`;
 
-export const renderSteps = (steps: RecordedStep[], summaries: TaskSummary[], video: string | null = null) => {
+export const renderSteps = (steps: RecordedStep[], summaries: TaskSummary[], video: string | null = null, _viewport?: { width: number; height: number }) => {
   const last = summaries.at(-1);
   const requests = summaries.reduce((sum, s) => sum + s.jev.requests, 0);
   const figures = steps
