@@ -43,7 +43,7 @@ const nodeFinding = (version: string) =>
 const keyFindings = ({ model, fromEnvFile, envFile }: Probes): Finding[] => {
   let profile: ModelProfile;
   try {
-    ({ profile } = resolveModel({ model }));
+    ({ profile } = resolveModel({ model, live: true }));
   } catch (error) {
     return [fail('Model', (error as Error).message, 'Set JEVWAY_MODEL / JEVWAY_SCREENSHOTS (or --model / --screenshots) to a listed value, or unset them')];
   }

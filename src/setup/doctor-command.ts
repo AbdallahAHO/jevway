@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { devToolsActivePort, findChrome } from '../browser/chrome.ts';
-import { createAsk, resolveModel } from '../jev/model.ts';
+import { createLiveAsk, resolveModel } from '../jev/model.ts';
 import { diagnose, exitCode, liveCheck, planSteps, render, type Probes } from './doctor.ts';
 import { envFilePath, shownEnvFilePath } from './env-file.ts';
 
@@ -70,8 +70,9 @@ export const runDoctor = async (argv: string[], fromEnvFile: string[]): Promise<
   // The live request only makes sense once the key and model are in place.
   const keyReady = !findings.some(({ area, level }) => (area === 'Key' || area === 'Model') && level === 'fail');
   if (options.live && keyReady) {
-    const { profile } = resolveModel({ model: options.model });
-    findings.push(await liveCheck(createAsk(profile), profile.model, [process.env.TYPESAFE_API_KEY, process.env.OPENROUTER_API_KEY]));
+    // Always the real API, never a replay: the check is whether the key and route work.
+    const { profile } = resolveModel({ model: options.model, live: true });
+    findings.push(await liveCheck(createLiveAsk(profile), profile.model, [process.env.TYPESAFE_API_KEY, process.env.OPENROUTER_API_KEY]));
   }
   // Written before the caller exits: on macOS a piped stdout is asynchronous.
   await new Promise((resolve) => process.stdout.write(options.plan ? planSteps(findings) : render(findings), resolve));

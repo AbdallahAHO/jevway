@@ -2,6 +2,7 @@ import { connectChrome, type BrowserSource, type ChromeHandle } from '../browser
 import { Tab } from '../browser/tab.ts';
 import type { Ask } from '../jev/decide.ts';
 import { createAsk, profileOptions, resolveModel } from '../jev/model.ts';
+import { replayMode } from '../jev/replay.ts';
 import { JourneySession, type JourneyOptions } from '../journeys/journey-session.ts';
 import { missingKeyMessage } from '../setup/env-file.ts';
 import { hostsFromEnv, narrowHosts, outsideHosts } from './hosts.ts';
@@ -37,7 +38,8 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
   // Made on first use: a missing key fails the call that needs the model, not the server that lists the tools.
   let client: Ask | undefined;
   const ask = (): Ask => {
-    const missing = missingKeyMessage(profile);
+    // A replay answers from recordings and needs no key.
+    const missing = replayMode() === 'replay' ? undefined : missingKeyMessage(profile);
     if (missing) throw new Error(missing);
     return (client ??= createAsk(profile));
   };

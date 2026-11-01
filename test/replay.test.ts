@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { choice, Image, noul, TypeSafeClient, type SystemOneRequest } from '@typesafe-ai/sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Ask } from '../src/jev/decide.ts';
-import { createAsk, resolveModel } from '../src/jev/model.ts';
+import { createAsk, createLiveAsk, resolveModel } from '../src/jev/model.ts';
+import { createRunner } from '../src/task/start-task.ts';
 import { recordingAsk, ReplayMiss, replayingAsk, requestKey } from '../src/jev/replay.ts';
 
 const JEV = 'jev-1.14.0';
@@ -202,5 +203,29 @@ describe('JEVWAY_REPLAY picks the Ask', () => {
     vi.stubEnv('JEVWAY_REPLAY', 'playback');
     vi.stubEnv('TYPESAFE_API_KEY', 'test-key');
     expect(() => createAsk(resolveModel({ model: 'jev' }).profile)).toThrow(/JEVWAY_REPLAY must be record or replay/);
+  });
+});
+
+describe('replay and the other callers', () => {
+  it('a runner in replay mode needs no key', async () => {
+    const dir = freshDir();
+    await recordingAsk(scripted(response('CLICK')).ask, DIRECT, dir)(decisionRequest());
+    vi.stubEnv('JEVWAY_REPLAY', 'replay');
+    vi.stubEnv('JEVWAY_REPLAY_DIR', dir);
+    vi.stubEnv('TYPESAFE_API_KEY', '');
+    vi.stubEnv('OPENROUTER_API_KEY', '');
+    expect(() => createRunner('launch-headless').requireKey()).not.toThrow();
+  });
+
+  it('the doctor stays live under JEVWAY_REPLAY=replay: its own route from its keys, and a real request', async () => {
+    vi.stubEnv('JEVWAY_REPLAY', 'replay');
+    vi.stubEnv('JEVWAY_REPLAY_DIR', freshDir());
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-key');
+    const live = vi.spyOn(TypeSafeClient.prototype, 'systemOne').mockResolvedValue(response('CLICK') as any);
+    // An empty replay folder would make a replaying resolve throw; the live one never reads it.
+    const { profile } = resolveModel({ model: 'jev', live: true });
+    expect(profile.model).toBe(JEV);
+    expect(await createLiveAsk(profile)(decisionRequest())).toEqual(response('CLICK'));
+    expect(live).toHaveBeenCalledTimes(1);
   });
 });
