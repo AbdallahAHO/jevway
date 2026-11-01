@@ -4847,3 +4847,68 @@ describe("the done's evidence request", () => {
     expect(signals[0]?.aborted).toBe(true);
   });
 });
+
+describe('a confirmation and a host list follow the run onto a tab it opened', () => {
+  const NEW_TAB: PageAction = { id: 'open', kind: 'click', node: 50, role: 'link', label: 'Open checkout in a new tab' };
+  const PAY: PageAction = { id: 'pay', kind: 'click', node: 70, role: 'button', label: 'Pay €412' };
+  const CANCEL_BOOKING: PageAction = { id: 'cancel', kind: 'click', node: 71, role: 'button', label: 'Cancel the booking' };
+  const stays = page({ url: 'http://fixture/stays', title: 'Staylist', actions: [NEW_TAB, PAY], fingerprint: 's1' });
+  const opening = (popupPages: PageState[]) => {
+    const opener = fakeTab([stays, page({ ...stays, fingerprint: 's2' })]);
+    const popup = fakeTab(popupPages);
+    opener.tab.opensTabOn = NEW_TAB.label;
+    opener.tab.next = popup.asTab;
+    return { opener, popup };
+  };
+  // Call 1 flags "Pay €412" on /stays; call 2 confirms it, opens the new tab, then picks the script's control there.
+  const flagThenConfirm = async (opener: ReturnType<typeof fakeTab>, onPopup: Record<string, any>) => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '2', commit_risk: 0.9 }, { operation: 'CLICK', click_target: '1' }, onPopup, { operation: 'DONE' }]);
+    const task = new BrowserTask(opener.asTab, ask, { goal: 'Pay for the Staylist booking', changeWaitMs: 0 });
+    const flagged = await task.run();
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+    return { flagged, summary: await task.run() };
+  };
+
+  it('allows on the new tab only the control that was flagged, and arms only the tab in use', async () => {
+    const { opener, popup } = opening([page({ url: 'http://fixture/stays?step=pay', title: 'Staylist', actions: [PAY], fingerprint: 'p1' }), page({ fingerprint: 'p2' })]);
+    const { flagged, summary } = await flagThenConfirm(opener, { operation: 'CLICK', click_target: '1', commit_risk: 0.9 });
+    expect(flagged.status).toBe('needs_confirmation');
+    expect(summary.status).toBe('done');
+    expect(popup.acted.map((a) => a.label)).toEqual([PAY.label]);
+    expect(popup.tab.armedAtAct).toEqual([[STAYLIST, PAY.label]]);
+    expect(opener.tab.armedAtAct.every((armed) => armed === undefined)).toBe(true);
+    expect(opener.tab.armed).toBeUndefined();
+  });
+
+  it('hands back a different risky control on the new tab as a new question', async () => {
+    const { opener, popup } = opening([page({ url: 'http://fixture/stays?step=pay', title: 'Staylist', actions: [CANCEL_BOOKING], fingerprint: 'p1' })]);
+    const { summary } = await flagThenConfirm(opener, { operation: 'CLICK', click_target: '1', commit_risk: 0.9 });
+    expect(summary.status).toBe('needs_confirmation');
+    expect(summary.reason).toContain('"Pay €412"');
+    expect(popup.acted).toEqual([]);
+  });
+
+  it('ends blocked when the tab a click opened is on another host, deciding nothing there', async () => {
+    const { opener, popup } = opening([page({ url: 'https://partner.example/pay', fingerprint: 'p1' })]);
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
+    const hosts = { allowed: ['fixture'], blocked: [] };
+    const summary = await new BrowserTask(opener.asTab, ask, { goal: 'Pay', hosts, changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toContain('partner.example is outside the allowed hosts');
+    expect(summary.url).toBe('https://partner.example/pay');
+    expect(requests).toHaveLength(1);
+    expect(popup.acted).toEqual([]);
+  });
+
+  it('ends blocked when a tab a late script opened is on another host, before any decision', async () => {
+    const { opener, popup } = opening([page({ url: 'https://partner.example/pay', fingerprint: 'p1' })]);
+    opener.tab.opened = ['late'];
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '1' }]);
+    const hosts = { allowed: ['fixture'], blocked: [] };
+    const summary = await new BrowserTask(opener.asTab, ask, { goal: 'Pay', hosts, changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.url).toBe('https://partner.example/pay');
+    expect(requests).toHaveLength(0);
+    expect(popup.acted).toEqual([]);
+  });
+});
