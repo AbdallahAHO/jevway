@@ -5127,3 +5127,44 @@ describe('a page error or a sign-in wall ends the run', () => {
     });
   });
 });
+
+describe('a page error quoted in a hand-back never carries a secret', () => {
+  // 98 characters; the quote is cut at 300, so the filler puts the cut inside the secret as the page shows it.
+  const LONG = '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';
+  const PREFIX = LONG.slice(0, 20).toLowerCase();
+  const FILLER = 'The token was checked against the registry. '.repeat(6);
+  const TAIL = ' Ask your admin for a new token before you try again.';
+  const ERROR_LINE = `${FILLER}Token ${LONG} was rejected.${TAIL}`;
+  const secret = { values: { token: LONG }, secretKeys: ['token'] };
+  const tokenField = (value: string): PageAction => ({ id: 'n', kind: 'fill', node: 1, role: 'textbox', label: 'API token', value });
+  const save: PageAction = { id: 's', kind: 'click', node: 2, role: 'button', label: 'Save token' };
+  const check: PageAction = { id: 'k', kind: 'click', node: 3, role: 'button', label: 'Check token' };
+  const formPage = (fingerprint: string, text: string) =>
+    page({ url: 'http://fixture/settings/tokens', fingerprint, text, actions: [tokenField(LONG), save, check] });
+  const leaks = (...outputs: unknown[]) => outputs.map((output) => JSON.stringify(output).toLowerCase().includes(PREFIX));
+
+  it('keeps it out of the new words the last action brought, cut at 300 characters', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '3' }, { operation: 'CLICK', click_target: '2', page_error: 0.99 }]);
+    const { asTab } = fakeTab([formPage('a', 'Tokens'), formPage('b', `Tokens\n${ERROR_LINE}`)]);
+    const task = new BrowserTask(asTab, ask, { goal: 'Save my token', ...secret, changeWaitMs: 0 });
+    const summary = await task.run();
+    expect(summary.reason).toMatch(/^The page shows an error after "Check token": "The token was checked/);
+    // The cut happened: the quote stops short of the line's end, scrubbed or not.
+    expect(summary.reason).not.toContain(TAIL.trim());
+    expect(leaks(summary.reason, summary, requests, task.trace)).toEqual([false, false, false, false]);
+  });
+
+  it('keeps it out of the page message after a confirmed submit, cut at 300 characters', async () => {
+    const { ask, requests } = scriptedJev([
+      { operation: 'CLICK', click_target: '2', commit_risk: 0.9 },
+      { operation: 'CLICK', click_target: '3', page_error: 0.99 },
+    ]);
+    const { asTab } = fakeTab([formPage('a', 'Your registry tokens'), formPage('b', `Your registry tokens\n${ERROR_LINE}`)]);
+    const task = new BrowserTask(asTab, ask, { goal: 'Save my token', ...secret, changeWaitMs: 0 });
+    task.update({ confirmIrreversible: true, confirmTarget: 'registry' });
+    const summary = await task.run();
+    expect(summary.reason).toMatch(/^The page shows an error after "Save token": "The token was checked/);
+    expect(summary.reason).not.toContain(TAIL.trim());
+    expect(leaks(summary.reason, summary, requests, task.trace)).toEqual([false, false, false, false]);
+  });
+});
