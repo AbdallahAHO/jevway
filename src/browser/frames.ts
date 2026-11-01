@@ -207,6 +207,7 @@ export class Frames {
   #bases = new Map<string, number>();
   #contexts = new Map<string, number>();
   #objectSessions = new Set<string>();
+  #unsubscribe: (() => unknown) | undefined;
 
   constructor(cdp: CdpConnection, sessionId: string, counter: string) {
     this.#cdp = cdp;
@@ -216,9 +217,14 @@ export class Frames {
 
   /** Registers the input counter in every frame's world before its scripts, and attaches out-of-process frames as they come. */
   async watch() {
-    this.#cdp.onEvent((method, params, sessionId) => this.#onEvent(method, params, sessionId));
+    this.#unsubscribe = this.#cdp.onEvent((method, params, sessionId) => this.#onEvent(method, params, sessionId));
     await this.#send('Page.addScriptToEvaluateOnNewDocument', { source: this.#counter, worldName: WORLD }, this.#sessionId);
     await this.#autoAttach(this.#sessionId);
+  }
+
+  /** Stops following the tab's frames (the tab is closing). */
+  stop() {
+    this.#unsubscribe?.();
   }
 
   /** Mobile emulation taps with touch events; out-of-process frames get the same setting. */
