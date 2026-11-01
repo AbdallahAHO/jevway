@@ -237,7 +237,7 @@ export const renderSteps = (steps: RecordedStep[], summaries: TaskSummary[], vid
     )
     .join('\n');
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>jev-browse run</title>
+<title>jevway run</title>
 <style>
 body{font:15px/1.45 system-ui,sans-serif;margin:0 auto;max-width:1400px;padding:16px;background:#fff;color:#111}
 @media (prefers-color-scheme:dark){body{background:#111;color:#eee}figure{border-color:#333}}
@@ -247,7 +247,7 @@ em{font-style:normal;opacity:.65;font-size:13px;margin-left:6px}.miss{color:#c24
 small{display:block;opacity:.6;font-size:12px}img,video{display:block;width:100%;height:auto}
 video{margin:0 0 28px;border-radius:8px;background:#000}
 </style>
-<h1>${escapeHtml(last ? `${last.status}: ${last.reason}` : 'jev-browse run')}</h1>
+<h1>${escapeHtml(last ? `${last.status}: ${last.reason}` : 'jevway run')}</h1>
 <p>${steps.length} screenshots · ${requests} Jev requests${video ? ' · click a step to play the video from there' : ' · no video (needs ffmpeg)'}</p>
 ${video ? `<video id="run" src="${video}" controls muted playsinline></video>` : ''}
 ${figures}

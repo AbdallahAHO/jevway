@@ -40,7 +40,7 @@ interface CapabilityTask {
   violation?: string;
   /** The plan that is to close this gap; a miss is reported as a known gap until then. */
   gap?: string;
-  /** Typed by the harness before the run (jev-browse never lists password fields). */
+  /** Typed by the harness before the run (jevway never lists password fields). */
   prepare?: string;
   /** Self-check only: reaches the goal by script, in the run's tab, then (`solveOpened`) in the tab it opened. */
   solve?: string;

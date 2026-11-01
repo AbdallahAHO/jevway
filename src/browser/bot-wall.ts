@@ -1,7 +1,7 @@
 /**
  * Bot walls: a CDN challenge, a captcha interstitial or an "unusual traffic" page that stands between the run and the
  * site. Judged from the page alone (title, the top of its text, visible challenge boxes), never by asking a model.
- * jev-browse never tries to get past one; the run waits a moment for it to clear itself, then hands back.
+ * jevway never tries to get past one; the run waits a moment for it to clear itself, then hands back.
  */
 import type { PageState } from './tab.ts';
 

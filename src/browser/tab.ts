@@ -12,7 +12,7 @@ const MARKER = `(() => { const state=${READ_STATE}; return state?.marker ?? null
 // How long observe() keeps retrying a page that is still changing, and what a call that got no reply at all looks like.
 const OBSERVE_DEADLINE_MS = 2_000;
 const TIMED_OUT = /timed out after/;
-// jev-browse: a page drawn as pulsing placeholders has not loaded what the user came for, so reading it now invites a click on
+// jevway: a page drawn as pulsing placeholders has not loaded what the user came for, so reading it now invites a click on
 // whatever chrome is listed. The wait is capped, and a page that keeps pulsing is named as loading.
 const PLACEHOLDERS_MIN = 3;
 const PLACEHOLDERS_WAIT_MS = 1_500;
@@ -302,7 +302,7 @@ export class Tab {
         if (method === 'Page.javascriptDialogOpening') tab.#answerDialog(params);
       }),
     );
-    // jev-browse: a tab this tab opens is noted by its opener id; discovery only reports targets, so a tab anyone else
+    // jevway: a tab this tab opens is noted by its opener id; discovery only reports targets, so a tab anyone else
     // opened (the user's own, in their Chrome) is never attached, read or changed.
     tab.#unsubscribe.push(
       cdp.onEvent((method, params, sessionId) => {
@@ -352,7 +352,7 @@ export class Tab {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const frozen = new Promise<never>((_, reject) => {
       timer = setTimeout(
-        () => reject(new CdpError(`The new tab did not answer within ${FOLLOW_MS / 1000} s: it may be showing a dialog it raised before jev-browse could answer it`)),
+        () => reject(new CdpError(`The new tab did not answer within ${FOLLOW_MS / 1000} s: it may be showing a dialog it raised before jevway could answer it`)),
         FOLLOW_MS,
       );
     });
@@ -388,7 +388,7 @@ export class Tab {
     return next;
   }
 
-  // jev-browse: an open dialog freezes the page for every protocol call, so it is answered at once, with the choice that
+  // jevway: an open dialog freezes the page for every protocol call, so it is answered at once, with the choice that
   // changes nothing: OK for an alert (its only button), Cancel for confirm and prompt, Stay for beforeunload. The one
   // exception is the confirm dialog a confirmed click opens, when its message names the confirmed target or the control:
   // that is the same action asking again. Any other dialog, including one the same click opens about something else, is declined.
@@ -451,7 +451,7 @@ export class Tab {
    */
   want(texts: string[], { files = false }: { files?: boolean } = {}) {
     this.#wanted = texts.map((t) => t.trim().toLowerCase()).filter((t) => t.length >= 3);
-    // jev-browse: with files declared, a click on a styled "Upload" button must never open an OS dialog in the user's
+    // jevway: with files declared, a click on a styled "Upload" button must never open an OS dialog in the user's
     // Chrome: the picker is intercepted (and left unanswered); UPLOAD sets the file on the field instead.
     if (files && !this.#files) void this.#call('Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => undefined);
     this.#files = files;
@@ -467,7 +467,7 @@ export class Tab {
   async upload(action: PageAction, page: PageState, path: string) {
     // The file is set through the page's own session; a frame's node lives in another context, so it is refused by name.
     if (action.node !== undefined && idBaseOf(action.node)) {
-      throw new TargetUnreachable(`"${action.label}" is inside a frame, and jev-browse uploads only to file fields in the page itself`);
+      throw new TargetUnreachable(`"${action.label}" is inside a frame, and jevway uploads only to file fields in the page itself`);
     }
     if (!(await this.fresh(page, action))) throw new StalePage('Page changed since this decision');
     const { result } = await this.#call('Runtime.evaluate', {
@@ -579,7 +579,7 @@ export class Tab {
     return outcome;
   }
 
-  // jev-browse: the wheel goes where the reader found the pane that scrolls (or the fixed point on a page whose document
+  // jevway: the wheel goes where the reader found the pane that scrolls (or the fixed point on a page whose document
   // scrolls), and the offsets before and after say whether it moved anything. The wheel lands asynchronously, so the
   // offsets are polled until they stop moving: 500 ms with no movement means nothing moved, 1.5 s at most.
   async #scroll(action: PageAction, page: PageState): Promise<{ scrolled?: number }> {
@@ -994,7 +994,7 @@ const SETTLE = `action => new Promise(resolve => {
   const started=performance.now();
   const finish=()=>{stopped=true;resolve()};
   let deadline=setTimeout(finish,autocomplete ? 200 : 50);
-  // jev-browse: a menu or popover fading in is read as hover-only until it has opened, and a person waits for it too. The wait
+  // jevway: a menu or popover fading in is read as hover-only until it has opened, and a person waits for it too. The wait
   // is capped at 400 ms, and endless animations (spinners, pulsing dots) don't count.
   const animating=()=>document.getAnimations().some(a=>a.playState==='running' && a.effect?.getComputedTiming().endTime!==Infinity);
   const ready=()=>{

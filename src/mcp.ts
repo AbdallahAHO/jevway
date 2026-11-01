@@ -18,7 +18,7 @@ const runner = createRunner(process.env.JEV_BROWSER ?? 'auto');
 const sessions = new Map<string, { task: BrowserTask; ownsTab: boolean; running?: Promise<unknown> }>();
 const journeys = new Map<string, JourneySession>();
 
-const server = new McpServer({ name: 'jev-browse', version: '0.1.0' });
+const server = new McpServer({ name: 'jevway', version: '0.1.0' });
 
 server.registerTool(
   'browser_task',
@@ -36,7 +36,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
 - Pass \`checks\` for facts you can state exactly (the address, a title, a text that must or must not show, a field's value, a ticked box, a listed control by role and name). Code checks them on the final page and returns each one in \`checks\`: a failed check turns "done" into "uncertain" (the reason names it); all passing turn "blocked"/"uncertain" into "done" only together with \`done_when\`. Text checks read the visible text only, so prefer the URL or title for "a page is open".
 - Statuses that hand control back — continue with the same \`session\`:
   needs_input → add the missing value to \`values\` (\`missing\` lists each field that wants one: label, role, page path);
-  needs_confirmation → the next click looks irreversible (delete, pay, send). Set \`confirm_irreversible: true\` only when the user's own request names this action and its target (e.g. "delete the repository X" → the clicks that delete X); for anything else, stop and ask the user. A kind of thing ("anything unused", "old branches", "all drafts") does not name a target: list what you would delete or send and ask the user first. Each confirmation covers one click: the control that needs_confirmation named (same label, same page path); if Jev picks a different irreversible control, it is handed back as a new needs_confirmation. It counts only on the call that answers a needs_confirmation (or a new session's first call, which allows any one); anywhere else it is ignored. Pass \`confirm_target\` with the user's words that name the target; jev-browse checks the page shows them (the control's own words, like "delete", do not count) and refuses otherwise.
+  needs_confirmation → the next click looks irreversible (delete, pay, send). Set \`confirm_irreversible: true\` only when the user's own request names this action and its target (e.g. "delete the repository X" → the clicks that delete X); for anything else, stop and ask the user. A kind of thing ("anything unused", "old branches", "all drafts") does not name a target: list what you would delete or send and ask the user first. Each confirmation covers one click: the control that needs_confirmation named (same label, same page path); if Jev picks a different irreversible control, it is handed back as a new needs_confirmation. It counts only on the call that answers a needs_confirmation (or a new session's first call, which allows any one); anywhere else it is ignored. Pass \`confirm_target\` with the user's words that name the target; jevway checks the page shows them (the control's own words, like "delete", do not count) and refuses otherwise.
   uncertain / blocked → inspect \`stuck\` (candidates) and \`page_text\`, rephrase \`goal\`, or finish the step with chrome-devtools. A blocked reason quoting a page error is the page's answer: tell the user or change \`values\`. A \`wall: {kind: "sign_in", origin}\` means sign in there (or pass the values) before calling again.
   step_budget → \`max_steps\` or \`max_seconds\` (default 300) ran out; the reason says which. Continue on the same session with a narrower goal.
   blocked by a bot check (\`wall.kind\` is "bot_check"; the reason names it) → never try to get past it; ask the user to pass it in that tab, then continue the session.
@@ -82,7 +82,7 @@ Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards
         .string()
         .optional()
         .describe(
-          'With confirm_irreversible: the user\'s own words that name what this click acts on, copied from their request (e.g. "ada/scratch" from "delete the repository ada/scratch"). jev-browse clicks only when the page shows them; the control\'s own words ("delete") and a category never match.',
+          'With confirm_irreversible: the user\'s own words that name what this click acts on, copied from their request (e.g. "ada/scratch" from "delete the repository ada/scratch"). jevway clicks only when the page shows them; the control\'s own words ("delete") and a category never match.',
         ),
       max_steps: z.number().int().positive().max(100).optional(),
       max_seconds: z
@@ -197,7 +197,7 @@ server.registerTool(
   'browser_task_end',
   {
     title: 'End a Jev browser session',
-    // Forgets a session and closes the tabs jev-browse opened: nothing on a site changes.
+    // Forgets a session and closes the tabs jevway opened: nothing on a site changes.
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description:
       'Forget a browser_task session. Closes the tabs it opened (its first tab when it started from url, and any tab its clicks opened) unless keep_tab is true.',

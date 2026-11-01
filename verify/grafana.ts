@@ -102,7 +102,7 @@ const JOBS: Job[] = [
 
 await runJobs({
   name: 'grafana',
-  title: (jobCount) => `Grafana play: ${jobCount} jobs with jev-browse`,
+  title: (jobCount) => `Grafana play: ${jobCount} jobs with jevway`,
   startUrl: `${ORIGIN}/`,
   browser: process.env.JEV_GRAFANA_BROWSER ?? 'launch-headless',
   jobs: JOBS,

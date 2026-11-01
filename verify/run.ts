@@ -330,7 +330,7 @@ await scenario('live web: Wikipedia search → Gödel’s incompleteness theorem
 // leave nothing running: at most the press already under way lands after the cancel, and none a second later.
 await scenario('MCP stdio: a cancelled browser_task stops acting (session continues)', async () => {
   const recordDir = new URL('cancel/', outDir).pathname;
-  const client = new Client({ name: 'jev-browse-verify', version: '0.0.0' });
+  const client = new Client({ name: 'jevway-verify', version: '0.0.0' });
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,
@@ -405,7 +405,7 @@ await scenario('MCP stdio: a cancelled browser_task stops acting (session contin
 await chrome.close();
 
 await scenario('MCP stdio: tools list + browser_task + browser_task_end', async () => {
-  const client = new Client({ name: 'jev-browse-verify', version: '0.0.0' });
+  const client = new Client({ name: 'jevway-verify', version: '0.0.0' });
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,

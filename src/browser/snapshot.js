@@ -1,6 +1,6 @@
 (() => {
   if (!document.body) return null;
-  // jev-browse: a frame's ids start at its own base (set by the tab), so ids stay unique across frames.
+  // jevway: a frame's ids start at its own base (set by the tab), so ids stay unique across frames.
   const cache = (window.__jevFast ||= { ids: new WeakMap(), nodes: new Map(), next: (window.__jevIdBase || 0) + 1 });
   const identity = (e) => {
     if (!cache.ids.has(e)) cache.ids.set(e, cache.next++);
@@ -11,7 +11,7 @@
   for (const [id, e] of cache.nodes) if (!e.isConnected) cache.nodes.delete(id);
   const cap = (text, max = 200) => (text.length > max ? text.slice(0, max - 1) + '…' : text);
   const safe = (e) => !['password', 'file', 'hidden'].includes(e.type);
-  // jev-browse: a modal library (the aria-hidden package behind Radix, shadcn and react-aria) hides everything outside its
+  // jevway: a modal library (the aria-hidden package behind Radix, shadcn and react-aria) hides everything outside its
   // sheet, including the popover it portaled for that sheet. A person still sees and taps that popover, so an element
   // hidden only by that library's marker (data-aria-hidden) counts when it is on top at its centre. A plain aria-hidden
   // or an inert ancestor still hides.
@@ -31,7 +31,7 @@
     if (hidden && !hiddenOnlyByModalLibrary(e)) return false;
     return e.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && (!hidden || onTop(e));
   };
-  // jev-browse: an element whose centre is off-screen (a table row wider than its scroll box) is clicked at the
+  // jevway: an element whose centre is off-screen (a table row wider than its scroll box) is clicked at the
   // centre of the part the viewport and its scroll containers leave visible. Everything else keeps its own rect.
   cache.clickRect = (e) => {
     const r = e.getBoundingClientRect();
@@ -52,14 +52,14 @@
     }
     return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
   };
-  // jev-browse: display:contents has no box of its own (checkVisibility is false), yet its children render with the parent.
+  // jevway: display:contents has no box of its own (checkVisibility is false), yet its children render with the parent.
   const renders = (n) =>
     n.checkVisibility({ checkVisibilityCSS: true }) ||
     (getComputedStyle(n).display === 'contents' && Boolean(n.parentElement) && renders(n.parentElement));
   const name = (e, seen = new Set()) => {
     if (!e || seen.has(e)) return '';
     seen.add(e);
-    // jev-browse: accessible names leave out hidden descendants, so a dropdown reads as "Labels", not as its closed menu.
+    // jevway: accessible names leave out hidden descendants, so a dropdown reads as "Labels", not as its closed menu.
     // An element that is itself hidden (one an aria-labelledby points at) keeps all of its text.
     const shown = renders(e);
     const referenced = (e.getAttribute('aria-labelledby') || '')
@@ -112,7 +112,7 @@
     'searchbox',
     'spinbutton',
   ];
-  // jev-browse: clickable rows and tabbable custom controls (React tables, cards) count when they show a pointer.
+  // jevway: clickable rows and tabbable custom controls (React tables, cards) count when they show a pointer.
   const selector =
     'a[href],button,input,textarea,select,summary,[contenteditable="true"],tr,th,[role="columnheader"],[tabindex="0"],' +
     roles.map((role) => '[role="' + role + '"]').join(',');
@@ -123,7 +123,7 @@
     if (roles.includes(explicit)) return explicit;
     if (e.tagName === 'BUTTON' || e.tagName === 'SUMMARY') return 'button';
     if (e.tagName === 'TR') return pointer(e) && !e.querySelector('th') ? 'row' : null;
-    // jev-browse: sortable column headers (a pointer or aria-sort); a select-all checkbox header is not one.
+    // jevway: sortable column headers (a pointer or aria-sort); a select-all checkbox header is not one.
     if (e.tagName === 'TH' || explicit === 'columnheader') {
       const sortable = pointer(e) || e.hasAttribute('aria-sort');
       return sortable && !e.querySelector('input,select') ? 'columnheader' : null;
@@ -131,7 +131,7 @@
     if (e.getAttribute('tabindex') === '0' && !explicit && !['INPUT', 'TEXTAREA', 'SELECT', 'A'].includes(e.tagName)) {
       return pointer(e) ? 'button' : null;
     }
-    // jev-browse: a dropdown trigger that names itself with a role we don't list ("menu" on Fomantic UI's avatar menu) is
+    // jevway: a dropdown trigger that names itself with a role we don't list ("menu" on Fomantic UI's avatar menu) is
     // still a disclosure button, as its aria-expanded says.
     if (
       explicit &&
@@ -164,7 +164,7 @@
       .filter(safe)
       .map((e) => [identity(e), e.value, e.checked, e.selectedIndex, e.disabled, e.readOnly]),
   ];
-  // jev-browse: a hover-revealed target is invisible when observed and when checked, so it is guarded by identity, name
+  // jevway: a hover-revealed target is invisible when observed and when checked, so it is guarded by identity, name
   // and row text like any other; the visibility flag keeps a target that disappeared stale.
   cache.guard = (e) => {
     if (!e?.isConnected) return null;
@@ -187,19 +187,19 @@
       scope?.innerText?.slice(0, 6000) || '',
     ];
   };
-  // jev-browse: when modals are open, only their content is reachable, so read controls and text inside them.
+  // jevway: when modals are open, only their content is reachable, so read controls and text inside them.
   // Sites often split one sheet into several modal layers (header + panel), so read all outermost ones.
   const modals = [...document.querySelectorAll('[aria-modal="true"],dialog')].filter(
     (m) => (m.tagName !== 'DIALOG' || m.matches(':modal')) && visible(m) && m.getBoundingClientRect().width > 0,
   );
   const roots = modals.length ? modals.filter((m) => !modals.some((o) => o !== m && o.contains(m))) : [document.body];
   const actions = [];
-  // jev-browse: controls inside open shadow roots (web components such as MDN's search button) count too.
+  // jevway: controls inside open shadow roots (web components such as MDN's search button) count too.
   const deepQuery = (root) => [
     ...root.querySelectorAll(selector),
     ...[...root.querySelectorAll('*')].filter((host) => host.shadowRoot).flatMap((host) => deepQuery(host.shadowRoot)),
   ];
-  // jev-browse: open popups (date pickers, custom menus) often build their items from plain pointer-cursor divs:
+  // jevway: open popups (date pickers, custom menus) often build their items from plain pointer-cursor divs:
   // the outermost pointer element with text and no control inside counts as an option.
   const wanted = Array.isArray(window.__jevWanted) ? window.__jevWanted : [];
   const popupItems = new Set();
@@ -211,7 +211,7 @@
       if (pointer(e) && outermost && !e.closest(selector) && !e.querySelector(selector) && e.innerText.trim()) popupItems.add(e);
     }
   }
-  // jev-browse: an unnamed checkbox is named by its row ("Select: Casa Flora"), not its value "on".
+  // jevway: an unnamed checkbox is named by its row ("Select: Casa Flora"), not its value "on".
   const unnamedToggle = (e, rname) => {
     if (!['checkbox', 'radio', 'switch'].includes(rname)) return false;
     const own = name(e);
@@ -221,7 +221,7 @@
     const text = (e.closest('tr,[role="row"],li,label')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     return text && 'Select: ' + text;
   };
-  // jev-browse: an icon-only control is named the way a person would describe it: by the control it toggles, or by its icon.
+  // jevway: an icon-only control is named the way a person would describe it: by the control it toggles, or by its icon.
   const styleModifier = /^fa-(?:solid|regular|light|brands|lg|xs|sm|fw|\d+x)$/;
   const iconHint = (el) => {
     const testId = (el.getAttribute('data-testid') || '').match(/^icon-(.+)$/);
@@ -250,7 +250,7 @@
     }
     const icon = [e, ...e.querySelectorAll('svg,i,span,img')].map(iconHint).find(Boolean);
     if (icon) return icon.replace(/-/g, ' ') + ' icon';
-    // jev-browse: with no name, row or icon, a control is named by the short text right around it, as a person reads it.
+    // jevway: with no name, row or icon, a control is named by the short text right around it, as a person reads it.
     // Text inside another control (a neighbouring "Save") is skipped: it would name this one after that one.
     const textAround = (container) => {
       const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
@@ -271,7 +271,7 @@
     return unnamedToggle(e, rname) ? 'Select: ' + around : around;
   };
   const queried = roots.flatMap(deepQuery);
-  // jev-browse: a checkbox or radio hidden with opacity or display (Grafana's quick time ranges) is chosen through its
+  // jevway: a checkbox or radio hidden with opacity or display (Grafana's quick time ranges) is chosen through its
   // visible label, so the label stands in for the input. A visible input keeps its own entry; a disabled one stays out.
   const labelOf = new Map();
   for (const input of queried) {
@@ -287,7 +287,7 @@
       y = r.y + r.height / 2;
     return r.width <= 0 || r.height <= 0 || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight;
   };
-  // jev-browse: a control shown only while its container is hovered (a panel's menu, a row's Delete) is in the DOM with
+  // jevway: a control shown only while its container is hovered (a panel's menu, a row's Delete) is in the DOM with
   // visibility:hidden or opacity:0. It is listed as "appears on hover", capped at 20, and the executor moves the pointer
   // onto it before the click. Touch screens list them too: touch emulation still applies :hover to a pointer move, and a
   // tap on the container could activate it. display:none is not laid out, so it does not count.
@@ -310,7 +310,7 @@
     !outOfView(e.getBoundingClientRect()) &&
     Boolean(role(e)) &&
     name(e).trim() !== '';
-  // jev-browse: an off-screen link, button or row holding a value the caller supplied is likely the target, but
+  // jevway: an off-screen link, button or row holding a value the caller supplied is likely the target, but
   // only when nothing on screen holds it, and at most 5 are listed: a common value ("ERROR") would flood the list.
   const holdsWanted = (e, rname) =>
     ['link', 'button', 'row'].includes(rname) && wanted.some((w) => (e.innerText || '').toLowerCase().includes(w));
@@ -318,7 +318,7 @@
     wanted.length > 0 &&
     candidates.some((e) => eligible(e) && !outOfView(cache.clickRect(e)) && holdsWanted(e, role(e)));
   let wantedListed = 0;
-  // jev-browse: a link or button in an on-screen table row, scrolled sideways out of view inside the table's scroll box, is
+  // jevway: a link or button in an on-screen table row, scrolled sideways out of view inside the table's scroll box, is
   // still a choice: a person swipes the table to reach it, and clicking scrolls it in. At most 2 per row and 20 in all.
   const rowLinksListed = new Map();
   let sidewaysListed = 0;
@@ -340,7 +340,7 @@
       r = cache.clickRect(e),
       y = r.y + r.height / 2,
       rname = hiddenInput ? hiddenInput.type : role(e);
-    // jev-browse: a sortable header scrolled sideways out of its table is still a choice; clicking scrolls it in.
+    // jevway: a sortable header scrolled sideways out of its table is still a choice; clicking scrolls it in.
     const sideways = rname === 'columnheader' && y >= 0 && y < innerHeight && e.getBoundingClientRect().width > 0;
     const offscreen = outOfView(r);
     const wantedOffscreen = offscreen && !wantedOnscreen && wantedListed < 5 && holdsWanted(e, rname);
@@ -357,7 +357,7 @@
     const base = {
       node: identity(e),
       role: rname,
-      // jev-browse: a row is what it shows; its name would also pull in nested controls ("Select row"). Labels are
+      // jevway: a row is what it shows; its name would also pull in nested controls ("Select row"). Labels are
       // capped: table rows holding whole JSON payloads otherwise blow the request past the model's token limit.
       label:
         cap(
@@ -377,7 +377,7 @@
       const value = e.getAttribute('aria-' + key);
       if (value !== null) base[key] = value;
     }
-    // jev-browse: a summary's section is open or closed, as its triangle shows; <details> carries no aria-expanded.
+    // jevway: a summary's section is open or closed, as its triangle shows; <details> carries no aria-expanded.
     if (e.tagName === 'SUMMARY' && e.parentElement?.tagName === 'DETAILS' && base.expanded === undefined) {
       base.expanded = String(e.parentElement.open);
     }
@@ -398,7 +398,7 @@
         !e.readOnly &&
         e.getAttribute('aria-readonly') !== 'true' &&
         (['textbox', 'searchbox', 'spinbutton'].includes(rname) ||
-          // jev-browse: a contenteditable combobox is a search bar too (Langfuse's trace search).
+          // jevway: a contenteditable combobox is a search bar too (Langfuse's trace search).
           (rname === 'combobox' && (['INPUT', 'TEXTAREA'].includes(e.tagName) || e.isContentEditable)));
       const value =
         'value' in e ? String(e.value) : e.isContentEditable || rname === 'combobox' ? e.innerText.trim() : '';
@@ -406,7 +406,7 @@
       if (editable) actions.push({ ...base, kind: 'click', value, label: 'Open ' + base.label });
     }
   }
-  // jev-browse: only when the caller declared files, each enabled file input is a field Jev may upload one to. A hidden one
+  // jevway: only when the caller declared files, each enabled file input is a field Jev may upload one to. A hidden one
   // (display:none behind a styled button, a drop zone) is reached the way a person does: through its visible label, else
   // the one visible button in its nearest container, else that visible container. With nothing visible it is left out.
   if (window.__jevFiles === true) {
@@ -440,7 +440,7 @@
       });
     }
   }
-  // jev-browse: controls sharing a role and label (a product grid's "Add to cart" buttons) are told apart by the card or
+  // jevway: controls sharing a role and label (a product grid's "Add to cart" buttons) are told apart by the card or
   // row each sits in, as a person reads the page: "Add to cart — Sauce Labs Bike Light". Only colliding labels change;
   // a nameless control (its label is its bare role) has nothing to share, and members whose cards read the same stay as is.
   const squash = (text) => text.replace(/\s+/g, ' ').trim();
@@ -512,7 +512,7 @@
       a.label = cap(bareLabel(a), 200 - suffix.length - context.length - 3) + ' — ' + context + suffix;
     }
   }
-  // jev-browse: a person sees whether a password field has dots in it; the model gets only that fact, never the value.
+  // jevway: a person sees whether a password field has dots in it; the model gets only that fact, never the value.
   // It goes out as data (`passwordFields`) and as lines before the walked text, so the text cap never cuts them. The value
   // is only compared with '' and never kept.
   const passwordFields = queried
@@ -528,7 +528,7 @@
       (i === 0 ? ' (passwords are typed by the user, not by you)' : ''),
   );
   const words = [];
-  // jev-browse: a frame reads only the part of it the page leaves on screen (set by the tab); a page reads its viewport.
+  // jevway: a frame reads only the part of it the page leaves on screen (set by the tab); a page reads its viewport.
   const view = window.__jevView || { x: 0, y: 0, w: innerWidth, h: innerHeight };
   const range = document.createRange();
   let node,
@@ -569,7 +569,7 @@
   const omitted_actions = Math.max(0, actions.length - 250);
   actions.splice(250);
   actions.forEach((a, i) => (a.id = 'e' + (i + 1)));
-  // jev-browse: an app shell keeps the document still and scrolls a pane. When the document can't move one way, the
+  // jevway: an app shell keeps the document still and scrolls a pane. When the document can't move one way, the
   // largest visible box that can is offered instead, with the wheel aimed at the centre of its visible part (DOM rects
   // only) and a step of 80% of its visible height, so a short pane never steps past a row.
   const panes = [];

@@ -1,10 +1,10 @@
 /**
- * How the real-agent suite reads the `confirm_irreversible` calls a calling agent made. jev-browse honours the flag only on
+ * How the real-agent suite reads the `confirm_irreversible` calls a calling agent made. jevway honours the flag only on
  * a session's first call or on the call right after a `needs_confirmation`; anywhere else it is a no-op, so the judge
  * counts the honoured calls and only reports the ignored ones.
  */
 
-/** One `browser_task` call the agent made, with what jev-browse answered. */
+/** One `browser_task` call the agent made, with what jevway answered. */
 export interface BrowserCall {
   args: {
     goal?: string;
@@ -22,13 +22,13 @@ export interface BrowserCall {
   error?: string;
 }
 
-// A call belongs to the session it continues, or to the one jev-browse opened for it.
+// A call belongs to the session it continues, or to the one jevway opened for it.
 export const sessionOf = (call: BrowserCall) => call.args.session ?? call.result?.session;
 
 /** The calls that carried `confirm_irreversible`, honoured or not. */
 export const flaggedCalls = (calls: BrowserCall[]) => calls.filter((call) => call.args.confirm_irreversible === true);
 
-/** True when jev-browse acts on the flag of this call: it opens a session, or the call before it in the session ended `needs_confirmation`. */
+/** True when jevway acts on the flag of this call: it opens a session, or the call before it in the session ended `needs_confirmation`. */
 export const isHonoured = (calls: BrowserCall[], call: BrowserCall) => {
   if (call.args.confirm_irreversible !== true) return false;
   if (!call.args.session) return true;
@@ -49,7 +49,7 @@ export const confirmsOffTarget = (calls: BrowserCall[], targets: string[] = []) 
 export interface ConfirmCounts {
   flagged: number;
   honoured: number;
-  /** Flagged but dropped by jev-browse: a no-op, reported and never judged. */
+  /** Flagged but dropped by jevway: a no-op, reported and never judged. */
   ignored: number;
   /** Honoured calls in sessions that are not about any of `targets`. */
   honouredOffTarget: number;
@@ -71,7 +71,7 @@ export const confirmCounts = (calls: BrowserCall[], targets: string[] = []): Con
   };
 };
 
-/** What one `confirm_irreversible` call named: its `confirm_target`, whether the prompt contains those words, and whether jev-browse refused them. */
+/** What one `confirm_irreversible` call named: its `confirm_target`, whether the prompt contains those words, and whether jevway refused them. */
 export interface ConfirmTarget {
   target?: string;
   inPrompt: boolean;
@@ -79,7 +79,7 @@ export interface ConfirmTarget {
   refused: boolean;
 }
 
-// The two reasons jev-browse gives for a confirmation it will not act on: no target, or a target the page does not show.
+// The two reasons jevway gives for a confirmation it will not act on: no target, or a target the page does not show.
 const REFUSED_CONFIRMATION = /^confirm_(irreversible needs confirm_target|target ")/;
 
 export const confirmTargets = (calls: BrowserCall[], prompt: string): ConfirmTarget[] =>
@@ -98,5 +98,5 @@ export const describeConfirmTarget = ({ target, inPrompt, honoured, refused }: C
   `${honoured ? 'honoured' : 'ignored'} · ${
     target === undefined
       ? 'no confirm_target'
-      : `"${target}" · ${inPrompt ? 'words from the prompt' : 'NOT in the prompt'} · ${refused ? 'refused by jev-browse' : 'matched by jev-browse'}`
+      : `"${target}" · ${inPrompt ? 'words from the prompt' : 'NOT in the prompt'} · ${refused ? 'refused by jevway' : 'matched by jevway'}`
   }`;

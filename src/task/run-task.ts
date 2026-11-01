@@ -328,7 +328,7 @@ export class BrowserTask {
     return scrubberFor(this.#options.values, this.#options.secretKeys)(value);
   }
 
-  // jev-browse: a page is scrubbed of secrets as soon as the run reads it, so every label, value, history line, page
+  // jevway: a page is scrubbed of secrets as soon as the run reads it, so every label, value, history line, page
   // message and reason is built from scrubbed text before anything cuts it short (a cut secret no longer matches the
   // later whole-request scrub). What input needs stays as read: the freshness marker, guards, keys and fingerprint,
   // a select option's value; the tab still types the real value.
@@ -372,7 +372,7 @@ export class BrowserTask {
     for (const [index, tab] of this.#tabs.entries()) if (index > 0 || !keepFirst) await tab.close();
   }
 
-  // jev-browse: a tab the session's tab opened becomes the session's tab (the newest, if several); when the tab in use
+  // jevway: a tab the session's tab opened becomes the session's tab (the newest, if several); when the tab in use
   // closes, the run goes back to the newest one it drove that is still open. Says which happened, for the history note.
   async #switchTabs(): Promise<'opened' | 'closed' | undefined> {
     const opened = this.#tab.takeOpened().at(-1);
@@ -419,7 +419,7 @@ export class BrowserTask {
       files: { ...this.#options.files, ...checkUploadFiles(files) },
     };
     if (!confirmIrreversible) return;
-    // A confirmation answers the question jev-browse asked, so a flag carried onto a later call allows nothing (an unused earlier one stands).
+    // A confirmation answers the question jevway asked, so a flag carried onto a later call allows nothing (an unused earlier one stands).
     if (this.#lastStatus === undefined || this.#lastStatus === 'needs_confirmation') {
       this.#confirmedCommit = true;
       this.#confirmTarget = confirmTarget;
@@ -557,7 +557,7 @@ export class BrowserTask {
       return stop(status, reason, decision, { overridable: true });
     };
 
-    // jev-browse: a bot check offers nothing to act on, and the run never tries to get past one. It gets wallWaitMs to clear
+    // jevway: a bot check offers nothing to act on, and the run never tries to get past one. It gets wallWaitMs to clear
     // itself (the page read again meanwhile), once per call: one that comes back after clearing ends the run at once.
     let wallWaited = false;
     const wallAfterWait = async (): Promise<{ wall?: BotWall; cleared: boolean }> => {
@@ -654,7 +654,7 @@ export class BrowserTask {
           continue;
         }
 
-        // jev-browse: an error the page shows after this call acted, or a sign-in wall no supplied value passes, is the caller's to handle.
+        // jevway: an error the page shows after this call acted, or a sign-in wall no supplied value passes, is the caller's to handle.
         const signIn = this.#signInWall(decision, page);
         const error = executed > 0 ? this.#pageError(decision, page) : undefined;
         if (signIn || error) {
@@ -794,7 +794,7 @@ export class BrowserTask {
         const action = decision.action!;
         const text = decision.valueKey ? values[decision.valueKey] : undefined;
         let element: string;
-        // jev-browse: the dialog a confirmed click opens is the same action asking again; any other dialog still gets the answer that changes nothing.
+        // jevway: the dialog a confirmed click opens is the same action asking again; any other dialog still gets the answer that changes nothing.
         if (isRiskyClick(decision) && this.#confirmedCommit) this.#tab.armConfirm([this.#confirmTarget ?? '', bareLabel(decision.action?.label ?? '')]);
         try {
           await this.#recording?.step(
@@ -1002,7 +1002,7 @@ export class BrowserTask {
     }
   }
 
-  // jev-browse: the caller's checks are facts about the final page, so they settle the status the loop chose. A failed
+  // jevway: the caller's checks are facts about the final page, so they settle the status the loop chose. A failed
   // check overturns `done`; passing checks finish a hand-back only together with a done_when score made on that same
   // page, because the checked text may have been there before the run. Questions for the caller are never changed.
   #settle(summary: TaskSummary): TaskSummary {
@@ -1029,7 +1029,7 @@ export class BrowserTask {
     return { ...summary, checks: results };
   }
 
-  // jev-browse: a done carries the span of the final page that shows done_when, chosen by Jev and copied by code, so the caller
+  // jevway: a done carries the span of the final page that shows done_when, chosen by Jev and copied by code, so the caller
   // can check it at a glance. A failed request, `absent` or an unsure answer leaves it out; the status never changes.
   async #withEvidence(summary: TaskSummary): Promise<TaskSummary> {
     const { doneWhen } = this.#options;
@@ -1094,7 +1094,7 @@ export class BrowserTask {
       // A dialog is page content the run never observed: scrubbed here, before the cut, like every observed page.
       const message = this.#scrub(dialog.message).slice(0, DIALOG_MESSAGE_CHARS);
       this.#dialogNotes.push(`the page then ${describeDialog(dialog.type, message, dialog.accepted)}`);
-      // jev-browse: a page asking before you leave means the run's own edit isn't saved, and a person saves first.
+      // jevway: a page asking before you leave means the run's own edit isn't saved, and a person saves first.
       const unsaved = dialog.type === 'beforeunload' && click ? this.#unsavedOn(click.path, click.unsaved) : undefined;
       if (unsaved && click) {
         const clicked = String(click.action.node ?? click.action.label);
@@ -1111,7 +1111,7 @@ export class BrowserTask {
       this.#dialogsSeen.set(key, seen);
       // An alert's OK and the OK for a confirmed click's own confirm are no loop; a declined confirm, prompt or leave-the-page prompt that returns is.
       if (seen > 1 && !dialog.accepted) {
-        repeated ??= `The page keeps asking ${message ? `"${message}" ` : ''}(${dialog.type} dialog). jev-browse only answers Cancel to these; ask the user how to proceed.`;
+        repeated ??= `The page keeps asking ${message ? `"${message}" ` : ''}(${dialog.type} dialog). jevway only answers Cancel to these; ask the user how to proceed.`;
       }
     }
     const last = this.#history.length - 1;
@@ -1251,7 +1251,7 @@ export class BrowserTask {
     this.#seenLines.set(path, seen);
   }
 
-  // jev-browse: what the page said after the last submit is the first line of the text Jev reads. The done check judges the current
+  // jevway: what the page said after the last submit is the first line of the text Jev reads. The done check judges the current
   // page's text only, so a "saved" message that scrolled away (or sits above the viewport) is no evidence unless the text carries it.
   // It stays while the run is on the path where the message appeared; the caller's page_text is never changed.
   #withSaid(page: PageState): PageState {
@@ -1736,7 +1736,7 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 
 // The hand-back for a bot wall: what it is, what made it one, and who can pass it.
 const wallReason = (wall: BotWall) =>
-  `The page is a bot check (${wall.name}; seen: ${wall.evidence.map((e) => (e.startsWith('title ') ? e : `"${e}"`)).join(', ')}) that did not clear by itself; jev-browse never tries to get past one. A person can pass it in this tab, then continue the session.`;
+  `The page is a bot check (${wall.name}; seen: ${wall.evidence.map((e) => (e.startsWith('title ') ? e : `"${e}"`)).join(', ')}) that did not clear by itself; jevway never tries to get past one. A person can pass it in this tab, then continue the session.`;
 
 // Anything that is not a model error came from the tab (CDP, page never settling, an unconfirmed action).
 const describeError = (error: unknown) =>

@@ -275,7 +275,7 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
       questions[`value_for_${index}`] = valueQuestion(input, space, index);
     }
   }
-  // jev-browse: like values, a declared file is picked per field by key; the model sees each key's file name, never its path.
+  // jevway: like values, a declared file is picked per field by key; the model sees each key's file name, never its path.
   if (Object.keys(input.files ?? {}).length) {
     for (const index of Object.keys(targets.UPLOAD ?? {}).slice(0, MAX_SPECULATIVE_VALUE_FIELDS)) {
       questions[`file_for_${index}`] = fileQuestion(input, space, index);
@@ -542,7 +542,7 @@ const readRisk = (answer: any) => {
   return typeof risk === 'number' && Number.isFinite(risk) && risk >= 0 && risk <= 1 ? risk : 1;
 };
 
-// jev-browse: the quote a `done` carries. Only the page's own text is offered, cut by code; Jev picks one span or `absent`.
+// jevway: the quote a `done` carries. Only the page's own text is offered, cut by code; Jev picks one span or `absent`.
 // Measured on 6 pages (plan 100): the first wording chose absent where one span held the specific part of the condition.
 const EVIDENCE = `Each option is a span of visible text from the CURRENT page, in page order. Which ONE span is the best
 visible evidence that the completion condition is satisfied right now: the heading or title naming what the condition

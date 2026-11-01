@@ -252,7 +252,7 @@ const CHECKS: Record<string, Check[]> = {
 await runJobs({
   name: 'forgejo',
   ...(process.env.JEV_FORGEJO_CHECKS === '1' && { checks: CHECKS }),
-  title: (jobCount) => `Forgejo: ${jobCount} write jobs with jev-browse`,
+  title: (jobCount) => `Forgejo: ${jobCount} write jobs with jevway`,
   startUrl: APP_URL,
   browser: process.env.JEV_FORGEJO_BROWSER ?? 'launch-headless',
   jobs: JOBS,

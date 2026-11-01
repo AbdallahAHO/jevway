@@ -19,7 +19,7 @@ export interface FollowUp {
   values: Record<string, string>;
   /** A URL the calling agent opens in the same tab before the second call, as it would follow a link from an email. */
   navigate?: string;
-  /** A fixed harness script run on the tab after `navigate`, before the second call: what the calling agent's own browser tool does (e.g. types a password, which jev-browse never does). */
+  /** A fixed harness script run on the tab after `navigate`, before the second call: what the calling agent's own browser tool does (e.g. types a password, which jevway never does). */
   prepare?: (tab: Tab) => Promise<void>;
   /** The label of the click the second call's request names (see `Job.confirms`). */
   confirms?: RegExp;
@@ -49,7 +49,7 @@ export interface Job {
   firstDoneWhen?: string;
   /** How a pass is judged, for readers of the report. */
   check: string;
-  /** Ground truth from the final page or the app's own state (e.g. its API), never the task's own status. `summaries` are the run's calls, for a check on what jev-browse did (e.g. a value it must not have typed). */
+  /** Ground truth from the final page or the app's own state (e.g. its API), never the task's own status. `summaries` are the run's calls, for a check on what jevway did (e.g. a value it must not have typed). */
   passes: (url: URL, text: string, summaries: TaskSummary[]) => boolean | Promise<boolean>;
   /**
    * The label of the irreversible click the user's request names, e.g. `/register/i`. A call that ends `needs_confirmation`
@@ -209,13 +209,13 @@ const featuredRun = (runs: RunResult[]) => runs.find((r) => r.passed) ?? runs.fi
 // --- the suite, from its title and out folder
 
 /**
- * The hero's first sentence from a suite title like "Forgejo: 11 write jobs with jev-browse".
+ * The hero's first sentence from a suite title like "Forgejo: 11 write jobs with jevway".
  *
  * @example
- * suiteSentence('Forgejo: 11 write jobs with jev-browse', 11) // 'Eleven write jobs on Forgejo.'
+ * suiteSentence('Forgejo: 11 write jobs with jevway', 11) // 'Eleven write jobs on Forgejo.'
  */
 const suiteSentence = (title: string, jobCount: number) => {
-  const parts = /^(.+?):\s+(\d+)\s+(.*?)jobs?\s+with jev-browse$/.exec(title.trim());
+  const parts = /^(.+?):\s+(\d+)\s+(.*?)jobs?\s+with (?:jevway|jev-browse)$/.exec(title.trim());
   if (!parts) return `${title.replace(/\.$/, '')}.`;
   const [, app, count, kind] = parts;
   const n = Number(count) || jobCount;
@@ -352,7 +352,7 @@ ${figure(seconds(median(finished.map(elapsed))), `median run · ${plural(median(
 ${cost}
 </div>
 <section class="section" id="jobs" aria-labelledby="jobs-title">
-<div class="section-head grid4"><p class="small c2">Jobs<br>${runsPerJob}</p><h2 class="section-title c3s2" id="jobs-title">What jev-browse was asked to do</h2></div>
+<div class="section-head grid4"><p class="small c2">Jobs<br>${runsPerJob}</p><h2 class="section-title c3s2" id="jobs-title">What jevway was asked to do</h2></div>
 <div class="filters grid4 needs-js"><p class="meta">Show</p><div class="textlinks c2s3" role="group" aria-label="Filter jobs">${filters
     .map(([key, label, count]) => `<button type="button" data-filter="${key}" aria-pressed="${key === 'all'}">${label} <span class="num">${count}</span></button>`)
     .join('')}</div></div>
@@ -500,7 +500,7 @@ ${failures}
  * can be switched to. Pure: the same input gives the same page (the time shown is the out folder's start time).
  *
  * @example
- * writeFileSync('report.html', renderReport({ title: 'Forgejo: 11 write jobs with jev-browse', results, model, screenshots,
+ * writeFileSync('report.html', renderReport({ title: 'Forgejo: 11 write jobs with jevway', results, model, screenshots,
  *   device: 'desktop', phrasing: 'as-written', readRecording, outFolder: 'forgejo-2026-11-01T15-43-33-653Z', writes: true }));
  */
 export const renderReport = ({
@@ -514,7 +514,7 @@ export const renderReport = ({
   outFolder,
   writes,
 }: {
-  /** The page title, e.g. "Langfuse demo: 16 jobs with jev-browse"; the hero's first sentence is made from it. */
+  /** The page title, e.g. "Langfuse demo: 16 jobs with jevway"; the hero's first sentence is made from it. */
   title: string;
   results: ReportResult[];
   model: string;
@@ -550,7 +550,7 @@ export const renderReport = ({
 ${HEAD_SCRIPT}
 <style>${STYLE}</style>
 </head><body>
-<nav class="top" aria-label="Report"><div class="wrapper"><a href="#overview">jev-browse / ${escape(suiteName(title, outFolder))}</a><div class="links"><a href="#jobs">Jobs</a><a href="#method">Method</a></div></div></nav>
+<nav class="top" aria-label="Report"><div class="wrapper"><a href="#overview">jevway / ${escape(suiteName(title, outFolder))}</a><div class="links"><a href="#jobs">Jobs</a><a href="#method">Method</a></div></div></nav>
 <main>
 ${overviewView({ title, results, suiteWrites, runsPerJob }, recordingOf)}
 ${views.join('\n')}

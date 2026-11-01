@@ -5,7 +5,7 @@
  * asks for the order to be placed and must end `needs_confirmation` on the overview page, never on
  * `/checkout-complete.html`. `missing-zip` and `locked-out` expect a hand-back, not `done`.
  *
- * The harness signs in before each run (jev-browse never lists password fields; the calling agent signs in with its
+ * The harness signs in before each run (jevway never lists password fields; the calling agent signs in with its
  * own tool, per skill/jev-browse/SKILL.md), so every goal starts on the product list. `locked-out` signs in as the
  * locked-out account instead, leaving the login page with its error.
  *
@@ -146,7 +146,7 @@ let jobInRun = '';
 
 await runJobs({
   name: 'checkout',
-  title: (jobCount) => `SauceDemo checkout: ${jobCount} jobs with jev-browse`,
+  title: (jobCount) => `SauceDemo checkout: ${jobCount} jobs with jevway`,
   startUrl: START_URL,
   browser: process.env.JEV_CHECKOUT_BROWSER ?? 'launch-headless',
   jobs: JOBS,

@@ -156,7 +156,7 @@ describe('an upload', () => {
     const field: PageAction = { id: 'e1', kind: 'upload', node: FRAME_ID_STRIDE + 4, role: 'file', label: 'CV (file field)', frame: 'F1' };
     const refused = await tab.upload(field, PAGE, '/Users/ada/cv.pdf').catch((error: Error) => error);
     expect(refused).toBeInstanceOf(TargetUnreachable);
-    expect((refused as Error).message).toBe('"CV (file field)" is inside a frame, and jev-browse uploads only to file fields in the page itself');
+    expect((refused as Error).message).toBe('"CV (file field)" is inside a frame, and jevway uploads only to file fields in the page itself');
     expect(calls.some((call) => call.method === 'DOM.setFileInputFiles')).toBe(false);
   });
 });

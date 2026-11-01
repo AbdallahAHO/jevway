@@ -10,7 +10,7 @@
  *
  * Two-call jobs give a `followUp`: after the first call it reads the page's table and URL (or any other system, e.g. a
  * mailbox) and returns the second call's goal and values. It may also set `navigate` (a URL to open first, like a link
- * from an email) and `prepare` (a fixed script on the tab, like typing a password, which jev-browse never does). A job
+ * from an email) and `prepare` (a fixed script on the tab, like typing a password, which jevway never does). A job
  * sets `confirms` (and a follow-up its own) to the label of the irreversible click the user's request names, e.g.
  * `/register/i`: the runner confirms each distinct click that matches once (up to 3 per call) and hands back any
  * other, like a calling agent that asks the user about everything the request did not name. It passes the job's
@@ -22,7 +22,7 @@
  * @example
  * await runJobs({
  *   name: 'grafana',
- *   title: (count) => `Grafana play: ${count} jobs with jev-browse`,
+ *   title: (count) => `Grafana play: ${count} jobs with jevway`,
  *   startUrl: 'https://play.grafana.org/',
  *   browser: process.env.JEV_GRAFANA_BROWSER ?? 'launch-headless',
  *   jobs: JOBS,
@@ -273,7 +273,7 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
     report,
     renderReport({ title: title(results.length), results, model, screenshots, device: device.name, phrasing, readRecording: readSteps, outFolder, writes }),
   );
-  // A value the job marks secret is written as the marker, as jev-browse itself would show it. `confirms` is saved as its
+  // A value the job marks secret is written as the marker, as jevway itself would show it. `confirms` is saved as its
   // source ("/register/i"), so `verify/jobs/rerender.ts` can show it; the fields after `results` let it rebuild the page.
   const written = results.map((result) => ({
     ...result,

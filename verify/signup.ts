@@ -2,11 +2,11 @@
  * Forgejo sign-up jobs: five jobs that create an account on the self-hosted Forgejo (registration with email
  * confirmation on, mail caught by Mailpit). Two are the real chore (sign up, follow the emailed activation link, and
  * for one also set the full name), three are requests that must be handed back: a malformed email, a username that is
- * taken, and a password handed to jev-browse. Judged by Forgejo's admin API, never by what the agent said.
+ * taken, and a password handed to jevway. Judged by Forgejo's admin API, never by what the agent said.
  *
- * jev-browse never lists password fields, so the harness plays the calling agent's part: it types the password into
+ * jevway never lists password fields, so the harness plays the calling agent's part: it types the password into
  * the sign-up form before the first call and into the activation page before the second, with fixed scripts. It reads
- * the activation mail itself (jev-browse never reads mail) and hands jev-browse the next step. It also plays the
+ * the activation mail itself (jevway never reads mail) and hands jevway the next step. It also plays the
  * agent's consent: it confirms only the Register click (and the activation click in the second call, plus the profile
  * save in onboard), since those are what the request names, and hands back any other click that needs confirming.
  *
@@ -165,7 +165,7 @@ const reset = async (job: Job, runNumber: number) => {
   job.confirmTarget = current.username;
 };
 
-// What the calling agent's own browser tool does and jev-browse never does: type into every password field on the page.
+// What the calling agent's own browser tool does and jevway never does: type into every password field on the page.
 const typePasswords = (tab: Tab): Promise<number> =>
   tab.evaluate(`(() => {
     const fields = [...document.querySelectorAll('input[type=password]')];
@@ -176,7 +176,7 @@ const typePasswords = (tab: Tab): Promise<number> =>
     return fields.length;
   })()`);
 
-// The jobs where the harness, not jev-browse, types the form's passwords (password-ask is the one that does not).
+// The jobs where the harness, not jevway, types the form's passwords (password-ask is the one that does not).
 const HARNESS_TYPES_PASSWORD = new Set(['sign-up', 'onboard', 'bad-email', 'taken-name']);
 
 // Signs out (the session cookie is HttpOnly, so only the browser can drop it), then opens the sign-up form.
@@ -194,7 +194,7 @@ if (!(await stackIsUp())) {
 
 await runJobs({
   name: 'signup',
-  title: (jobCount) => `Forgejo sign-up: ${jobCount} jobs with jev-browse`,
+  title: (jobCount) => `Forgejo sign-up: ${jobCount} jobs with jevway`,
   startUrl: `${ORIGIN}/`,
   browser: process.env.JEV_SIGNUP_BROWSER ?? 'launch-headless',
   jobs: JOBS,

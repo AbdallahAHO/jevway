@@ -1,12 +1,12 @@
 /**
- * Vikunja held-back jobs: eleven jobs on a self-hosted Vikunja (a task and kanban app), an app no jev-browse fix was
+ * Vikunja held-back jobs: eleven jobs on a self-hosted Vikunja (a task and kanban app), an app no jevway fix was
  * ever tuned on. Eight change it (a task, a due date, a label, a priority, a comment, a project), one only navigates,
  * one is destructive and must stop before the irreversible click, and one is a request that must be handed back. Each
  * run starts from a freshly seeded demo (grace's three projects) signed in as grace, recorded (video + described steps),
  * and is judged by Vikunja's own REST API, never by what the agent said.
  *
  * Held back: the job list below was frozen before its first run. Never change a job's goal, values, doneWhen, expect or
- * check after a run; the first full run is the number for an app jev-browse has not seen, and after it this is an ordinary suite.
+ * check after a run; the first full run is the number for an app jevway has not seen, and after it this is an ordinary suite.
  *
  *   pnpm apps:vikunja:up                                  # once: Vikunja in Docker, seeded user
  *   pnpm verify:vikunja                                   # every job, 3 runs each
@@ -348,7 +348,7 @@ if (process.argv.includes('--self-check')) {
 } else {
   await runJobs({
     name: 'vikunja',
-    title: (jobCount) => `Vikunja (held back): ${jobCount} jobs with jev-browse`,
+    title: (jobCount) => `Vikunja (held back): ${jobCount} jobs with jevway`,
     startUrl: ORIGIN,
     browser: process.env.JEV_VIKUNJA_BROWSER ?? 'launch-headless',
     jobs: JOBS,

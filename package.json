@@ -1,12 +1,13 @@
 {
-  "name": "jev-browse",
+  "name": "jevway",
   "version": "0.1.0",
   "description": "Hand a browser goal to TypeSafe Jev; get a short verified summary back. MCP server + CLI.",
   "type": "module",
   "license": "MIT",
+  "repository": "github:AbdallahAHO/jevway",
   "bin": {
-    "jev-browse": "dist/cli.js",
-    "jev-browse-mcp": "dist/mcp.js"
+    "jevway": "dist/cli.js",
+    "jevway-mcp": "dist/mcp.js"
   },
   "files": [
     "dist",

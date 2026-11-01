@@ -2,7 +2,7 @@ import { centerOf, contains, type Rect } from '../jev/box.ts';
 import { CdpError, type CdpConnection } from './cdp.ts';
 import type { PageAction, PageState } from './tab.ts';
 
-// jev-browse: every frame is read with the same reader (snapshot.js), each in an isolated world of its own, so ids, guards and
+// jevway: every frame is read with the same reader (snapshot.js), each in an isolated world of its own, so ids, guards and
 // the input counter live where the frame's elements live. The main frame keeps the main world, exactly as before frames.
 
 /** Each frame owns a range of element ids this wide; the main frame is range 0, so its ids are what they always were. */
@@ -19,8 +19,8 @@ const MIN_SIDE = 16;
 const TEXT_CAP = 6000;
 const FRAME_TEXT_FLOOR = 1000;
 const PASSWORD_FIELDS_CAP = 5;
-const WORLD = 'jev-browse';
-const OBJECTS = 'jev-browse-frames';
+const WORLD = 'jevway';
+const OBJECTS = 'jevway-frames';
 
 /**
  * The first element id of a frame's range.

@@ -218,7 +218,7 @@ const JOBS: Job[] = [
 
 await runJobs({
   name: 'langfuse',
-  title: (jobCount) => `Langfuse demo: ${jobCount} jobs with jev-browse`,
+  title: (jobCount) => `Langfuse demo: ${jobCount} jobs with jevway`,
   startUrl: PROJECT,
   browser: process.env.JEV_LANGFUSE_BROWSER ?? 'http://127.0.0.1:9333',
   jobs: JOBS,

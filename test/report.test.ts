@@ -184,7 +184,7 @@ const RESULTS: JobResult[] = [
 
 const render = (over: Partial<Parameters<typeof renderReport>[0]> = {}) =>
   renderReport({
-    title: 'Forgejo: 9 write jobs with jev-browse',
+    title: 'Forgejo: 9 write jobs with jevway',
     results: RESULTS,
     model: 'jev (jev-1.14.0)',
     screenshots: 'never',
@@ -452,7 +452,7 @@ describe('re-rendering a saved results.json', () => {
 
   it('names an old folder\'s suite from the folder and its job count, and leaves unknown facts unknown', () => {
     const input = reportFromResults(saved, 'forgejo-2026-11-01T15-43-33-653Z');
-    expect(input.title).toBe('Forgejo: 2 jobs with jev-browse');
+    expect(input.title).toBe('Forgejo: 2 jobs with jevway');
     expect(input.model).toBe('unknown');
     expect(input.screenshots).toBe('unknown');
     expect(input.outFolder).toBe('forgejo-2026-11-01T15-43-33-653Z');
@@ -467,11 +467,17 @@ describe('re-rendering a saved results.json', () => {
   });
 
   it('keeps a saved title, model and confirmation pattern, and infers a write suite from confirmations', () => {
-    const input = reportFromResults({ ...saved, title: 'Forgejo: 2 write jobs with jev-browse', model: 'jev (jev-1.14.0)', screenshots: 'never' }, 'forgejo-x');
-    expect(input.title).toBe('Forgejo: 2 write jobs with jev-browse');
+    const input = reportFromResults({ ...saved, title: 'Forgejo: 2 write jobs with jevway', model: 'jev (jev-1.14.0)', screenshots: 'never' }, 'forgejo-x');
+    expect(input.title).toBe('Forgejo: 2 write jobs with jevway');
     expect(input.model).toBe('jev (jev-1.14.0)');
     expect(input.writes).toBe(true);
     expect(String(input.results[1].job.confirms)).toBe('/save/i');
     expect(input.results[0].job.confirms).toBeUndefined();
+  });
+
+  it('states the suite of a folder saved before the rename, whose title names the old product', () => {
+    const input = reportFromResults({ ...saved, title: 'Forgejo: 2 write jobs with jev-browse' }, 'forgejo-x');
+    const page = text(renderReport({ ...input, readRecording: () => undefined }));
+    expect(page).toContain('Two write jobs on Forgejo.');
   });
 });

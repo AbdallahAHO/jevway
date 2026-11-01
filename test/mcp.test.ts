@@ -51,7 +51,7 @@ beforeAll(async () => {
 });
 
 describe('tools/list', () => {
-  it("tells a client which tools can change a site and which only touch jev-browse's own state", async () => {
+  it("tells a client which tools can change a site and which only touch jevway's own state", async () => {
     const { tools } = await client.listTools();
     const hints = Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]));
     expect(hints).toEqual({

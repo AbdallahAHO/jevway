@@ -7,7 +7,7 @@ const first = (status: string, extra: BrowserCall['args'] = {}) => call(status, 
 const later = (status: string, extra: BrowserCall['args'] = {}) => call(status, { session: 's1', ...extra });
 const flag = { confirm_irreversible: true, confirm_target: 'ada/scratch' };
 
-describe('which confirm_irreversible flags jev-browse honours', () => {
+describe('which confirm_irreversible flags jevway honours', () => {
   // The delete-named run that the judge used to fail for carrying the flag on four calls.
   const eagerAgent = [first('needs_input', flag), later('needs_confirmation', flag), later('needs_confirmation', flag), later('uncertain', flag)];
 
@@ -45,7 +45,7 @@ describe('which confirm_irreversible flags jev-browse honours', () => {
 });
 
 describe('what the judge reports about each confirm call', () => {
-  it('says whether the call was honoured, its target came from the prompt, and jev-browse refused it', () => {
+  it('says whether the call was honoured, its target came from the prompt, and jevway refused it', () => {
     const calls = [
       first('needs_input', flag),
       later('needs_confirmation', { confirm_irreversible: true, confirm_target: 'the old one' }),

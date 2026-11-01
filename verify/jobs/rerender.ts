@@ -42,7 +42,7 @@ const suiteOf = (folder: string) => {
  *
  * @example
  * reportFromResults(JSON.parse(readFileSync('results.json', 'utf8')), 'signup-2026-11-01T15-45-48-680Z').title
- * // 'Signup: 5 jobs with jev-browse' (when results.json has no title)
+ * // 'Signup: 5 jobs with jevway' (when results.json has no title)
  */
 export const reportFromResults = (saved: SavedResults, folder: string) => {
   const results: ReportResult[] = saved.results.map(({ job, runs }) => ({
@@ -50,7 +50,7 @@ export const reportFromResults = (saved: SavedResults, folder: string) => {
     runs,
   }));
   return {
-    title: saved.title ?? `${suiteOf(folder)}: ${results.length} jobs with jev-browse`,
+    title: saved.title ?? `${suiteOf(folder)}: ${results.length} jobs with jevway`,
     results,
     model: saved.model ?? 'unknown',
     screenshots: saved.screenshots ?? 'unknown',

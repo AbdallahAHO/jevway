@@ -66,7 +66,7 @@ const chromeExecutable = () => {
 };
 
 const launchChrome = async (headless: boolean): Promise<ChromeHandle> => {
-  const profile = mkdtempSync(join(tmpdir(), 'jev-browse-'));
+  const profile = mkdtempSync(join(tmpdir(), 'jevway-'));
   const args = [
     `--user-data-dir=${profile}`,
     '--remote-debugging-port=0',

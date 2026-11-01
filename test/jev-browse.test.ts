@@ -3200,7 +3200,7 @@ describe('page dialogs', () => {
       const summary = await new BrowserTask(asTab, ask, { goal: 'Open' }).run();
       expect(summary.status).toBe('blocked');
       expect(summary.reason).toBe(
-        'The page keeps asking "Discard the draft?" (confirm dialog). jev-browse only answers Cancel to these; ask the user how to proceed.',
+        'The page keeps asking "Discard the draft?" (confirm dialog). jevway only answers Cancel to these; ask the user how to proceed.',
       );
       expect(acted).toHaveLength(2);
       expect(requests).toHaveLength(2);
@@ -3302,7 +3302,7 @@ describe('page dialogs', () => {
         expect(summary.steps[0].not_executed).toBeUndefined();
         expect(summary.status).toBe('blocked');
         expect(summary.reason).toBe(
-          'The page keeps asking (beforeunload dialog). jev-browse only answers Cancel to these; ask the user how to proceed.',
+          'The page keeps asking (beforeunload dialog). jevway only answers Cancel to these; ask the user how to proceed.',
         );
       });
     });
@@ -4070,7 +4070,7 @@ describe('a tab the run\'s tab opens is followed', () => {
   it('hands back blocked with a browser error when the new tab never answers', async () => {
     const { opener } = openingDocs();
     opener.tab.follow = async () => {
-      throw new CdpError('The new tab did not answer within 5 s: it may be showing a dialog it raised before jev-browse could answer it');
+      throw new CdpError('The new tab did not answer within 5 s: it may be showing a dialog it raised before jevway could answer it');
     };
     const { ask } = scriptedJev([{ operation: 'CLICK' }, { operation: 'DONE' }]);
     const summary = await new BrowserTask(opener.asTab, ask, { goal: 'Open the docs', changeWaitMs: 0 }).run();
@@ -4347,7 +4347,7 @@ describe('a bot wall', () => {
     const summary = await new BrowserTask(asTab, ask, { goal: 'Open zod', doneWhen: 'x', changeWaitMs: 0, wallWaitMs: 0 }).run();
     expect(summary.status).toBe('blocked');
     expect(summary.reason).toContain('bot check (Cloudflare;');
-    expect(summary.reason).toContain('jev-browse never tries to get past one');
+    expect(summary.reason).toContain('jevway never tries to get past one');
     expect(summary.wall).toEqual({ kind: 'bot_check', origin: 'https://www.npmjs.com', name: 'cloudflare' });
     expect(summary.page_text).toContain('Performing security verification');
     expect(requests).toHaveLength(0);
