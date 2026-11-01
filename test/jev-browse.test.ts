@@ -7,7 +7,7 @@ import * as chrome from '../src/browser/chrome.ts';
 import { jpegSize, PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
 import { messageNames, showsTarget } from '../src/browser/words.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
-import { PAGE_ERROR, SIGN_IN_WALL } from '../src/jev/instructions.ts';
+import { PAGE_ERROR, SIGN_IN_WALL, STUCK, STUCK_MEANING } from '../src/jev/instructions.ts';
 import { buildRequest, decide, foldedFavourite, NO_SUPPLIED_FILE, NO_SUPPLIED_VALUE, overflowFolds, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
 import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
 import * as model from '../src/jev/model.ts';
@@ -5181,5 +5181,23 @@ describe('a dialog message is scrubbed before it is cut', () => {
     const summary = await task.run();
     expect(summary.steps[0].element).toContain('Your token is ready to copy now.');
     for (const output of [summary, requests, task.trace]) expect(JSON.stringify(output)).not.toContain(LONG.slice(0, 20));
+  });
+});
+
+describe('Jev is asked whether the run is stuck, recorded only', () => {
+  it('asks it on every step request with its rules and both meanings', () => {
+    const { questions } = buildRequest({ page: page(), goal: 'Book it', values: {}, history: [], checkCommitRisk: true }, buildActionSpace(bookingActions));
+    expect(questions.stuck).toEqual({ type: 'noul', instructions: { goal: 'Book it', rules: STUCK }, criteria: STUCK_MEANING });
+    expect(STUCK_MEANING.true).toContain('a different approach is needed');
+  });
+
+  it('keeps the score in the trace and changes no status', async () => {
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '4', stuck: 1 }, { operation: 'DONE', done_check: 0.95, stuck: 1 }]);
+    const { asTab, acted } = fakeTab([page({ fingerprint: 'a' }), page({ fingerprint: 'b' })]);
+    const task = new BrowserTask(asTab, ask, { goal: 'Open the booking', doneWhen: 'Open', changeWaitMs: 0 });
+    const summary = await task.run();
+    expect(summary.status).toBe('done');
+    expect(acted).toHaveLength(1);
+    expect(task.trace.map((entry) => entry.decision.answers.stuck?.noul)).toEqual([1, 1]);
   });
 });
