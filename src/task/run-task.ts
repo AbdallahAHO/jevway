@@ -9,7 +9,6 @@ import { ANY_HOST, narrowHosts, outsideHosts, type HostRules } from './hosts.ts'
 import { scrubberFor } from '../jev/secrets.ts';
 import { describeFailure, runChecks, type Check, type CheckResult } from './checks.ts';
 import { deepLink, quoteSpans } from './evidence.ts';
-import { lastChange, type LastChange } from '../jev/page-change.ts';
 import { Recording } from './recording.ts';
 import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
 import { checkUploadFiles, fileNames } from './upload-files.ts';
@@ -293,8 +292,6 @@ export class BrowserTask {
    * the stop was a judgment of progress the caller's checks may overturn (see #settle). Every other stop is final.
    */
   #ending: { page: PageState; decision?: Decision; firstRequest: number; overridable: boolean } | undefined;
-  /** What the last executed action changed, told to Jev until the next one runs; a fixed key the run pressed itself clears it. */
-  #lastChange: LastChange | undefined;
   #tab: Tab;
   /** Every tab this session drove, the first one first: the ones after it were opened by the session's own clicks. */
   #tabs: Tab[];
@@ -508,7 +505,6 @@ export class BrowserTask {
       this.#closedBeforeDone.add(node);
       await this.#recording?.step(this.#tab, page, { operation: 'PRESS_ESCAPE' });
       await this.#tab.dismissPopup();
-      this.#lastChange = undefined;
       this.#history.push({
         operation: 'PRESS_ESCAPE',
         element: 'closed the menu this run opened before finishing',
@@ -826,7 +822,6 @@ export class BrowserTask {
             this.#unreachable = { node: action.node, count: 1 };
             await this.#recording?.step(this.#tab, page, { operation: 'PRESS_ESCAPE' });
             await this.#tab.dismissPopup();
-            this.#lastChange = undefined;
             this.#history.push({
               operation: 'PRESS_ESCAPE',
               element: `closed the open popup covering "${action.label.slice(0, 80)}"`,
@@ -881,7 +876,6 @@ export class BrowserTask {
         const clickedWithEditPending = decision.operation === 'CLICK' && this.#unsavedEdit !== undefined;
 
         const before = page.fingerprint;
-        const pageBefore = page;
         const pathBefore = pathOf(page.url);
         const unsavedBefore = this.#unsavedEdit;
         const ran = {
@@ -929,10 +923,7 @@ export class BrowserTask {
         if (submitted) {
           this.#submits = [...this.#submits, { ...submitted, answer: newTextOf(page.text, submitted.textBefore) }].slice(-SUBMITS_KEPT);
         }
-        const saidNow = submitted || (clickedWithEditPending && !this.#unsavedEdit);
-        if (saidNow) this.#said = this.#saidAfter(bareLabel(action.label), page, textBefore);
-        // jev-browse: Jev sees one page at a time, so code names what this action changed; new words a page message already shows are left out.
-        this.#lastChange = lastChange(pageBefore, page, ran, { withText: !(saidNow && this.#said) });
+        if (submitted || (clickedWithEditPending && !this.#unsavedEdit)) this.#said = this.#saidAfter(bareLabel(action.label), page, textBefore);
         // A click that flipped a collapsed control open leaves the run's own menu: it is closed before the run says done.
         // A fold the disclosure rescue opened is for reading what is inside it, so it stays open.
         if (decision.operation === 'CLICK' && decision.via !== 'disclosure' && action.expanded === 'false' && page.actions.some((a) => a.node === action.node && a.expanded === 'true')) {
@@ -1165,7 +1156,6 @@ export class BrowserTask {
         imageTransport,
         box,
         unsureBelow: minConfidence,
-        lastChange: this.#lastChange,
         ...(elementRisk && { elementRisk: 'chosen' as const, pageRisk }),
       }).catch((error) => {
         if (error instanceof RunStopped) throw error;
