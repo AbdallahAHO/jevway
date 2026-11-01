@@ -1299,6 +1299,25 @@ describe('model choice', () => {
   });
 });
 
+describe('a summary carries the model it used and its estimated cost', () => {
+  const bookedPage = () => page({ text: 'Staylist\nBooking confirmed', url: 'http://fixture/stays#booking', fingerprint: 'booked' });
+  const run = (model?: string) => {
+    const { ask } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
+    return new BrowserTask(fakeTab([bookedPage()]).asTab, ask, { goal: 'Book', doneWhen: 'Booking confirmed', changeWaitMs: 0, model }).run();
+  };
+
+  it("names the model and prices every request, the done's evidence request included", async () => {
+    const summary = await run('jev-1.14.0');
+    expect(summary.status).toBe('done');
+    expect(summary.jev).toMatchObject({ requests: 2, input_tokens: 200, model: 'jev-1.14.0', est_cost_usd: 0.000008 });
+  });
+
+  it('has no cost for a model without a price, and no model when the task was given none', async () => {
+    expect((await run('cloudflare/clef-omni')).jev).toMatchObject({ model: 'cloudflare/clef-omni', est_cost_usd: null });
+    expect((await run()).jev).toMatchObject({ model: null, est_cost_usd: null });
+  });
+});
+
 describe('per-element commit risk', () => {
   const input = { page: page(), goal: 'Book', values: {}, history: [], checkCommitRisk: true };
 

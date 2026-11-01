@@ -15,9 +15,12 @@ const summary = (status: TaskStatus, reason: string, actions: number, over: Part
   page_text: '',
   elapsed_ms: 2000,
   steps: Array.from({ length: actions }, () => ({ operation: 'CLICK', confidence: 0.9 })) as unknown as TaskSummary['steps'],
-  jev: { requests: 4, input_tokens: 40_000, median_latency_ms: 350, screenshots: 0 },
+  jev: { requests: 4, input_tokens: 40_000, median_latency_ms: 350, screenshots: 0, model: 'jev-1.14.0', est_cost_usd: 0.00168 },
   ...over,
 });
+// A call saved before summaries carried a cost (an old out folder): no model, no est_cost_usd.
+const oldSummary = (status: TaskStatus, reason: string) =>
+  summary(status, reason, 1, { jev: { requests: 4, input_tokens: 40_000, median_latency_ms: 350, screenshots: 0 } as TaskSummary['jev'] });
 
 const step = (n: number, operation: string, description: string, video_at?: number, over: Partial<RecordedStep> = {}): RecordedStep => ({
   file: `${String(n).padStart(2, '0')}.jpg`,
@@ -232,6 +235,19 @@ describe('the overview', () => {
     expect(figures).toMatch(/Jev requests per run, 350 ms each/i);
   });
 
+  it('gives the estimated cost: the median run and the total, over the runs that ran', () => {
+    const figures = text(overview);
+    // Twelve runs ran: three of two calls ($0.00336), nine of one ($0.00168); the two errored runs never ran.
+    expect(figures).toContain('$0.0017 est. cost per run, median · $0.025 total');
+  });
+
+  it('says the cost is unknown for runs saved before summaries carried one, and leaves them out of the median and total', () => {
+    const old = { job: job('old', 'An old run'), runs: [run(1, 'old', { summaries: [oldSummary('done', 'Verified.')] })] };
+    expect(text(render({ results: [old] }))).toContain('unknown est. cost per run');
+    const mixed = text(render({ results: [RESULTS[1], old] }));
+    expect(mixed).toContain('$0.0017 est. cost per run, median of 3 priced runs · $0.0050 total');
+  });
+
   it('lists every job with its marks, pass count and kind, linking to its view', () => {
     expect(overview).toContain('href="#new-issue"');
     expect(text(overview)).toContain('2/2 · Write');
@@ -316,7 +332,7 @@ describe('a job view', () => {
     expect(facts).toMatch(/held/);
     expect(facts).toContain('needs confirmation → done');
     expect(facts).toContain('Completion condition verified.');
-    expect(facts).toMatch(/8 Jev requests · 80\.0k input tokens · 4\.0 s · 350 ms median request/);
+    expect(facts).toMatch(/8 Jev requests · 80\.0k input tokens · 4\.0 s · 350 ms median request · est\. \$0\.0034/);
     expect(text(panelOf(viewOf(html, 'flaky'), 2))).toMatch(/missed/);
   });
 
@@ -440,6 +456,14 @@ describe('re-rendering a saved results.json', () => {
     expect(input.model).toBe('unknown');
     expect(input.screenshots).toBe('unknown');
     expect(input.outFolder).toBe('forgejo-2026-11-01T15-43-33-653Z');
+  });
+
+  it('renders an old folder whose summaries carry no cost, the cost unknown and never $0', () => {
+    const old = { ...saved, results: [{ job: saved.results[0].job, runs: [run(1, 'a', { summaries: [oldSummary('done', 'Verified.')] })] }] };
+    const page = text(renderReport({ ...reportFromResults(old, 'forgejo-x'), readRecording: () => undefined }));
+    expect(page).toContain('350 ms median request · est. cost unknown');
+    expect(page).toContain('unknown est. cost per run');
+    expect(page).not.toContain('$0 ');
   });
 
   it('keeps a saved title, model and confirmation pattern, and infers a write suite from confirmations', () => {
