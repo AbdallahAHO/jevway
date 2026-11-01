@@ -177,6 +177,7 @@ for automation, with throwaway data; never on a third-party production account.
 | 104 | The yes/no questions state what true and false mean | P3 | S | — | REJECTED (`e4aeb41`): no gain, input tokens +1.5–6.7% per request |
 | 105 | A stuck question is recorded in traces before it gates anything | P2 | S | — | DONE (`6f58773`): recorded only; at ≥ 0.9 it cuts no done run over 99 traced runs; no gate (S5 covers its one catch) |
 | 106 | The verify jobs report opens on the run's video, in the Prima Persona layout | P2 | M | — | DONE (`b1a9d05`): offline only; 30 tests; `pnpm report:render` rebuilds older folders |
+| 107 | A run summary carries its estimated cost and the model it used | P3 | S | — | DONE (`107c80f`): `jev.model`, `jev.est_cost_usd` at $0.042 per 1M input tokens (Jev's published 1.12 rate, both routes, an estimate); other models null; reports show per-run, median and total |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
 they run in parallel. After merging, the gates are re-confirmed on the merged commit.
