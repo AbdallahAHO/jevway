@@ -4044,6 +4044,18 @@ describe('a tab the run\'s tab opens is followed', () => {
     expect(popup.tab.armed).toBeUndefined();
   });
 
+  it('hands back blocked with a browser error when the new tab never answers', async () => {
+    const { opener } = openingDocs();
+    opener.tab.follow = async () => {
+      throw new CdpError('The new tab did not answer within 5 s: it may be showing a dialog it raised before jev-browse could answer it');
+    };
+    const { ask } = scriptedJev([{ operation: 'CLICK' }, { operation: 'DONE' }]);
+    const summary = await new BrowserTask(opener.asTab, ask, { goal: 'Open the docs', changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toMatch(/^Browser error: The new tab did not answer within 5 s/);
+    expect(summary.steps.map((step) => step.element)).toEqual(['API documentation']);
+  });
+
   it('keeps a confirmation given before the switch for the new tab', async () => {
     const PAY: PageAction = { id: 'pay', kind: 'click', node: 70, role: 'button', label: 'Pay €412' };
     const opener = fakeTab([dashboard('d1')]);

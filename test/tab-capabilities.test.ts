@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CdpConnection } from '../src/browser/cdp.ts';
 import { DEVICES } from '../src/browser/devices.ts';
 import { StalePage, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
@@ -7,13 +7,15 @@ import { StalePage, Tab, type PageAction, type PageState } from '../src/browser/
  * A CDP connection for one tab: `Runtime.evaluate` answers the freshness marker with 'M' and each scroll-offset read with
  * the next of `offsets` (the last one repeats); every call is recorded with its params.
  */
-const fakeCdp = ({ offsets = [0] }: { offsets?: number[] } = {}) => {
+const fakeCdp = ({ offsets = [0], frozen = '' }: { offsets?: number[]; frozen?: string } = {}) => {
   const calls: { method: string; params: any; sessionId?: string }[] = [];
   const listeners = new Set<(method: string, params: any, sessionId?: string) => void>();
   const cdp = {
     send: async (method: string, params: any = {}, sessionId?: string) => {
       calls.push({ method, params, sessionId });
       if (method === 'Target.attachToTarget') return { sessionId: `S-${params.targetId}` };
+      // A tab frozen by a dialog nobody answered: nothing sent to it ever replies.
+      if (frozen && sessionId === frozen) return new Promise(() => undefined);
       if (method !== 'Runtime.evaluate') return {};
       const expression = String(params.expression);
       if (expression.includes('state?.marker')) return { result: { value: 'M' } };
@@ -95,6 +97,22 @@ describe('a tab our tab opens', () => {
     expect(on('Runtime.evaluate').filter((call) => String(call.params.expression).includes('__jevInput')).length).toBeGreaterThanOrEqual(2);
     emit('Page.javascriptDialogOpening', { type: 'confirm', message: 'Leave?' }, 'S-T2');
     expect(next.takeDialogs()).toEqual([{ type: 'confirm', message: 'Leave?', accepted: false }]);
+  });
+
+  it('gives up on a new tab that never answers (a dialog it raised before it was followed) instead of hanging', async () => {
+    vi.useFakeTimers();
+    try {
+      const { cdp } = fakeCdp({ frozen: 'S-T2' });
+      const opener = await Tab.attach(cdp, 'T1');
+      const outcome = opener.follow('T2').then(
+        () => 'followed',
+        (error: Error) => error.message,
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await outcome).toMatch(/^The new tab did not answer within 5 s/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('knows when its tab closed, and stops reading it at once', async () => {
