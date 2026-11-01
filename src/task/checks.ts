@@ -77,13 +77,14 @@ export const listedElements = (page: PageState): ListedElement[] => {
   return [...byNode.values()];
 };
 
-const visibleText = (page: PageState) =>
-  normalized(
-    page.text
-      .split('\n')
-      .filter((line) => !READER_LINE.test(line.trim()))
-      .join('\n'),
-  );
+/** The page's visible text lines, trimmed, without the reader's own password and loading lines. */
+export const pageLines = (text: string) =>
+  text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !READER_LINE.test(line));
+
+const visibleText = (page: PageState) => normalized(pageLines(page.text).join('\n'));
 
 const globMatches = (pattern: string, url: string) =>
   new RegExp(`^${pattern.split('*').map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`, 'is').test(url);

@@ -3,11 +3,12 @@ import { PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, type PageAction, type P
 import { showsTarget } from '../browser/words.ts';
 import { buildActionSpace } from '../jev/action-space.ts';
 import { centerOf, contains } from '../jev/box.ts';
-import { decide, foldedFavourite, overflowFolds, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
+import { decide, evidenceRequest, foldedFavourite, overflowFolds, readEvidence, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
 import type { ImageTransport, ScreenshotMode } from '../jev/model.ts';
 import { ANY_HOST, narrowHosts, outsideHosts, type HostRules } from './hosts.ts';
 import { scrubberFor } from '../jev/secrets.ts';
 import { describeFailure, runChecks, type Check, type CheckResult } from './checks.ts';
+import { deepLink, quoteSpans } from './evidence.ts';
 import { Recording } from './recording.ts';
 import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
 
@@ -95,6 +96,8 @@ export interface TaskSummary {
   missing?: { label: string; role?: string; path: string }[];
   /** Each of the caller's checks with whether it passed on the final page; present when checks were given. */
   checks?: CheckResult[];
+  /** On a `done` with `done_when`: the final page's text that shows it, copied word for word from the span Jev chose. */
+  evidence?: { quote: string; url: string; deep_link?: string; confidence: number };
 }
 
 export interface TraceEntry {
@@ -179,6 +182,8 @@ const LAST_LOOK_DONE = 0.5;
 const HEAD_DISAGREES = 0.6;
 // The screenshot look confirms the spike at the same bar a DONE needs.
 const SPIKE_CONFIRMED = LAST_LOOK_DONE;
+// An evidence span Jev chose less surely than this is no quote (provisional: see plan 100's measurements).
+const EVIDENCE_SURE = 0.5;
 // Enter is offered only after typing into a search or filter field (a filtered list often updates only on Enter); elsewhere it could submit a form.
 const SEARCH_LIKE = /search|query|find|filter/i;
 const UNSAVED_EDIT_NOTE =
@@ -275,8 +280,8 @@ export class BrowserTask {
   #traceScrubbed = 0;
   /** The page each decision was made on: a `done_when` score counts for the caller's checks only on the page it judged. */
   #decidedOn = new WeakMap<Decision, PageState>();
-  /** How the last call stopped: the page its summary reports and the decision it stopped on. */
-  #ending: { page: PageState; decision?: Decision } | undefined;
+  /** How the last call stopped: the page its summary reports, the decision it stopped on, and its first request. */
+  #ending: { page: PageState; decision?: Decision; firstRequest: number } | undefined;
   #tab: Tab;
   #ask: Ask;
   #recording: Recording | undefined;
@@ -332,7 +337,7 @@ export class BrowserTask {
   async run({ signal }: { signal?: AbortSignal } = {}): Promise<TaskSummary> {
     // The recording is for people: a browser failure while recording must not change or hang the run's outcome.
     await this.#recording?.start(this.#tab).catch(() => undefined);
-    const summary = this.#settle(await this.#loop(signal));
+    const summary = await this.#withEvidence(this.#settle(await this.#loop(signal)));
     await this.#recording?.finish(this.#tab, summary).catch(() => undefined);
     return summary;
   }
@@ -368,7 +373,7 @@ export class BrowserTask {
       const confirmIgnored = this.#confirmIgnored;
       this.#confirmIgnored = undefined;
       this.#lastStatus = status;
-      this.#ending = { page, decision };
+      this.#ending = { page, decision, firstRequest };
       // A secret never leaves in a summary or a trace, wherever the page echoed it.
       for (; this.#traceScrubbed < this.trace.length; this.#traceScrubbed++) this.trace[this.#traceScrubbed] = this.#scrub(this.trace[this.#traceScrubbed]);
       return this.#scrub({
@@ -865,6 +870,56 @@ export class BrowserTask {
       return { ...rest, status: 'done', reason, checks: results };
     }
     return { ...summary, checks: results };
+  }
+
+  // jev-browse: a done carries the span of the final page that shows done_when, chosen by Jev and copied by code, so the caller
+  // can check it at a glance. A failed request, `absent` or an unsure answer leaves it out; the status never changes.
+  async #withEvidence(summary: TaskSummary): Promise<TaskSummary> {
+    const { doneWhen } = this.#options;
+    if (summary.status !== 'done' || !doneWhen || !this.#ending) return summary;
+    const { page, firstRequest } = this.#ending;
+    const spans = quoteSpans(page.text);
+    if (!spans.length) return summary;
+    const started = performance.now();
+    let response: Awaited<ReturnType<Ask>>;
+    try {
+      response = await this.#ask(evidenceRequest(page, doneWhen, spans.map((span) => span.text)));
+    } catch {
+      return summary;
+    }
+    const latencyMs = Math.round(performance.now() - started);
+    const inputTokens = response.usage.input_tokens ?? 0;
+    this.#latencies.push(latencyMs);
+    this.#inputTokens += inputTokens;
+    const counted: TaskSummary = {
+      ...summary,
+      elapsed_ms: summary.elapsed_ms + latencyMs,
+      jev: {
+        ...summary.jev,
+        requests: summary.jev.requests + 1,
+        input_tokens: summary.jev.input_tokens + inputTokens,
+        median_latency_ms: median(this.#latencies.slice(firstRequest)),
+      },
+    };
+    let chosen: ReturnType<typeof readEvidence>;
+    try {
+      chosen = readEvidence(response.answers, spans.length);
+    } catch {
+      return counted;
+    }
+    const candidates = Object.entries(chosen.probabilities)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([id, probability]) => ({ element: spans[Number(id) - 1]?.text.slice(0, 80) ?? id, probability: round(probability) }));
+    this.trace.push({
+      decision: { operation: 'EVIDENCE', confidence: chosen.confidence, candidates, answers: response.answers, fieldsWithoutValue: [], requests: 1, inputTokens, latencyMs },
+      executed: false,
+      elapsed_ms: counted.elapsed_ms,
+    });
+    const span = chosen.index !== undefined && chosen.confidence >= EVIDENCE_SURE ? spans[chosen.index] : undefined;
+    if (!span) return counted;
+    const link = deepLink(page.url, span, page.text);
+    return { ...counted, evidence: { quote: span.text, url: page.url, ...(link && { deep_link: link }), confidence: round(chosen.confidence) } };
   }
 
   // Tells Jev about the dialogs the page opened since the last look, on the latest step of this call (or the next one, when

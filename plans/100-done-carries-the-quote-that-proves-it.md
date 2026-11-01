@@ -40,7 +40,7 @@ can check `done` in one glance, and a quote the page doesn't hold is impossible 
    - each line is cut at sentence ends (`.`, `!` or `?` before a capital or digit), and a sentence over 200 characters
      at word breaks;
    - a piece that continues the previous one (starts lowercase or with punctuation, and the previous one doesn't end a
-     sentence) joins it, up to 200 characters: `245 ` + `properties found` is one span;
+     sentence) joins it, up to 200 characters: `245` + `properties found` is one span;
    - spans are joined with single spaces, so a quote is the page's words in the page's order;
    - **cap: 100 spans** (plus `absent`, 101 options, under Jev's 255). Past 100, adjacent spans are merged in equal
      groups, so the whole visible text stays offered. The span count per page is reported from the step 3 runs.

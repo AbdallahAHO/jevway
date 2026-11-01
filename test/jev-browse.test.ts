@@ -113,9 +113,11 @@ const boxAt = (rect: { x: number; y: number; w: number; h: number }, confidence 
 
 const scriptedJev = (steps: Record<string, any>[]) => {
   const requests: any[] = [];
+  // The quote a done carries is asked after the run's decisions: kept apart, it answers from the last decision's step.
+  const evidenceRequests: any[] = [];
   const ask: Ask = async (request) => {
-    requests.push(request);
-    const script = steps[Math.min(requests.length - 1, steps.length - 1)];
+    (request.questions.evidence ? evidenceRequests : requests).push(request);
+    const script = steps[Math.min(Math.max(requests.length, 1) - 1, steps.length - 1)];
     const answers = Object.fromEntries(
       Object.entries(request.questions).map(([id, question]: [string, any]) => {
         if (question.type === 'noul') return [id, { type: 'noul', noul: script[id] ?? 0 }];
@@ -127,7 +129,7 @@ const scriptedJev = (steps: Record<string, any>[]) => {
     );
     return { answers, usage: { input_tokens: 100 } };
   };
-  return { ask, requests };
+  return { ask, requests, evidenceRequests };
 };
 
 /** Gives the click head a spread of probabilities instead of one sure pick, as the real one does when nothing fits; leaves a request over other targets alone. */
@@ -2659,8 +2661,8 @@ describe('loop gotchas', () => {
       expect(acted).toHaveLength(0);
       expect(requests).toHaveLength(2);
       expect(tab.screenshots).toBe(1);
-      // The spike that triggered the look, then the look that ended the run.
-      expect(task.trace.slice(-2)).toMatchObject([
+      // The spike that triggered the look, then the look that ended the run (before the done's evidence request).
+      expect(task.trace.filter((entry) => entry.decision.operation !== 'EVIDENCE').slice(-2)).toMatchObject([
         { executed: false, decision: { operation: 'CLICK', doneProbability: 0.9 } },
         { executed: false, decision: { doneProbability: 0.8 } },
       ]);
@@ -2696,7 +2698,8 @@ describe('loop gotchas', () => {
       const summary = await new BrowserTask(asTab, failingLook, options).run();
       expect(summary.status).toBe('done');
       expect(acted).toHaveLength(1);
-      expect(calls).toBe(3);
+      // Three decisions, then the done's evidence request.
+      expect(calls).toBe(4);
     });
   });
 
@@ -4474,11 +4477,13 @@ describe('a done carries the page quote that proves it', () => {
     };
 
   it('asks Jev once which span shows done_when, offering the spans and absent last', async () => {
-    const { ask, requests } = scriptedJev([{ operation: 'DONE', done_check: 0.9, evidence: '3' }]);
+    const { ask, requests, evidenceRequests } = scriptedJev([{ operation: 'DONE', done_check: 0.9, evidence: '3' }]);
     const summary = await new BrowserTask(fakeTab([confirmedPage()]).asTab, ask, { goal: 'Book', doneWhen: 'A booking reference is showing', changeWaitMs: 0 }).run();
-    expect(requests).toHaveLength(2);
-    const question: any = requests[1].questions.evidence;
-    expect(Object.keys(requests[1].questions)).toEqual(['evidence']);
+    expect(requests).toHaveLength(1);
+    expect(evidenceRequests).toHaveLength(1);
+    const question: any = evidenceRequests[0].questions.evidence;
+    expect(Object.keys(evidenceRequests[0].questions)).toEqual(['evidence']);
+    expect(evidenceRequests[0].state).toEqual({ page: { url: 'http://fixture/stays#booking', title: 'Staylist' } });
     expect(question.criteria).toMatchObject({ '1': 'Staylist', '2': 'Booking confirmed', '3': 'Reference JV-1042.', '4': 'A receipt is on its way.' });
     expect(Object.keys(question.criteria).at(-1)).toBe('absent');
     expect(JSON.stringify(question.instructions)).toContain('A booking reference is showing');
@@ -4515,12 +4520,12 @@ describe('a done carries the page quote that proves it', () => {
     const plain = scriptedJev([{ operation: 'DONE' }]);
     const noDoneWhen = await new BrowserTask(fakeTab([confirmedPage()]).asTab, plain.ask, { goal: 'Book', changeWaitMs: 0 }).run();
     expect(noDoneWhen.status).toBe('done');
-    expect(plain.requests.every((request) => !request.questions.evidence)).toBe(true);
+    expect(plain.evidenceRequests).toHaveLength(0);
 
     const unsure = scriptedJev([{ operation: 'CLICK', click_target: '1', confidence: 0.1, done_check: 0.2 }]);
     const handedBack = await new BrowserTask(fakeTab([confirmedPage()]).asTab, unsure.ask, { goal: 'Book', doneWhen: 'x', changeWaitMs: 0 }).run();
     expect(handedBack.status).toBe('uncertain');
-    expect(unsure.requests.every((request) => !request.questions.evidence)).toBe(true);
+    expect(unsure.evidenceRequests).toHaveLength(0);
     expect(handedBack).not.toHaveProperty('evidence');
   });
 
