@@ -465,6 +465,10 @@ export class Tab {
    * await tab.upload(page.actions.find((a) => a.kind === 'upload')!, page, '/Users/ada/me.png');
    */
   async upload(action: PageAction, page: PageState, path: string) {
+    // The file is set through the page's own session; a frame's node lives in another context, so it is refused by name.
+    if (action.node !== undefined && idBaseOf(action.node)) {
+      throw new TargetUnreachable(`"${action.label}" is inside a frame, and jev-browse uploads only to file fields in the page itself`);
+    }
     if (!(await this.fresh(page, action))) throw new StalePage('Page changed since this decision');
     const { result } = await this.#call('Runtime.evaluate', {
       expression: `(() => { const e = window.__jevFast?.nodes.get(${Number(action.node)}); return e?.isConnected && e.matches('input[type=file]:not(:disabled)') ? e : null; })()`,
