@@ -18,6 +18,9 @@
   <button type="button" id="remove">Remove coupon</button>
 </div>
 <script>
+  // Like some widgets, the frame swallows pointer presses at the window before anything else sees them (a click still fires):
+  // only an input counter registered before this script still sees the press.
+  for (const type of ['pointerdown', 'mousedown', 'touchstart']) addEventListener(type, (event) => event.stopImmediatePropagation(), true);
   // Inside a frame: what happened goes to the page that holds it, which keeps it in window.__fixture.
   const report = (fixture) => parent.postMessage({ fixture }, '*');
   document.getElementById('apply').addEventListener('click', () => report({ applied: document.getElementById('code').value }));

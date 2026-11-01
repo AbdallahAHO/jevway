@@ -1132,6 +1132,21 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'on a phone, a tap reaches a cross-origin iframe and types into it',
+    file: 'iframe-cross-origin.html',
+    device: 'iphone-15',
+    run: async (tab) => {
+      let page = await tab.observe();
+      const field = page.actions.find((action) => action.kind === 'fill' && /Coupon code/.test(action.label));
+      assert.ok(field, `cross-origin frame controls not listed: ${labelsOf(page.actions)}`);
+      await tab.act(field, page, 'PHONE7');
+      page = await tab.observe();
+      await tab.act(find(page.actions, 'button', /^Apply coupon$/)!, page);
+      await pause(100);
+      assert.equal((await fixtureState(tab)).applied, 'PHONE7');
+    },
+  },
+  {
     name: 'a scrolled iframe on a scrolled page: rects follow both scrolls, and a wanted row below the frame fold is listed',
     file: 'iframe-scrolled.html',
     run: async (tab) => {
@@ -1142,7 +1157,9 @@ const checks: Check[] = [
       assert.ok(links.length > 3, `frame rows not listed: ${labelsOf(page.actions)}`);
       assert.ok(!links.some((action) => /^Order 1001$/.test(action.label)), `a row scrolled out of the frame is listed: ${labelsOf(links)}`);
       const box = await frameBox(tab);
-      assert.ok(links.every((action) => insideBox(action.rect!, box)), `a row rect is outside the frame: ${JSON.stringify(links.map((a) => a.rect))}`);
+      // A row cut by the frame's edge keeps its own rect, as on the page; its centre is what a click aims at.
+      const centreInside = (rect: Box) => insideBox({ x: rect.x + rect.w / 2, y: rect.y + rect.h / 2, w: 0, h: 0 }, box);
+      assert.ok(links.every((action) => centreInside(action.rect!)), `a row centre is outside the frame: ${JSON.stringify(links.map((a) => a.rect))}`);
       const first = links[0];
       await tab.act(first, page);
       await pause(100);
