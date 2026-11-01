@@ -1,0 +1,21 @@
+{
+  "name": "jevway",
+  "displayName": "jevway",
+  "version": "0.1.0",
+  "description": "Hand a whole browser goal to TypeSafe Jev and get one short, checked summary back: the jevway MCP server (jevway_task, jevway_look, jevway_end, journey mapping) and the skill that says when to use it and when to use chrome-devtools. Needs TYPESAFE_API_KEY or OPENROUTER_API_KEY in ~/.config/jevway/env or the environment.",
+  "author": {
+    "name": "Abdallah Othman",
+    "url": "https://github.com/AbdallahAHO"
+  },
+  "homepage": "https://github.com/AbdallahAHO/jevway#readme",
+  "repository": "https://github.com/AbdallahAHO/jevway",
+  "license": "MIT",
+  "keywords": ["browser", "chrome", "browser-automation", "mcp", "jev", "typesafe"],
+  "skills": ["./skill/jevway"],
+  "mcpServers": {
+    "jevway": {
+      "command": "npx",
+      "args": ["-y", "-p", "jevway", "jevway-mcp"]
+    }
+  }
+}

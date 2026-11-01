@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "jevway",
+  "owner": {
+    "name": "Abdallah Othman",
+    "url": "https://github.com/AbdallahAHO"
+  },
+  "metadata": {
+    "description": "jevway: hand browser goals to TypeSafe Jev from Claude Code, in your own Chrome or a throwaway one."
+  },
+  "plugins": [
+    {
+      "name": "jevway",
+      "source": "./",
+      "version": "0.1.0",
+      "description": "The jevway MCP server and skill: Jev drives the browser one step at a time, the agent gets one short, checked summary.",
+      "homepage": "https://github.com/AbdallahAHO/jevway#readme",
+      "category": "productivity",
+      "tags": ["browser", "chrome", "automation", "mcp", "jev"]
+    }
+  ]
+}
