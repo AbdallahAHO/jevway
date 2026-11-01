@@ -12,6 +12,7 @@ import { buildRequest, decide, foldedFavourite, NO_SUPPLIED_FILE, NO_SUPPLIED_VA
 import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
 import * as model from '../src/jev/model.ts';
 import { resolveModel } from '../src/jev/model.ts';
+import { recordingAsk, replayingAsk } from '../src/jev/replay.ts';
 import { describeStep, frameDurations, videoOffset } from '../src/task/recording.ts';
 import { BrowserTask } from '../src/task/run-task.ts';
 import { createRunner } from '../src/task/start-task.ts';
@@ -5221,5 +5222,31 @@ describe('Jev is asked whether the run is stuck, recorded only', () => {
     // The done's evidence request is a separate question, with no stuck score.
     const steps = task.trace.filter((entry) => entry.decision.operation !== 'EVIDENCE');
     expect(steps.map((entry) => entry.decision.answers.stuck?.noul)).toEqual([1, 1]);
+  });
+});
+
+describe('a recorded run replays offline', () => {
+  it('ends the same way on a fresh tab and fixture port, without asking Jev again', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jevway-replay-run-'));
+    const pagesOn = (port: number) => {
+      const url = `http://127.0.0.1:${port}/stays`;
+      return [page({ url, fingerprint: 'a' }), page({ url, fingerprint: 'b', text: 'Booking confirmed' })];
+    };
+    const options = { goal: 'Book it for Ada', values: { name: 'Ada' }, doneWhen: 'Booking confirmed', changeWaitMs: 0 };
+    const jev = scriptedJev([
+      { operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: 'name' },
+      { operation: 'DONE', done_check: 0.95 },
+    ]);
+    const route = { profile: 'jev', model: 'jev-1.14.0', route: 'direct' } as const;
+    const recordedTab = fakeTab(pagesOn(51000));
+    const recorded = await new BrowserTask(recordedTab.asTab, recordingAsk(jev.ask, route, dir), options).run();
+    const asked = jev.requests.length + jev.evidenceRequests.length;
+
+    const replayedTab = fakeTab(pagesOn(62000));
+    const replayed = await new BrowserTask(replayedTab.asTab, replayingAsk('jev-1.14.0', dir), options).run();
+    expect(recorded.status).toBe('done');
+    expect(replayed).toMatchObject({ status: recorded.status, reason: recorded.reason, steps: recorded.steps });
+    expect(replayedTab.acted).toEqual(recordedTab.acted);
+    expect(jev.requests.length + jev.evidenceRequests.length).toBe(asked);
   });
 });
