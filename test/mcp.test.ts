@@ -2,7 +2,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-// The MCP server runs as written; only its stdio transport and its browser runner are swapped for in-memory fakes.
+// The MCP server runs as written; only its stdio transport and its browser runner are swapped for in-memory fakes,
+// so listing tools and running a task start no browser and need no real key.
 const fakes = vi.hoisted(() => ({
   clientEnd: undefined as Transport | undefined,
   /** What each run of the fake task saw: its signal, and when it started and ended. */
@@ -42,14 +43,30 @@ vi.mock('../src/task/start-task.ts', () => ({
   }),
 }));
 
-describe('browser_task over MCP', () => {
-  const client = new Client({ name: 'test', version: '0.0.0' });
+const client = new Client({ name: 'test', version: '0.0.0' });
 
-  beforeAll(async () => {
-    await import('../src/mcp.ts');
-    await client.connect(fakes.clientEnd!);
+beforeAll(async () => {
+  await import('../src/mcp.ts');
+  await client.connect(fakes.clientEnd!);
+});
+
+describe('tools/list', () => {
+  it("tells a client which tools can change a site and which only touch jev-browse's own state", async () => {
+    const { tools } = await client.listTools();
+    const hints = Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]));
+    expect(hints).toEqual({
+      browser_task: expect.objectContaining({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }),
+      browser_task_end: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }),
+      journey_start: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }),
+      journey_step: expect.objectContaining({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }),
+      journey_autopilot: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }),
+      journey_annotate: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }),
+      journey_finish: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }),
+    });
   });
+});
 
+describe('browser_task over MCP', () => {
   const call = (args: Record<string, unknown>, signal?: AbortSignal) =>
     client.callTool({ name: 'browser_task', arguments: { goal: 'Open', ...args } }, undefined, signal && { signal });
 
