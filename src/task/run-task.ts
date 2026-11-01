@@ -908,7 +908,8 @@ export class BrowserTask {
         const saidNow = submitted || (clickedWithEditPending && !this.#unsavedEdit);
         if (saidNow) this.#said = this.#saidAfter(bareLabel(action.label), page, textBefore);
         // jev-browse: Jev sees one page at a time, so code names what this action changed; new words a page message already shows are left out.
-        this.#lastChange = lastChange(pageBefore, page, ran, { withText: !(saidNow && this.#said) });
+        // Compared on scrubbed pages: last_change cuts long values, and a cut secret would no longer match the request's scrub.
+        this.#lastChange = lastChange(this.#scrub(pageBefore), this.#scrub(page), this.#scrub(ran), { withText: !(saidNow && this.#said) });
         // A click that flipped a collapsed control open leaves the run's own menu: it is closed before the run says done.
         // A fold the disclosure rescue opened is for reading what is inside it, so it stays open.
         if (decision.operation === 'CLICK' && decision.via !== 'disclosure' && action.expanded === 'false' && page.actions.some((a) => a.node === action.node && a.expanded === 'true')) {
