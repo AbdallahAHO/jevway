@@ -114,6 +114,8 @@ Cancelling the MCP request (or Ctrl-C in the CLI) stops the run before its next 
 
 **`browser_task_end`** takes `session` and `keep_tab`.
 
+Every tool carries MCP hints for clients that ask before a call: `browser_task` and `journey_step` are destructive and open-world (they can submit, pay or delete on any site), `journey_start` and `journey_autopilot` are open-world but not destructive, and `browser_task_end`, `journey_annotate` and `journey_finish` only touch jev-browse's own state.
+
 **Recording:** `record_dir` (CLI `--record <dir>`) saves a screencast video (`run.mp4`, needs `ffmpeg` on the PATH, otherwise skipped), a 2× JPEG before every action with its target outlined, the final page, `summary.json`, and an `index.html` viewer. These shots are for people; the model still gets its own 1024 px screenshots.
 
 ## Safety

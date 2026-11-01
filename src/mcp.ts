@@ -22,6 +22,8 @@ server.registerTool(
   'browser_task',
   {
     title: 'Run a browser goal with Jev',
+    // Drives any site, and can submit, pay or delete once the caller confirms.
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     description: `Hand a whole browser goal (navigate, search, fill forms, set filters, open a result) to TypeSafe Jev.
 Jev picks each click/type/select in ~200ms per step and returns ONE short summary, instead of you deciding every step.
 Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards (same Chrome, the tab stays open; select it by url).
@@ -165,6 +167,8 @@ server.registerTool(
   'browser_task_end',
   {
     title: 'End a Jev browser session',
+    // Forgets a session and closes the tab jev-browse opened: nothing on a site changes.
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description: 'Forget a browser_task session. Closes the tab it opened unless keep_tab is true.',
     inputSchema: { session: z.string(), keep_tab: z.boolean().optional() },
   },
@@ -200,6 +204,8 @@ server.registerTool(
   'journey_start',
   {
     title: 'Start mapping mobile user journeys',
+    // Opens a tab on any URL; taps nothing.
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     description: `Open a URL on an emulated phone and start a user-journey map. Every screen is screenshotted and judged by Jev
 (screen type, UI patterns, duplicate of a visited screen, error/empty/dead-end states, ranked next taps, irreversible-action risk)
 and QA-checked (console errors, failed requests, horizontal overflow, tap targets under 44px, unlabeled controls).
@@ -253,6 +259,8 @@ server.registerTool(
   'journey_step',
   {
     title: 'Take the next journey step',
+    // Taps whatever the caller names, a submit included.
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     description: `Move the journey one step, and record what you learned about the screen you are leaving.
 next: an element index from "elements"/"jev.ranked_taps" (dropdown options look like "3:2"), or back | restart | scroll_down | scroll_up | screen:<id> (replay the recorded path to that screen).
 Pass value to type into a text field. Pass flow (e.g. "Homes/Searching homes"; it sticks for later steps), description (what the screen is, for the viewer) and insight (UX observation).`,
@@ -279,6 +287,8 @@ server.registerTool(
   'journey_autopilot',
   {
     title: 'Let Jev explore the journey',
+    // Taps on the site, but skips irreversible taps and stops at auth walls.
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     description: `With an intent, Jev keeps going until the intent is reached, it hits a stop condition, or it runs out of untried taps (no move limit). Without an intent, it checks back after \`screens\` new screens. The result includes a per-move log.
 It skips tried taps and off-site links, backs out of explored screens, skips irreversible taps while exploring, and stops at auth walls
 (or at the irreversible step / when the intent is reached if an intent is set). Steps are recorded under \`flow\`.
@@ -304,6 +314,8 @@ server.registerTool(
   'journey_annotate',
   {
     title: 'Describe a journey screen or regroup steps',
+    // Edits the local journey record only.
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description:
       'Add a description and/or insight to any screen (by id), and optionally move steps [from_step..to_step] (0-based, see journey.json) into a named flow.',
     inputSchema: {
@@ -332,6 +344,8 @@ server.registerTool(
   'journey_finish',
   {
     title: 'Finish the journey map',
+    // Writes the local journey files and closes the tab.
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description:
       'Write the final journey.json and index.html viewer, close the tab, and list screens still missing a description.',
     inputSchema: { journey: z.string(), keep_tab: z.boolean().optional() },
