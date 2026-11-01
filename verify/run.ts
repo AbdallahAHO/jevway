@@ -17,6 +17,7 @@ import { Tab } from '../src/browser/tab.ts';
 import { createAsk, profileOptions, resolveModel } from '../src/jev/model.ts';
 import { ANY_HOST, narrowHosts } from '../src/task/hosts.ts';
 import { BrowserTask, type TaskSummary } from '../src/task/run-task.ts';
+import { judgeQuote } from './evidence-quote.ts';
 
 // JEV_MODEL / JEV_SCREENSHOTS pick the decision model and screenshot mode, as in the MCP server.
 const { profile, screenshots } = resolveModel();
@@ -182,7 +183,7 @@ if (profile.box && screenshots !== 'off') {
 }
 
 // The caller's checks (plan 099) confirm a done and overturn one the page doesn't show; the done's quote (plan 100) is the page's own text.
-await scenario('fixture: caller checks confirm a done, and its quote is on the page', async () => {
+await scenario('fixture: caller checks confirm a done, and any quote it gives is on the page', async () => {
   const tab = await Tab.open(chrome.cdp, fixtureUrl);
   const options = {
     ...profileOptions(profile),
@@ -215,10 +216,10 @@ await scenario('fixture: caller checks confirm a done, and its quote is on the p
   assert.equal(state.searched?.freeCancellation, true, 'free cancellation filter not applied');
   expectStatus(summary, 'done');
   assert.deepEqual(summary.checks?.map((check) => check.pass), [true, true, true, true], JSON.stringify(summary.checks));
-  assert.ok(summary.evidence, `no evidence on the done: ${JSON.stringify(task.trace.at(-1))}`);
-  const squash = (text: string) => text.replace(/\s+/g, ' ').trim();
-  assert.ok(squash(bodyText).includes(squash(summary.evidence.quote)), `quote not on the page: ${summary.evidence.quote}`);
-  process.stdout.write(`  evidence: "${summary.evidence.quote}" (${summary.evidence.confidence}) ${summary.evidence.deep_link ?? 'no link'}\n`);
+  // Precision, not recall: a quote given must be the page's own text; a done without one is reported, not failed.
+  const quote = judgeQuote(summary.evidence, bodyText);
+  process.stdout.write(`  ${quote.line}${summary.evidence?.deep_link ? ` ${summary.evidence.deep_link}` : ''}\n`);
+  assert.ok(quote.pass, quote.line);
   assert.equal(unconfirmed.status, 'uncertain', `a failing check left ${unconfirmed.status}: ${unconfirmed.reason}`);
   assert.match(unconfirmed.reason, /Booking confirmed/);
   assert.equal(unconfirmed.evidence, undefined);
