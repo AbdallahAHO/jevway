@@ -184,6 +184,8 @@ pnpm verify    # live: headless Chrome + real Jev, checked against independent g
 pnpm verify:real   # live public sites, a fresh browser per run, 5 runs each (JEVWAY_REAL_RUNS, JEVWAY_REAL_ONLY)
 pnpm verify:langfuse   # 10 jobs in Langfuse's demo project, signed-in Chrome on :9333, recorded into report.html
 pnpm report:render verify/out/<folder>   # rebuild a jobs suite's report.html from its results.json, offline
+pnpm verify:replay --record verify/out/replay/<name>   # live: record every Jev answer of the fixture suites
+pnpm verify:replay verify/out/replay/<name>            # offline: replay them, no key, no credits
 ```
 
 `pnpm verify` runs:
@@ -195,6 +197,8 @@ pnpm report:render verify/out/<folder>   # rebuild a jobs suite's report.html fr
 - **MCP stdio round trip.**
 
 `pnpm verify:real` runs Wikipedia, MDN, GitHub, Hacker News, npm, Booking.com and Google Flights. Every task stops before login or payment, passes are checked against the final URL, and bot walls (Cloudflare, captchas) are reported apart from failures, judged by the same detector the run uses (`src/browser/bot-wall.ts`).
+
+**Replay.** `pnpm verify:replay` re-runs the fixture suites (`verify`, `verify:gotchas`, `verify:redteam`, `verify:capabilities`) against recorded Jev answers, so a loop or guard change can be regression-tested offline and for free. `JEVWAY_REPLAY=record` saves each answer under the sha256 of its request (keys sorted, screenshots left out, local fixture ports normalised) in `JEVWAY_REPLAY_DIR`; `JEVWAY_REPLAY=replay` answers only from there, with no key and no network. A request never recorded is a miss that names the goal and step and shows what changed against the nearest recording, and any miss fails the suite. A change to what Jev is asked is meant to miss: record again after it. Gotchas replay their `normal` profile (the `churn` and `slow` pages change with timing), and the live Wikipedia scenario always misses.
 
 Traces go to `verify/out/`. A jobs suite's `report.html` opens on an overview of its jobs, each with its featured run's step shots; a job's view starts with the run's video, its steps on a timeline and a strip that follow the video, every run one click away, then what Jev was given and how the run was judged. Each run's cost row shows its estimated cost (the sum of its calls' `est_cost_usd`), and the overview the median per run and the suite's total; a run saved before summaries carried a cost, or on a model without a price, shows "unknown". Results are in [docs/verification.md](docs/verification.md).
 
