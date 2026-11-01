@@ -7,6 +7,7 @@ import * as chrome from '../src/browser/chrome.ts';
 import { jpegSize, PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
 import { messageNames, showsTarget } from '../src/browser/words.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
+import { PAGE_ERROR, SIGN_IN_WALL } from '../src/jev/instructions.ts';
 import { buildRequest, decide, foldedFavourite, NO_SUPPLIED_FILE, NO_SUPPLIED_VALUE, overflowFolds, readDecision, validChoice, type Ask } from '../src/jev/decide.ts';
 import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts';
 import * as model from '../src/jev/model.ts';
@@ -4999,5 +5000,28 @@ describe('a secret is scrubbed from the page as soon as it is read, before anyth
     // The cut happened: page_text ends inside the secret's place.
     expect(summary.page_text).toMatch(/more characters not shown\]$/);
     expect(leaks(requests, summary, task.trace, recordingText(recordDir))).toEqual([false, false, false, false]);
+  });
+});
+
+describe('Jev is asked whether the page shows an error or a sign-in wall', () => {
+  const input = { page: page(), goal: 'Book it', values: {}, history: [], checkCommitRisk: true };
+
+  it('asks both on every step request, as yes/no questions about the current page', () => {
+    const { questions } = buildRequest(input, buildActionSpace(bookingActions));
+    expect(questions.page_error).toEqual({ type: 'noul', instructions: { goal: 'Book it', rules: PAGE_ERROR }, criteria: undefined });
+    expect(questions.sign_in_wall).toEqual({ type: 'noul', instructions: { goal: 'Book it', rules: SIGN_IN_WALL }, criteria: undefined });
+    expect(PAGE_ERROR).toContain('caused by the actions so far');
+    expect(SIGN_IN_WALL).toContain('sign-in screen that blocks the goal');
+  });
+
+  it('records the answers in the trace and acts on neither yet', async () => {
+    const steps = [{ operation: 'DONE', done_check: 0.9, page_error: 1, sign_in_wall: 1 }];
+    const { ask } = scriptedJev(steps);
+    const { asTab } = fakeTab([page({ fingerprint: 'a' })]);
+    const task = new BrowserTask(asTab, ask, { goal: 'Book it', doneWhen: 'Booked', changeWaitMs: 0 });
+    const summary = await task.run();
+    expect(summary.status).toBe('done');
+    expect(summary).not.toHaveProperty('wall');
+    expect(task.trace[0].decision.answers).toMatchObject({ page_error: { noul: 1 }, sign_in_wall: { noul: 1 } });
   });
 });
