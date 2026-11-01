@@ -81,7 +81,8 @@ the click, so the model says BLOCKED on a goal that succeeded.
      decision's `done_when` score is ≥ 0.5 **and was made on that final page** (a decision taken before the last
      action does not count), and ≥ 0.75 while an edit is unsaved (the bar AGENTS.md sets for a DONE right after an
      unsaved edit). Reason: `All M checks passed on the final page and "<done_when>" scored X there (the run had ended
-     <status>: <reason>)`. `stuck` is dropped. Checks run alongside `done_when`, never instead of it, because text can
+     <status>: <reason>)`. `stuck` is dropped. A decision the box or disclosure rescue rewrote is a new object with no
+     recorded page, so a hand-back on it never upgrades: conservative by design. Checks run alongside `done_when`, never instead of it, because text can
      already be on the page before the run.
    - `needs_input`, `needs_confirmation`, `step_budget` never change: they hand back a question, not a verdict.
 8. **Keep `TaskStatus`.** No `unconfirmed` status: every suite (`verify/*.ts`, `verify/jobs/runner.ts`), the CLI's exit

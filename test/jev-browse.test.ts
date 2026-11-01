@@ -4442,10 +4442,11 @@ describe("the caller's checks on the final page", () => {
   });
 
   it("never sends the checks to Jev", async () => {
-    const { ask, requests } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
+    const { ask, requests, evidenceRequests } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
     const { asTab } = fakeTab();
     await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [{ type: 'text_absent', text: 'zebra-crossing' }], changeWaitMs: 0 }).run();
-    expect(JSON.stringify(requests)).not.toContain('zebra-crossing');
+    expect(evidenceRequests).toHaveLength(1);
+    expect(JSON.stringify([...requests, ...evidenceRequests])).not.toContain('zebra-crossing');
   });
 
   it('keeps the checks for the session until a call replaces them', async () => {
