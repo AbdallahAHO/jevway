@@ -15,6 +15,8 @@ export type BrowserSource = 'auto' | 'launch' | 'launch-headless' | (string & {}
 
 export interface ChromeHandle {
   cdp: CdpConnection;
+  /** The DevTools WebSocket this handle is connected to; another process can share the browser through it. */
+  endpoint: string;
   close: () => Promise<void>;
 }
 
@@ -22,7 +24,7 @@ export const connectChrome = async (source: BrowserSource): Promise<ChromeHandle
   if (source === 'launch' || source === 'launch-headless') return launchChrome(source === 'launch-headless');
   const endpoint = source === 'auto' ? autoEndpoint() : await explicitEndpoint(source);
   const cdp = await CdpConnection.open(endpoint);
-  return { cdp, close: async () => cdp.close() };
+  return { cdp, endpoint, close: async () => cdp.close() };
 };
 
 // Chrome writes DevToolsActivePort (port + browser path) when remote debugging is allowed.
@@ -87,6 +89,7 @@ const launchChrome = async (headless: boolean): Promise<ChromeHandle> => {
   const cdp = await CdpConnection.open(endpoint).catch(abandon);
   return {
     cdp,
+    endpoint,
     // Returns even if Chrome already exited; a profile that can't be removed never rejects.
     close: async () => {
       cdp.close();

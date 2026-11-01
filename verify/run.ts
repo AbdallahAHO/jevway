@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { connectChrome, type BrowserSource } from '../src/browser/chrome.ts';
@@ -32,6 +33,7 @@ const fixture = readFileSync(new URL('./fixture/stays.html', import.meta.url));
 const otherFixtures: Record<string, Buffer> = {
   '/canvas.html': readFileSync(new URL('./fixture/canvas.html', import.meta.url)),
   '/wide-table.html': readFileSync(new URL('./fixture/wide-table.html', import.meta.url)),
+  '/steps.html': readFileSync(new URL('./fixture/steps.html', import.meta.url)),
 };
 const server = createServer((request, response) =>
   response.writeHead(200, { 'content-type': 'text/html' }).end(otherFixtures[request.url ?? ''] ?? fixture),
@@ -215,6 +217,82 @@ await scenario('live web: Wikipedia search → Gödel’s incompleteness theorem
   expectStatus(summary, 'done');
   assert.equal(url, "/wiki/Gödel's_incompleteness_theorems");
   return summary;
+});
+
+// The MCP server shares this Chrome, so ground truth reads the very tab it drives. A client that cancels mid-run must
+// leave nothing running: at most the press already under way lands after the cancel, and none a second later.
+await scenario('MCP stdio: a cancelled browser_task stops acting (session continues)', async () => {
+  const recordDir = new URL('cancel/', outDir).pathname;
+  const client = new Client({ name: 'jev-browse-verify', version: '0.0.0' });
+  await client.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [new URL('../src/mcp.ts', import.meta.url).pathname],
+      env: { ...process.env, JEV_BROWSER: chrome.endpoint } as Record<string, string>,
+      stderr: 'inherit',
+    }),
+  );
+  const call = async (args: Record<string, unknown>, signal?: AbortSignal) => {
+    const response: any = await client.callTool({ name: 'browser_task', arguments: args }, undefined, signal && { signal });
+    assert.ok(!response.isError, response.content[0].text);
+    return JSON.parse(response.content[0].text);
+  };
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  try {
+    const first = await call({
+      url: fixtureUrl.replace('/stays.html', '/steps.html'),
+      goal: 'Press the "Step 1" button.',
+      done_when: 'Step 1 shows as pressed.',
+      record_dir: recordDir,
+    });
+    expectStatus(first, 'done');
+    const { targetInfos } = await chrome.cdp.send('Target.getTargets');
+    const target = targetInfos.find((info: any) => info.type === 'page' && info.url.includes('/steps.html'));
+    const pressed = async (): Promise<{ step: number; t: number }[]> => (await groundTruth(target.targetId, 'window.__fixture')).pressed;
+    const before = (await pressed()).length;
+
+    const controller = new AbortController();
+    const cancelled = call(
+      {
+        session: first.session,
+        goal: 'Press the buttons "Step 2" through "Step 10", one at a time, in order.',
+        done_when: 'All ten steps show as pressed.',
+      },
+      controller.signal,
+    ).catch((error: Error) => error);
+    // Cancel once two more presses landed: the run is mid-way, between or inside its steps.
+    const deadline = Date.now() + 60_000;
+    while ((await pressed()).length < before + 2) {
+      assert.ok(Date.now() < deadline, 'the run never pressed two more steps');
+      await sleep(50);
+    }
+    controller.abort();
+    const cancelledAt = Date.now();
+    const atCancel = (await pressed()).length;
+    assert.ok((await cancelled) instanceof Error, 'the cancelled call returned a result');
+    await sleep(5000);
+    const after = await pressed();
+    const late = after.filter((press) => press.t > cancelledAt);
+    assert.ok(after.length <= atCancel + 1, `${after.length - atCancel} presses after the cancel: ${JSON.stringify(late)}`);
+    assert.ok(late.every((press) => press.t - cancelledAt < 1000), `a press landed over 1 s after the cancel: ${JSON.stringify(late)}`);
+
+    // The run's own record (nobody read the cancelled call's result) ends cancelled, with one executed click per press.
+    const recorded = JSON.parse(readFileSync(join(recordDir, 'summary.json'), 'utf8')).summaries[1];
+    assert.equal(recorded.status, 'blocked', recorded.reason);
+    assert.equal(recorded.reason, 'Cancelled by the caller');
+    const clicks = recorded.steps.filter((step: any) => step.operation === 'CLICK' && !step.not_executed);
+    assert.equal(clicks.length, after.length - before, 'recorded clicks and real presses differ');
+
+    // The session's next call runs normally.
+    const next = await call({ session: first.session, goal: 'Press the "Step 10" button.', done_when: 'Step 10 shows as pressed.' });
+    expectStatus(next, 'done');
+    assert.ok((await pressed()).some((press) => press.step === 10), 'Step 10 was not pressed');
+    writeFileSync(new URL('cancel.json', outDir), JSON.stringify({ first, recorded, next, pressed: await pressed(), cancelledAt }, null, 2));
+    await client.callTool({ name: 'browser_task_end', arguments: { session: first.session } });
+    return { ...recorded, steps: recorded.steps };
+  } finally {
+    await client.close();
+  }
 });
 
 await chrome.close();

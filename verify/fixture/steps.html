@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Steps</title>
+    <style>
+      body { font: 16px system-ui, sans-serif; margin: 24px; }
+      button { display: block; margin: 8px 0; padding: 8px 16px; font: inherit; }
+      button.pressed { background: #cfe8cf; }
+    </style>
+  </head>
+  <body>
+    <h1>Ten steps</h1>
+    <p id="status">Pressed so far: none</p>
+    <div id="steps"></div>
+    <script>
+      // Ground truth for the cancel scenario: every press, with the page clock's time it landed.
+      window.__fixture = { pressed: [] };
+      const status = document.getElementById('status');
+      for (let step = 1; step <= 10; step++) {
+        const button = document.createElement('button');
+        button.textContent = `Step ${step}`;
+        button.addEventListener('click', () => {
+          window.__fixture.pressed.push({ step, t: Date.now() });
+          button.className = 'pressed';
+          button.textContent = `Step ${step} (pressed)`;
+          status.textContent = `Pressed so far: ${window.__fixture.pressed.map((press) => press.step).join(', ')}`;
+        });
+        document.getElementById('steps').append(button);
+      }
+    </script>
+  </body>
+</html>
