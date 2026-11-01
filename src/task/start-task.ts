@@ -52,6 +52,17 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
       task.update({ confirmIrreversible, confirmTarget });
       return task;
     },
+    /** Reads a page with no model call and no input: an open tab by URL part, or a URL in a background tab closed again. */
+    async look({ url, tab }: { url?: string; tab?: string }) {
+      const { cdp } = await browser();
+      if (!url && !tab) throw new Error('Pass `url` to open a page or `tab` to read an open one.');
+      const page = url ? await Tab.open(cdp, url) : await Tab.find(cdp, tab!);
+      try {
+        return await page.observe();
+      } finally {
+        if (url) await page.close();
+      }
+    },
     /** Mobile journey mapping; in the user's own Chrome it opens a separate window so screenshots keep rendering. */
     async startJourney(options: JourneyOptions) {
       const { cdp } = await browser();

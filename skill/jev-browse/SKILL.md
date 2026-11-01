@@ -38,6 +38,8 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 | `uncertain` / `blocked` | A reason starting "Jev reported done, but" means your `checks` failed: read their `detail` in `checks`. Otherwise read `stuck.candidates` and `page_text`. Rephrase `goal` for the same `session`, or do the step with chrome-devtools and then continue. A `reason` saying the browser dropped a click means nothing was clicked and rephrasing cannot help: call again or check the browser. |
 | `step_budget` | `max_steps` or `max_seconds` (default 300 s per call) ran out; the reason says which. Split the goal into smaller calls on the same `session`. |
 
+To see a page again without acting (after a hand-back, or to check a result), call `browser_look` with the `session` (or `tab`, or a `url` it opens and closes): it returns `url`, `title`, `page_text` and the listed controls with their state, with no Jev call.
+
 End with `browser_task_end` when finished (it closes the tab it opened unless `keep_tab: true`).
 
 ## Show what happened

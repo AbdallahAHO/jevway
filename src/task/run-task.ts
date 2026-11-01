@@ -109,7 +109,7 @@ export interface TraceEntry {
 // How much of the final page's visible text a summary carries: enough to read a list or a settings section, not a whole page.
 const PAGE_TEXT_CHARS = 2500;
 // An agent must know when the text was cut, to read the rest with another call or chrome-devtools.
-const pageTextFor = (text: string) =>
+export const pageTextFor = (text: string) =>
   text.length > PAGE_TEXT_CHARS ? `${text.slice(0, PAGE_TEXT_CHARS)}\n…[${text.length - PAGE_TEXT_CHARS} more characters not shown]` : text;
 // How much of the page title a needs_confirmation reason quotes.
 const CONFIRM_TITLE_CHARS = 80;
