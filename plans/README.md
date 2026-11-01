@@ -45,8 +45,8 @@ ground truth is the app's own state (its API, mailbox or URL), never the agent's
 | R3 Checkout to the gate | messy shop pages; stops before paying | `pnpm verify:checkout` (SauceDemo, a site built for automation) | reaches the order overview ≥ 90%; clicks Finish unconfirmed 0 times | **met**: 18/18; overview 6/6, Finish unconfirmed 0 (`1ddc592`) |
 | R4 A real agent drives it | the hand-back contract (`needs_input`, `needs_confirmation`, `stuck`, `steps`) is enough for an agent to finish real chores | `pnpm verify:agent` (Claude Code headless with jev-browse as an MCP server, chores on Forgejo and Langfuse) | ≥ 80% of chores done end to end; 0 unconfirmed destructive actions; hand-backs the agent couldn't act on ≤ 10% | **met**: 26/26 chores (`1ddc592`); 0 unconfirmed destructive; 0 unusable hand-backs of 15; every confirm target from the prompt and matched; tidy-vague 0/29 deleted since 059 |
 | R5 Phones | the same jobs on an iPhone 15 layout | `JEV_LANGFUSE_DEVICE=iphone-15 pnpm verify:langfuse`, `JEV_GRAFANA_DEVICE=iphone-15 pnpm verify:grafana` | Langfuse ≥ 80%, Grafana ≥ 90% | **met**: Langfuse 47/48 (97.9%), Grafana 23/24 (`1ddc592`) |
-| R6 An app nothing was tuned on | jev-browse on an app with jobs frozen before the first run, and no fix ever measured on it before the gate | `pnpm apps:vikunja:up` then `pnpm verify:vikunja` (plan 085; Vikunja 2.7.0, ground truth from its API) | ≥ 80% strict on the **first** ×3 measurement; 0 unconfirmed destructive actions | not built yet (plan 085). After its first gate run Vikunja becomes a tuned suite, and the next release needs a new held-back app |
-| R7 Live public sites | real sites that change under us: banners, new layouts, date pickers | `JEV_REAL_RUNS=5 pnpm verify:real` (plan 086; 8 sites incl. Airbnb) | ≥ 90% of runs that hit no bot wall; every failure triaged (bot wall, site-changed, suite, jev-browse); a site-changed scenario is suspended in this index until its job is rewritten | baseline ×3 at `ef49de1` (2026-10-18), after triage: 13/18. wikipedia, mdn, google-flights 3/3; hacker-news 3/3 (the suite misread the comments as a bot wall); github 1/3; booking 0/3 (2 `done` on the dateless city page, 1 covered by a cookie banner); npm walled |
+| R6 An app nothing was tuned on | jev-browse on an app with jobs frozen before the first run, and no fix ever measured on it before the gate | `pnpm apps:vikunja:up` then `pnpm verify:vikunja` (plan 085; Vikunja 2.7.0, ground truth from its API) | ≥ 80% strict on the **first** ×3 measurement; 0 unconfirmed destructive actions | **not met**: 21/33 = 63.6% (95% CI 46.6–77.8%) at `7645118`/`bd2549c`, 0 unconfirmed destructive. First run stopped after 12 runs on a harness setup error (6/12); the harness was fixed (`bd2549c`, a setup failure is that run's error) and the 7 jobs that never ran were run once (15/21). Real misses: due-date 0/3 (DONE ×3, date not shown), mark-done 0/2 (target covered 3×), comment 0/3 (handed back on "Add your reaction"), priority 1/3; 2 runs lost to setup errors. Vikunja is now a tuned suite; the next release needs a new held-back app |
+| R7 Live public sites | real sites that change under us: banners, new layouts, date pickers | `JEV_REAL_RUNS=5 pnpm verify:real` (plan 086; 8 sites incl. Airbnb) | ≥ 90% of runs that hit no bot wall; every failure triaged (bot wall, site-changed, suite, jev-browse); a site-changed scenario is suspended in this index until its job is rewritten | baseline ×3 at `ef49de1` (2026-10-18), after triage: 13/18. wikipedia, mdn, google-flights 3/3; hacker-news 3/3 (the suite misread the comments as a bot wall); github 1/3; booking 0/3 (2 `done` on the dateless city page, 1 covered by a cookie banner); npm walled. **2026-11-01 at `19235a4`: 17/21, not met**: booking 0/3 (false done on the dateless city page ×2, one page that never settled), github 2/3 (blocked on search), npm walled 3/3 and now stopped in seconds |
 
 **Round 7 (2026-10-16, `1ddc592`, plans 069–079): every Goal 2 gate and G1–G8 met again on one commit.** R1 30/33,
 R2 15/15, R3 18/18, R4 26/26, R5 Langfuse 47/48 and Grafana 23/24, G6 160/160 at ×10.
@@ -153,11 +153,30 @@ for automation, with throwaway data; never on a third-party production account.
 | 081 | A checkbox or switch this run flipped is not flipped back: fed back once, then handed back | P1 | S–M | 076, 077 | DONE (`dc00487`): wiki-off 2/3 → 5/5, 0 toggles after Save; settings chore 0 toggle hand-backs (2 in round 7) |
 | 082 | A form already sent is fed back once ("do what's left, or DONE") before the repeat is handed back | P2 | S | 063, 077 | REJECTED: measured no gain (triage still re-planned 3/3; the note led to unsure picks) and taken-name lost its page quote |
 | 083 | The rescues never open the signed-in user's account menu | P3 | S | 033, 062 | DONE (`f7f1fb5`): phone session-to-user ×10 10/10, 0 account-menu rescues; Langfuse phone ×1 16/16 |
-| 084 | The toggle note says whether anything was clicked to save it, and a rejected DONE says so too | P1 | S | 081 | TODO |
-| 085 | A held-back app (Vikunja) measures how well jev-browse does on an app no fix was tuned on | P1 | M–L | — | TODO |
-| 086 | Public sites become a gate: fix the suite's judging, add Airbnb, and triage every failure | P1 | S–M | — | TODO |
+| 084 | The toggle note says whether anything was clicked to save it, and a rejected DONE says so too | P1 | S | 081 | DONE (`39f5928`): merged at the start of round 11; wiki-off still flakes on main (7/10 at `39f5928`, DONE ×3 after the note) |
+| 085 | A held-back app (Vikunja) measures how well jev-browse does on an app no fix was tuned on | P1 | M–L | — | DONE (`cce0b6f`): suite built; first gate run 2026-11-01, R6 not met (21/33), see Goal 2 table |
+| 086 | Public sites become a gate: fix the suite's judging, add Airbnb, and triage every failure | P1 | S–M | — | DONE (`37037c1`): bot wall judged on the page top, Booking's dates named, Airbnb added; R7 not met (17/21 at `19235a4`) |
 | 087 | A covered target's note names the controls of the layer covering it | P2 | S | — | DONE (`be71c77`): fixtures name the fixed/sticky/modal layer's controls (banner → Decline, Accept, Manage settings); live effect unmeasured, since 0 covered misses in 10 Booking runs (Jev declined the banner first) |
 | 027 | A control with no name, row or icon is named from its small container's text | P2 | S | — | DONE (`1be3212`) |
+| 088 | A run stops when the caller cancels or `max_seconds` passes, never mid-input | P1 | S | — | DONE (`328977d`): verify 10/10 incl. cancel and off-host; redteam 0; gotchas 89/90 |
+| 089 | `browser_task` takes allowed and blocked hosts, checked after every step | P1 | S | — | DONE (`af5d758`): Wikipedia with an allow-list passes; off-host stop in verify |
+| 090 | A confirmation allows only the control that was flagged | P0 | S | — | DONE (`1e60a03`): verify 8/8; redteam 0; checkout 17/18; forgejo 32/33; agent consent chores 3/3 |
+| 091 | Values marked secret reach Jev by key only and are scrubbed from every output; `needs_input` names its field | P0 | M | — | DONE (`ecdbff5`): signup 15/15, 0 raw password hits; scrub at `observe()` mutation-proven in integration |
+| 092 | A bot wall ends the run `blocked`, and `done` never lands on a challenge | P1 | S | — | DONE (`3723ac8`): npm blocked in 8 s with 0 requests (was 50 s, 25 requests); real 15/18 vs 13/18 |
+| 093 | The MCP tools carry destructive and open-world hints | P3 | S | — | DONE (`ed972e0`): tools/list returns them |
+| 094 | A capability and negative suite leads with false `done` | P1 | M | — | DONE (`d17f34d`): 18/36 → 30/36 on its branch, 36/36 at integration; 0 false done |
+| 095 | A scroll goes to the area that scrolls, and a scroll that moved nothing says so | P1 | S | — | DONE (`546fbe1`): target task 0/3 → 3/3; Langfuse 14/16 jobs 3/3 at integration (the 2 misses unrelated) |
+| 096 | A tab our tab opens is followed | P2 | S | — | DONE (`72f539e`): target task 0/3 → 3/3 |
+| 097 | Files upload only from paths the caller declares | P2 | S | — | DONE (`456c887`): target task 0/3 → 3/3; a file field inside a frame is refused by name |
+| 098 | Every frame is read with the same reader | P1 | M | — | DONE (`742221c`): capabilities iframe tasks 3/3; reader 66/66 → 79/79; real 14/18 vs 13/18 |
+| 099 | The caller's checks on the final page confirm or overturn `done` | P1 | S | — | DONE (`2d76f46`): forgejo with checks 11/11; guard stops are never overridable |
+| 100 | `done` carries the page quote that proves it | P2 | S | — | DONE (`2d76f46`): bar 0.6 for precision; recall low (7/36, and 0 in verify at integration); verify judges precision only (`2c77708`) |
+| 101 | A look tool returns the page with no model call | P2 | S | — | DONE (`a87ad85`): `browser_look`; the agent suite allows it since `19235a4` (look-not-delete and tidy-vague 2/2) |
+| 102 | Jev is told what the last action changed | P2 | S | — | REJECTED (`9b06ec0`): no measured gain; its first regression claim was withdrawn (wiki-off flakes on main) |
+| 103 | Jev is asked whether the page shows an error or a sign-in wall | P1 | M | — | DONE (`e5bbf0d`): rejection jobs end quoting the page's error, in about half the requests; thresholds error 0.80, sign-in 0.70 (thin margin, provisional) |
+| 104 | The yes/no questions state what true and false mean | P3 | S | — | REJECTED (`e4aeb41`): no gain, input tokens +1.5–6.7% per request |
+| 105 | A stuck question is recorded in traces before it gates anything | P2 | S | — | DONE (`6f58773`): recorded only; at ≥ 0.9 it cuts no done run over 99 traced runs; no gate (S5 covers its one catch) |
+| 106 | The verify jobs report opens on the run's video, in the Prima Persona layout | P2 | M | — | DONE (`b1a9d05`): offline only; 30 tests; `pnpm report:render` rebuilds older folders |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
 they run in parallel. After merging, the gates are re-confirmed on the merged commit.
@@ -229,6 +248,8 @@ the ones that move Jev's verified baseline and need the full gate re-run.
 
 Smaller items (S6–S8, J5, K4, K5) and the conditional ones (L1, L2) are in the same document.
 
+Rounds A–D became plans 088–105 (round 11, 2026-11-01); their rows are in the status table. Rounds E and F are still candidates.
+
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
 ## Follow-ups found while executing
@@ -240,6 +261,25 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   blocked). Separate track; desktop/laptop are the headline.
 - (from 014) The cause of the original DevTools socket close (the exit-13 run) was not reproduced; close code and
   reason are now recorded, so the next occurrence will say why.
+
+- (from round 11, 2026-11-01) Vikunja misses, now tunable since R6 has run: due-date (DONE ×3 with the date not shown),
+  mark-done (the row's done control covered 3×), comment (handed back on "Add your reaction", risk 0.62–0.71),
+  priority (3 actions that changed nothing).
+- (from round 11) The harness's own setup can hit "Document changed during evaluation" (`localStorage.clear()` while
+  the start page still navigates): 2 of 33 Vikunja runs. Since `bd2549c` it costs that run, not the suite.
+- (from round 11) Forgejo wiki-off flakes on main (7/10 at `39f5928`: DONE ×3 after the toggle note), so a single
+  wiki-off miss is not a regression signal.
+- (from round 11) Langfuse off-topic-answer 0/3 (was 3/3 on 10-18): on the fresh account content search returns the
+  same ~103K traces for any phrase. Demo-data drift or a search change; unresolved.
+- (from 100) Evidence recall is low (no quote cleared 0.6 in verify at integration); measure recall before raising
+  its use.
+- (from 103) The sign-in wall threshold 0.70 sits on the lowest real wall seen (0.70); provisional until more walls.
+- (from 101) A `browser_check` tool; `browser_look` in more agent chores.
+- (from 095, 097, 098) Pane scroll is main-page only; file inputs inside frames are refused; a cancel during the start
+  navigation isn't covered; host blocking is checked per step, not at the Fetch level.
+- (from `verify/agent-confirms.ts`) A hand-back on a different control is counted as honoured.
+- (from 106) `verify/agent.ts` and the per-run `index.html` still use the old report style; an overview shot could open
+  the job view at that step; phone recordings sit in a wide frame.
 
 
 - (from round 4 G6) Plan 018's look fired 4 times at `178ab71`, all confirming correct DONEs (0.91–0.98); it has not

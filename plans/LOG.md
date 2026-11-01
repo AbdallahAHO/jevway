@@ -2,6 +2,44 @@
 
 Newest first. Each entry: what changed, why, and the measured effect. Numbers come from runs, not estimates.
 
+## 2026-11-01 — Round 11: the prior-art backlog (plans 088–106), integration gates, R6 first run
+
+- **Merged to main** (`39f5928` → `4e26220`, fast-forward): plans 088–101, 103, 105 and 106; 102 and 104 rejected
+  (docs only); 084–086 had merged just before. The work ran in seven parallel worktrees, then one integration
+  branch took every branch in order and fixed what only the combination showed.
+- **Integration-only fixes** (each with a test that fails without it):
+  - Secrets: a value cut short could leak through a truncated label, page_text, 103's error quote or a native dialog
+    message (cut at 200 before the scrub). Pages are now scrubbed as the run reads them (`56f0be6`), dialogs too
+    (`a263cd5`).
+  - The caller's checks can never turn a guard stop (bot wall, page error, sign-in wall) into done; cancel reaches new
+    waits; the host check reads the followed tab; an upload into a frame is refused by name.
+  - One `wall` shape for the bot-check and sign-in stops.
+- **Gates at `7645118`, one suite at a time** (same-day baseline at `39f5928` in brackets):
+  - verify 11/12, then 12/12 after the evidence scenario was judged on quote precision (`2c77708`) [8/8, smaller suite]
+  - redteam 0 violations, 41/78 reached [0, 39/78]; gotchas 90/90 [88/90]; capabilities 36/36, 0 false done
+  - checkout 18/18; signup 15/15 [14/15]; forgejo 30/33 [33/33]: wiki-off 1/3 (flakes 7/10 on main), one delete-repo
+    run asked for input before the danger zone (nothing deleted)
+  - real 17/21 [18/21]: booking 0/3 as in every run today, github 2/3
+  - grafana 23/24; reader 79/79; langfuse 42/48: 14 of 16 jobs 3/3, error-observations 0/3 (also 0/3 on 10-18),
+    off-topic-answer 0/3 (content search on the fresh account doesn't narrow; unresolved)
+  - agent 7/8 ($0.24): the agent reached for `browser_look`, which the suite didn't allow; allowed in `19235a4`, the two
+    chores re-run 2/2 ($0.05), no deletion, the vague tidy-up asked the user
+- **R6, Vikunja, first measurement: 21/33 = 63.6% (95% CI 46.6–77.8%), not met; 0 unconfirmed destructive actions.**
+  - The first run stopped after 12 runs (6 passed): a harness setup error ("Document changed during evaluation" while
+    clearing storage) was read as an unusable app. `bd2549c` makes it that run's error; the 7 jobs that never ran were
+    then run once on the same product code: 15/21.
+  - Passed 3/3: new-task, label, move-task, new-project, find-overdue, delete-project (handed back on Delete, risk
+    0.78–0.80). missing-project 2/3 (one setup error).
+  - Missed: due-date 0/3 (DONE ×3, the date not shown), mark-done 0/2 + 1 setup error (covered 3×), comment 0/3
+    (handed back on "Add your reaction"), priority 1/3 (3 actions changed nothing).
+  - Vikunja is now a tuned suite.
+- **Round D (Jev requests)**: 103 kept (rejection jobs end quoting the page's error, in about half the requests), 105
+  kept as trace data only, 104 rejected (no gain, +1.5–6.7% tokens), 102 rejected (no gain; its regression claim was
+  withdrawn once wiki-off was shown to flake on main). Round D spend: about 46M input tokens, ~$1.93.
+- **106, the verify report**: a job's view opens on its screencast, with the steps on a synced timeline and strip, every
+  run switchable, then the run facts; `pnpm report:render <folder>` rebuilds older folders. Offline, 30 tests.
+- **Follow-ups** are in the README's list (round 11 items).
+
 ## 2026-10-18 — Goal 2 rounds 9–10 planned: generalization gates
 
 - **087 merged** (`349b865`, `be71c77`).
