@@ -161,6 +161,17 @@ const fakeTab = (pages: PageState[] = [page()]) => {
     coverNodes: [] as number[],
     /** How far each scroll moved the page, as the tab measures it; undefined when it can't tell. */
     scrolled: undefined as number | undefined,
+    /** Tabs this tab opened that the run has not taken yet, the label whose click opens one, and the tab it opens. */
+    opened: [] as string[],
+    opensTabOn: undefined as string | undefined,
+    next: undefined as unknown,
+    takeOpened: () => tab.opened.splice(0),
+    follow: async () => tab.next,
+    closed: false,
+    closes: 0,
+    close: async () => {
+      tab.closes++;
+    },
     screenshots: 0,
     recorded: 0,
     clicksAt: [] as { x: number; y: number }[],
@@ -218,6 +229,7 @@ const fakeTab = (pages: PageState[] = [page()]) => {
       }
       acted.push({ label: action.label, ...(text && { text }) });
       if (tab.dialogOnAct) tab.dialogs.push(tab.dialogOnAct);
+      if (tab.opensTabOn === action.label) tab.opened.push('T2');
       if (action.kind === 'scroll' && tab.scrolled !== undefined) return { scrolled: tab.scrolled };
     },
   };
@@ -3951,6 +3963,77 @@ describe('a scroll that moved nothing says so', () => {
     tab.scrolled = 448;
     await new BrowserTask(asTab, ask, { goal: 'Find the row', changeWaitMs: 0 }).run();
     expect(lastAction(requests[1])).toMatchObject({ operation: 'SCROLL_DOWN', element: 'Scroll down', page_changed: true });
+  });
+});
+
+describe('a tab the run\'s tab opens is followed', () => {
+  const DOCS_LINK: PageAction = { id: 'docs', kind: 'click', node: 50, role: 'link', label: 'API documentation' };
+  const BACK: PageAction = { id: 'close', kind: 'click', node: 60, role: 'button', label: 'Close this window' };
+  const dashboard = (fingerprint: string) => page({ url: 'http://fixture/dashboard', title: 'Dashboard', actions: [DOCS_LINK], fingerprint });
+  const docs = (fingerprint: string) => page({ url: 'http://fixture/docs', title: 'Docs', text: 'Getting started', actions: [BACK], fingerprint });
+  const openingDocs = () => {
+    const opener = fakeTab([dashboard('d1')]);
+    const popup = fakeTab([docs('p1'), docs('p2')]);
+    opener.tab.opensTabOn = DOCS_LINK.label;
+    opener.tab.next = popup.asTab;
+    return { opener, popup };
+  };
+  const recent = (request: any) => request.state.recent_actions;
+
+  it('continues on the new tab and says so in history', async () => {
+    const { opener, popup } = openingDocs();
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK' }, { operation: 'DONE' }]);
+    const task = new BrowserTask(opener.asTab, ask, { goal: 'Open the docs', changeWaitMs: 0 });
+    const summary = await task.run();
+    expect(requests[1].state.page.url).toBe('http://fixture/docs');
+    expect(recent(requests[1]).at(-1)).toMatchObject({
+      operation: 'CLICK',
+      element: 'API documentation (new tab opened: http://fixture/docs)',
+      page_changed: true,
+    });
+    expect(summary).toMatchObject({ status: 'done', url: 'http://fixture/docs' });
+    expect(task.tab).toBe(popup.asTab);
+    expect(task.tabs).toEqual([opener.asTab, popup.asTab]);
+  });
+
+  it('goes back to the tab that opened it when it closes', async () => {
+    const { opener, popup } = openingDocs();
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK' }, { operation: 'CLICK' }, { operation: 'DONE' }]);
+    const closeOnClick = popup.tab.act;
+    popup.tab.act = async (...args: Parameters<typeof closeOnClick>) => {
+      await closeOnClick(...args);
+      popup.tab.closed = true;
+    };
+    const task = new BrowserTask(opener.asTab, ask, { goal: 'Read the docs, then close them', changeWaitMs: 0 });
+    await task.run();
+    expect(requests[2].state.page.url).toBe('http://fixture/dashboard');
+    expect(recent(requests[2]).at(-1).element).toBe('Close this window (the tab closed; back on http://fixture/dashboard)');
+    expect(task.tab).toBe(opener.asTab);
+  });
+
+  it('closes the tabs it followed when the session ends, and the first one only when asked', async () => {
+    const { opener, popup } = openingDocs();
+    const { ask } = scriptedJev([{ operation: 'CLICK' }, { operation: 'DONE' }]);
+    const task = new BrowserTask(opener.asTab, ask, { goal: 'Open the docs', changeWaitMs: 0 });
+    await task.run();
+    await task.closeTabs({ keepFirst: true });
+    expect([opener.tab.closes, popup.tab.closes]).toEqual([0, 1]);
+    await task.closeTabs({ keepFirst: false });
+    expect(opener.tab.closes).toBe(1);
+  });
+
+  it('keeps a confirmation given before the switch for the new tab', async () => {
+    const PAY: PageAction = { id: 'pay', kind: 'click', node: 70, role: 'button', label: 'Pay €412' };
+    const opener = fakeTab([dashboard('d1')]);
+    const popup = fakeTab([page({ url: 'http://fixture/pay', title: 'Staylist payment', actions: [PAY], fingerprint: 'p1' }), page({ fingerprint: 'p2' })]);
+    opener.tab.opensTabOn = DOCS_LINK.label;
+    opener.tab.next = popup.asTab;
+    const { ask } = scriptedJev([{ operation: 'CLICK' }, { operation: 'CLICK', commit_risk: 0.9 }, { operation: 'DONE' }]);
+    const task = new BrowserTask(opener.asTab, ask, { goal: 'Pay for the Staylist booking', changeWaitMs: 0 });
+    task.update({ confirmIrreversible: true, confirmTarget: STAYLIST });
+    const summary = await task.run();
+    expect(summary.status).toBe('done');
+    expect(popup.acted.map((a) => a.label)).toEqual(['Pay €412']);
   });
 });
 
