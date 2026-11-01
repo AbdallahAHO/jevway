@@ -728,6 +728,20 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'a card read through an SVG link takes its text content',
+    file: 'svg-links.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const opens = page.actions.filter((action) => action.role === 'button' && action.label.startsWith('Open'));
+      assert.deepEqual(
+        opens.map((action) => action.label),
+        ['Open — Web server', 'Open — Worker'],
+      );
+      await tab.act(opens[1], page);
+      assert.deepEqual((await fixtureState(tab)).opened, ['Worker']);
+    },
+  },
+  {
     name: 'unique labels are unchanged',
     file: 'repeated-actions.html',
     run: async (tab) => {
