@@ -89,7 +89,7 @@ Every model judges commit risk **per click candidate by name**, in one follow-up
 
 ## Tools
 
-**`browser_task`** takes `goal`, `url` | `tab`, `values`, `secret_keys`, `done_when`, `checks`, `session`, `confirm_irreversible`, `confirm_target`, `max_steps`, `max_seconds`, `allowed_hosts`, `blocked_hosts`, and, for new sessions only, `allow_coordinate_clicks` and `record_dir`. It returns:
+**`browser_task`** takes `goal`, `url` | `tab`, `values`, `secret_keys`, `files`, `done_when`, `checks`, `session`, `confirm_irreversible`, `confirm_target`, `max_steps`, `max_seconds`, `allowed_hosts`, `blocked_hosts`, and, for new sessions only, `allow_coordinate_clicks` and `record_dir`. It returns:
 
 ```json
 { "session": "be63210d", "status": "needs_input", "reason": "Blocked: no supplied value for \"Email address\"",
