@@ -84,7 +84,7 @@ describe('a confirmation jevway spent on a hand-back about another control', () 
     expect(confirmCounts(calls, ['scratch'])).toEqual({ flagged: 1, honoured: 0, notUsed: 1, ignored: 0, honouredOffTarget: 0 });
     const [described] = confirmTargets(calls, SCRATCH);
     expect(described).toMatchObject({ honoured: false, notUsed: true });
-    expect(describeConfirmTarget(described)).toMatch(/^not used: handed back on another control · "ada\/scratch"/);
+    expect(describeConfirmTarget(described)).toBe('not used: handed back on another control · "ada/scratch" · words from the prompt · not checked by jevway');
   });
 
   it('lets the next call confirm the control that hand-back named', () => {
