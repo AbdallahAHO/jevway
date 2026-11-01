@@ -160,7 +160,7 @@ export const decide = async (ask: Ask, input: DecisionInput): Promise<Decision> 
   let inputTokens = response.usage.input_tokens ?? 0;
 
   const followUp = async (questions: Record<string, Question>) => {
-    const answer = await ask({ state: request.state, questions: scrubberFor(input.values, input.secretKeys)(questions) });
+    const answer = await ask(scrubberFor(input.values, input.secretKeys)({ state: request.state, questions }));
     requests++;
     inputTokens += answer.usage.input_tokens ?? 0;
     return answer.answers;
@@ -263,9 +263,7 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
   }
   Object.assign(questions, input.extraQuestions);
 
-  // A secret the page echoes (a field holding it, a "token created" line) is scrubbed before the screenshot is attached.
-  const scrub = scrubberFor(input.values, input.secretKeys);
-  const state = scrub({
+  const state = {
     page: pick(input.page, ['url', 'title', 'text']),
     // Password fields are never in `elements`; this says only whether each visible one is filled, never its value.
     ...(input.page.passwordFields?.length && { password_fields: input.page.passwordFields }),
@@ -273,7 +271,7 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
     supplied_values: shownValues(input.values, input.secretKeys),
     recent_actions: input.history.slice(-10),
     ...(input.screenshot && { screenshot: SCREENSHOT_NOTE }),
-  });
+  };
   // TypeSafe takes the image as an asset in place under `screenshot`; OpenRouter vision models read image parts
   // only from a top-level state array, ahead of the JSON state.
   // Interfaces lack index signatures, so the plain JSON state needs one cast for the SDK's EntryType.
@@ -282,7 +280,9 @@ export const buildRequest = (input: DecisionInput, space: ActionSpace): SystemOn
     : input.imageTransport === 'assets'
       ? { ...state, screenshot: Image.fromBase64(input.screenshot), screenshot_note: SCREENSHOT_NOTE }
       : [imagePart(input.screenshot), state];
-  return { state: withImage as unknown as NonNullable<EntryType>, questions: scrub(questions) };
+  // A secret the page echoes (a field holding it, a "token created" line, any key added to the state) is scrubbed from the
+  // whole request in one place; the screenshot is pixels and stays as it is.
+  return scrubberFor(input.values, input.secretKeys)({ state: withImage as unknown as NonNullable<EntryType>, questions });
 };
 
 const SCREENSHOT_NOTE =

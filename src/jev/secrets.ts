@@ -28,9 +28,12 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype;
 
+// An image part of a request is pixels: its base64 can contain a short secret by chance, and a replacement would corrupt it.
+const isImagePart = (value: Record<string, unknown>) => value.type === 'image_url';
+
 /**
  * A function that replaces every secret value in a string, or in every string of a plain object or array (keys,
- * numbers and class instances such as an image are left alone), with its key's marker. The business rule: a value the
+ * numbers, class instances such as an image, and `image_url` parts are left alone), with its key's marker. The business rule: a value the
  * caller marked secret never reaches the model or any output, including when the page echoes it (upper-cased, in an
  * address). Matching is case-insensitive and takes the longest form first, in one pass, so a marker is never scrubbed
  * again. Every non-empty value counts, even a short one: a garbled text is the safe failure, a leaked secret is not.
@@ -52,7 +55,7 @@ export const scrubberFor = (values: Record<string, string>, secretKeys: readonly
   const scrub = (value: unknown): unknown => {
     if (typeof value === 'string') return scrubText(value);
     if (Array.isArray(value)) return value.map(scrub);
-    if (isPlainObject(value)) return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, scrub(inner)]));
+    if (isPlainObject(value) && !isImagePart(value)) return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, scrub(inner)]));
     return value;
   };
   return <T>(value: T): T => scrub(value) as T;
