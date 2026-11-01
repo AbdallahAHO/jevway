@@ -32,6 +32,17 @@ const find = (actions: PageAction[], role: string, label: RegExp) =>
 const controls = (actions: PageAction[]) => actions.filter((action) => ['click', 'fill', 'select'].includes(action.kind));
 const labelsOf = (actions: PageAction[]) => JSON.stringify(actions.map((action) => `${action.role}: ${action.label}`));
 const fixtureState = (tab: Tab) => tab.evaluate('window.__fixture');
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+type Box = { x: number; y: number; w: number; h: number };
+// The first iframe's content box (inside its border and padding) in viewport pixels, read in the page itself.
+const frameBox = (tab: Tab): Promise<Box> =>
+  tab.evaluate(`(() => {
+    const f = document.querySelector('iframe'), r = f.getBoundingClientRect(), s = getComputedStyle(f);
+    const left = parseFloat(s.paddingLeft), top = parseFloat(s.paddingTop);
+    return { x: r.x + f.clientLeft + left, y: r.y + f.clientTop + top, w: f.clientWidth - left - parseFloat(s.paddingRight), h: f.clientHeight - top - parseFloat(s.paddingBottom) };
+  })()`);
+const insideBox = (rect: Box, box: Box) =>
+  rect.x >= box.x - 0.5 && rect.y >= box.y - 0.5 && rect.x + rect.w <= box.x + box.w + 0.5 && rect.y + rect.h <= box.y + box.h + 0.5;
 
 const checks: Check[] = [
   {
@@ -1058,17 +1069,148 @@ const checks: Check[] = [
       assert.ok((await tab.observe()).actions.length > 0);
     },
   },
+  {
+    name: 'a same-origin iframe is read: its controls sit inside the frame, take typed text and clicks',
+    file: 'iframe-same-origin.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const field = page.actions.find((action) => action.kind === 'fill' && /Coupon code/.test(action.label));
+      const apply = find(page.actions, 'button', /^Apply coupon$/);
+      assert.ok(field && apply, `frame controls not listed: ${labelsOf(page.actions)}`);
+      assert.ok(find(page.actions, 'button', /^Main action$/), `main control lost: ${labelsOf(page.actions)}`);
+      assert.deepEqual(
+        controls(page.actions).map((action) => action.id),
+        controls(page.actions).map((_, i) => `e${i + 1}`),
+        'ids do not continue across the frame',
+      );
+      assert.ok(apply.frame, 'the frame action does not record its frame');
+      assert.ok(insideBox(apply.rect!, await frameBox(tab)), `rect ${JSON.stringify(apply.rect)} is not inside the frame`);
+      assert.match(page.text, /\[Frame: Coupon form\]\nCoupon/, `frame text missing: ${page.text}`);
+      await tab.act(field, page, 'SPRING10');
+      assert.equal(await tab.evaluate(`document.querySelector('iframe').contentDocument.getElementById('code').value`), 'SPRING10');
+      const next = await tab.observe();
+      await tab.act(find(next.actions, 'button', /^Apply coupon$/)!, next);
+      await pause(100);
+      assert.equal((await fixtureState(tab)).applied, 'SPRING10');
+    },
+  },
+  {
+    name: 'a nested iframe (same-origin inside cross-origin) compounds both offsets and takes clicks',
+    file: 'iframe-nested.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const apply = find(page.actions, 'button', /^Apply coupon$/);
+      assert.ok(apply, `nested frame controls not listed: ${labelsOf(page.actions)}`);
+      // The inner form starts inside the outer frame's padding plus the mid page's own margin and frame border.
+      const outer = await frameBox(tab);
+      assert.ok(insideBox(apply.rect!, outer), `rect ${JSON.stringify(apply.rect)} is not inside the outer frame`);
+      assert.ok(apply.rect!.x >= outer.x + 30 + 4 && apply.rect!.y >= outer.y + 12 + 4, `rect ${JSON.stringify(apply.rect)} misses the nested offset`);
+      await tab.act(apply, page);
+      await pause(100);
+      assert.equal((await fixtureState(tab)).applied, '');
+    },
+  },
+  {
+    name: 'a cross-origin iframe on a second port is read, clicked, and its confirm is declined and reported',
+    file: 'iframe-cross-origin.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const field = page.actions.find((action) => action.kind === 'fill' && /Coupon code/.test(action.label));
+      const remove = find(page.actions, 'button', /^Remove coupon$/);
+      assert.ok(field && remove, `cross-origin frame controls not listed: ${labelsOf(page.actions)}`);
+      assert.ok(insideBox(remove.rect!, await frameBox(tab)), `rect ${JSON.stringify(remove.rect)} is not inside the frame`);
+      await tab.act(field, page, 'AUTUMN5');
+      let next = await tab.observe();
+      await tab.act(find(next.actions, 'button', /^Apply coupon$/)!, next);
+      await pause(100);
+      assert.equal((await fixtureState(tab)).applied, 'AUTUMN5');
+      next = await tab.observe();
+      await tab.act(find(next.actions, 'button', /^Remove coupon$/)!, next);
+      await pause(100);
+      assert.equal((await fixtureState(tab)).removed, false, 'the confirm in the frame was accepted');
+      assert.deepEqual(tab.takeDialogs(), [{ type: 'confirm', message: 'Remove the coupon?', accepted: false }]);
+    },
+  },
+  {
+    name: 'a scrolled iframe on a scrolled page: rects follow both scrolls, and a wanted row below the frame fold is listed',
+    file: 'iframe-scrolled.html',
+    run: async (tab) => {
+      await tab.evaluate('window.scrollTo(0, 400)');
+      await pause(100);
+      let page = await tab.observe();
+      const links = page.actions.filter((action) => action.role === 'link');
+      assert.ok(links.length > 3, `frame rows not listed: ${labelsOf(page.actions)}`);
+      assert.ok(!links.some((action) => /^Order 1001$/.test(action.label)), `a row scrolled out of the frame is listed: ${labelsOf(links)}`);
+      const box = await frameBox(tab);
+      assert.ok(links.every((action) => insideBox(action.rect!, box)), `a row rect is outside the frame: ${JSON.stringify(links.map((a) => a.rect))}`);
+      const first = links[0];
+      await tab.act(first, page);
+      await pause(100);
+      assert.equal((await fixtureState(tab)).opened, first.label);
+      tab.want(['Order 1038']);
+      page = await tab.observe();
+      const wanted = find(page.actions, 'link', /^Order 1038$/);
+      assert.ok(wanted, `the wanted row below the frame fold is not listed: ${labelsOf(page.actions)}`);
+      await tab.act(wanted, page);
+      await pause(100);
+      assert.equal((await fixtureState(tab)).opened, 'Order 1038');
+    },
+  },
+  {
+    name: 'an iframe under a modal is not listed until the modal closes, and a banner over it is a cover',
+    file: 'iframe-modal.html',
+    run: async (tab) => {
+      let page = await tab.observe();
+      assert.ok(!page.actions.some((action) => /coupon/i.test(action.label)), `a control under the modal is listed: ${labelsOf(page.actions)}`);
+      const gotIt = find(page.actions, 'button', /^Got it$/);
+      assert.ok(gotIt, `modal button not listed: ${labelsOf(page.actions)}`);
+      await tab.act(gotIt, page);
+      page = await tab.observe();
+      const apply = find(page.actions, 'button', /^Apply coupon$/);
+      assert.ok(apply, `frame controls not listed after the modal closed: ${labelsOf(page.actions)}`);
+      // A banner slides over the frame after the page was read: its button is listed, the frame's controls are not.
+      await tab.evaluate(`document.body.insertAdjacentHTML('beforeend', '<div class="banner"><button type="button">Dismiss banner</button></div>')`);
+      const covered = await tab.observe();
+      const dismiss = find(covered.actions, 'button', /^Dismiss banner$/);
+      assert.ok(dismiss, `banner button not listed: ${labelsOf(covered.actions)}`);
+      assert.ok(!covered.actions.some((action) => /coupon/i.test(action.label)), `a covered frame control is listed: ${labelsOf(covered.actions)}`);
+      const error = await tab.act(apply, page).then(() => undefined, (caught) => caught);
+      assert.ok(error instanceof TargetUnreachable, `expected TargetUnreachable, got ${error}`);
+      assert.deepEqual(error.coverNodes, [dismiss.node], 'the covering banner is not named');
+      assert.equal((await fixtureState(tab)).applied, undefined, 'the covered button was clicked');
+    },
+  },
+  {
+    name: 'a password field inside an iframe is described as filled, never listed or read',
+    file: 'iframe-password.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      assert.ok(!JSON.stringify(page).includes('secret-5521'), 'the password value reached the page state');
+      assert.ok(!page.actions.some((action) => /^Password/.test(action.label)), `the password field is listed: ${labelsOf(page.actions)}`);
+      assert.ok(page.actions.some((action) => action.kind === 'fill' && /Username/.test(action.label)), `username not listed: ${labelsOf(page.actions)}`);
+      assert.deepEqual(page.passwordFields, [{ name: 'Password', filled: true }]);
+      assert.ok(page.text.startsWith('Password field "Password": filled'), `the password line is not first: ${page.text}`);
+    },
+  },
 ];
 
-// Serve every page in verify/fixture/reader/ at /<file name> on a random local port.
+// Serve every page in verify/fixture/reader/ at /<file name> on a random local port, and again on a second port. Frame
+// pages reach the second one as {{CROSS_ORIGIN}}, `localhost:<port>`: another origin and another site, so Chrome runs
+// those frames in their own process.
 const fixtureDir = new URL('./fixture/reader/', import.meta.url);
-const pages = Object.fromEntries(readdirSync(fixtureDir).map((file) => [`/${file}`, readFileSync(new URL(file, fixtureDir))]));
-const server = createServer((request, response) => {
-  const page = pages[request.url ?? ''];
-  response.writeHead(page ? 200 : 404, { 'content-type': 'text/html' }).end(page);
-});
-await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+const pages = Object.fromEntries(readdirSync(fixtureDir).map((file) => [`/${file}`, readFileSync(new URL(file, fixtureDir), 'utf8')]));
+const listen = async () => {
+  const server = createServer((request, response) => {
+    const page = pages[request.url ?? '']?.replaceAll('{{CROSS_ORIGIN}}', crossOrigin);
+    response.writeHead(page ? 200 : 404, { 'content-type': 'text/html' }).end(page);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { server, port: (server.address() as { port: number }).port };
+};
+let crossOrigin = '';
+const [main, second] = [await listen(), await listen()];
+crossOrigin = `http://localhost:${second.port}`;
+const origin = `http://127.0.0.1:${main.port}`;
 
 let passed = 0;
 try {
@@ -1092,7 +1234,8 @@ try {
     await chrome.close();
   }
 } finally {
-  server.close();
+  main.server.close();
+  second.server.close();
 }
 
 process.stdout.write(`\n${passed}/${checks.length} reader checks passed\n`);

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scrolled iframe</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  iframe { display: block; margin: 20px 0 0 120px; width: 360px; height: 200px; border: 3px solid #888; padding: 5px; }
+
+</style>
+</head>
+<body>
+<div style="height:500px">Above the orders</div>
+<iframe src="frame-list.html" title="Orders"></iframe>
+<div style="height:1200px"></div>
+<script>
+  window.__fixture = {};
+  addEventListener('message', (event) => Object.assign(window.__fixture, event.data?.fixture));
+</script>
+</body>
+</html>

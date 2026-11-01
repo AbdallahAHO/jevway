@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Partner widget</title>
+<style>
+  body { margin: 0; padding: 12px 0 0 30px; font: 14px system-ui, sans-serif; }
+  iframe { width: 320px; height: 170px; border: 4px solid #999; }
+</style>
+</head>
+<body>
+<p>Partner widget</p>
+<iframe src="frame-form.html" title="Inner coupon form"></iframe>
+<script>
+  // Pass the inner frame's report up to the page.
+  addEventListener('message', (event) => parent.postMessage(event.data, '*'));
+</script>
+</body>
+</html>

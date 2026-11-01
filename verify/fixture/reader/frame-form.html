@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coupon form</title>
+<style>
+  body { margin: 8px; font: 14px system-ui, sans-serif; }
+  input { width: 180px; padding: 4px 6px; }
+  button { margin-top: 8px; }
+</style>
+</head>
+<body>
+<h2>Coupon</h2>
+<label for="code">Coupon code</label>
+<input id="code" type="text">
+<div>
+  <button type="button" id="apply">Apply coupon</button>
+  <button type="button" id="remove">Remove coupon</button>
+</div>
+<script>
+  // Inside a frame: what happened goes to the page that holds it, which keeps it in window.__fixture.
+  const report = (fixture) => parent.postMessage({ fixture }, '*');
+  document.getElementById('apply').addEventListener('click', () => report({ applied: document.getElementById('code').value }));
+  document.getElementById('remove').addEventListener('click', () => report({ removed: confirm('Remove the coupon?') }));
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nested iframe</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  iframe { display: block; margin: 20px 0 0 120px; width: 360px; height: 200px; border: 3px solid #888; padding: 5px; }
+
+</style>
+</head>
+<body>
+<p>Shop with a partner widget</p>
+<iframe src="{{CROSS_ORIGIN}}/frame-nested-mid.html" title="Partner widget" style="width:420px;height:260px"></iframe>
+<script>
+  window.__fixture = {};
+  addEventListener('message', (event) => Object.assign(window.__fixture, event.data?.fixture));
+</script>
+</body>
+</html>

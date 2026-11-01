@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Partner sign-in</title>
+<style>
+  body { margin: 8px; font: 14px system-ui, sans-serif; }
+  label { display: block; margin-top: 6px; }
+</style>
+</head>
+<body>
+<label for="user">Username</label>
+<input id="user" type="text">
+<label for="pw">Password</label>
+<input id="pw" type="password">
+<button type="button" id="go">Sign in to partner</button>
+<script>
+  // Typed by a person before the page was read; it must never reach the page state.
+  document.getElementById('pw').value = 'frame-secret-5521';
+  document.getElementById('go').addEventListener('click', () => parent.postMessage({ fixture: { signedIn: document.getElementById('user').value } }, '*'));
+</script>
+</body>
+</html>

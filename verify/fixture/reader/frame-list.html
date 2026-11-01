@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Orders</title>
+<style>
+  body { margin: 8px; font: 14px system-ui, sans-serif; }
+  a { display: block; height: 24px; line-height: 24px; }
+</style>
+</head>
+<body>
+<h2>Orders</h2>
+<div id="orders"></div>
+<script>
+  const report = (fixture) => parent.postMessage({ fixture }, '*');
+  const list = document.getElementById('orders');
+  for (let n = 1001; n <= 1040; n++) {
+    const link = document.createElement('a');
+    link.href = '#order-' + n;
+    link.textContent = 'Order ' + n;
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      report({ opened: 'Order ' + n });
+    });
+    list.append(link);
+  }
+  // The frame's own content starts scrolled: Order 1001 to about 1012 are above its viewport.
+  scrollTo(0, 300);
+</script>
+</body>
+</html>
