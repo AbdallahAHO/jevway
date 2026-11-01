@@ -338,7 +338,10 @@ export class BrowserTask {
   async #switchTabs(): Promise<'opened' | 'closed' | undefined> {
     const opened = this.#tab.takeOpened().at(-1);
     if (opened) {
-      this.#tab = await this.#tab.follow(opened);
+      // The arm for the click that opened it moves with the step; the tab left behind keeps none.
+      const opener = this.#tab;
+      this.#tab = await opener.follow(opened);
+      opener.disarmConfirm();
       this.#tabs.push(this.#tab);
       return 'opened';
     }
@@ -555,8 +558,8 @@ export class BrowserTask {
         // Never a decision on a page outside the hosts: a start page, a redirect or a late navigation that left them ends the run.
         const outside = outsideHosts(page.url, hosts);
         if (outside) return stop('blocked', `The page is outside this run's hosts: ${outside}; the run stopped without going back`);
-        // The arm belongs to one step: a click that never reached the page leaves none for the next decision.
-        this.#tab.disarmConfirm();
+        // The arm belongs to one step: a click that never reached the page leaves none for the next decision, on any tab.
+        for (const tab of this.#tabs) tab.disarmConfirm();
         // Checked before a decision is spent: a challenge page has nothing for Jev to pick.
         const { wall } = await wallAfterWait();
         if (wall) return stopAtWall(wall);
@@ -933,7 +936,7 @@ export class BrowserTask {
       if (error instanceof RunStopped) return stop(error.status, error.reason);
       return stop('blocked', describeError(error));
     } finally {
-      this.#tab.disarmConfirm();
+      for (const tab of this.#tabs) tab.disarmConfirm();
     }
   }
 
