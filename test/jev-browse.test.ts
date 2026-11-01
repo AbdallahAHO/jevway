@@ -4433,6 +4433,18 @@ describe("the caller's checks on the final page", () => {
     expect((await run(0.8)).status).toBe('done');
   });
 
+  it('never turns a stop that is not a judgment of progress into done, whatever the checks say', async () => {
+    // The page re-renders under every click: a browser-level stop, decided on the final page with done_when at 0.6.
+    const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '1', done_check: 0.6 }]);
+    const { tab, asTab, acted } = fakeTab(Array.from({ length: 8 }, (_, i) => page({ fingerprint: String(i) })));
+    tab.stale = 100;
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Book', doneWhen: 'x', checks: [onStays, showsDetails], maxSteps: 1, changeWaitMs: 0 }).run();
+    expect(acted).toEqual([]);
+    expect(summary.status).toBe('blocked');
+    expect(summary.reason).toMatch(/^The page kept changing under the click/);
+    expect(summary.checks?.every((check) => check.pass)).toBe(true);
+  });
+
   it('leaves a question for the caller as it is, whatever the checks say', async () => {
     const { ask } = scriptedJev([{ operation: 'BLOCKED', done_check: 0.6 }]);
     const { asTab } = fakeTab();

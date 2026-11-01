@@ -85,6 +85,12 @@ the click, so the model says BLOCKED on a goal that succeeded.
      recorded page, so a hand-back on it never upgrades: conservative by design. Checks run alongside `done_when`, never instead of it, because text can
      already be on the page before the run.
    - `needs_input`, `needs_confirmation`, `step_budget` never change: they hand back a question, not a verdict.
+   - **Opt-in per stop.** Only stops that judge progress are marked overridable at the `stop` call: Jev's own BLOCKED or
+     unsure step (incl. the box stops), three rejected DONEs, the covered-target guard, and the progress guards that end
+     through `stopAfterLastLook` (no change, wandering, toggling, repeating). Every other stop is final by default: a
+     browser or model error, a repeated declined dialog, a dropped click, a page that kept changing, a submit the page
+     already answered, an undo of the run's own toggle, and any stop other branches add (a cancellation, a host or a
+     bot wall), so a new stop site never becomes `done` by accident.
 8. **Keep `TaskStatus`.** No `unconfirmed` status: every suite (`verify/*.ts`, `verify/jobs/runner.ts`), the CLI's exit
    code and the skill match on the six statuses, and `uncertain` already means "read `page_text` and `stuck`, then
    decide". The reason names the failed checks, and `summary.checks` lists them all.

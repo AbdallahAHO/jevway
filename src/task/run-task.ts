@@ -280,8 +280,11 @@ export class BrowserTask {
   #traceScrubbed = 0;
   /** The page each decision was made on: a `done_when` score counts for the caller's checks only on the page it judged. */
   #decidedOn = new WeakMap<Decision, PageState>();
-  /** How the last call stopped: the page its summary reports, the decision it stopped on, and its first request. */
-  #ending: { page: PageState; decision?: Decision; firstRequest: number } | undefined;
+  /**
+   * How the last call stopped: the page its summary reports, the decision it stopped on, its first request, and whether
+   * the stop was a judgment of progress the caller's checks may overturn (see #settle). Every other stop is final.
+   */
+  #ending: { page: PageState; decision?: Decision; firstRequest: number; overridable: boolean } | undefined;
   #tab: Tab;
   #ask: Ask;
   #recording: Recording | undefined;
@@ -363,7 +366,8 @@ export class BrowserTask {
     const tokensBefore = this.#inputTokens;
     const screenshotsBefore = this.#screenshots;
 
-    const stop = (status: TaskStatus, reason: string, decision?: Decision): TaskSummary => {
+    // `overridable` marks the stops that judge progress (Jev's BLOCKED or unsure, the progress guards); every other stop is final.
+    const stop = (status: TaskStatus, reason: string, decision?: Decision, { overridable = false } = {}): TaskSummary => {
       // A dialog that opened late still belongs on the step that caused it.
       this.#reportDialogs(firstStep);
       // A hand-back asks a new question, so a confirmation still pending (a refused one) is spent.
@@ -373,7 +377,7 @@ export class BrowserTask {
       const confirmIgnored = this.#confirmIgnored;
       this.#confirmIgnored = undefined;
       this.#lastStatus = status;
-      this.#ending = { page, decision, firstRequest };
+      this.#ending = { page, decision, firstRequest, overridable };
       // A secret never leaves in a summary or a trace, wherever the page echoed it.
       for (; this.#traceScrubbed < this.trace.length; this.#traceScrubbed++) this.trace[this.#traceScrubbed] = this.#scrub(this.trace[this.#traceScrubbed]);
       return this.#scrub({
@@ -434,13 +438,14 @@ export class BrowserTask {
     };
 
     // A loop guard fires on a page the actions may already have brought to the goal: take one last look before handing back.
+    // Only progress guards stop here, so their stops are judgments the caller's checks may overturn.
     const stopAfterLastLook = async (status: TaskStatus, reason: string, decision: Decision): Promise<TaskSummary | undefined> => {
       const look = await this.#lastLook(page);
       if (look && (look.doneProbability ?? 0) >= LAST_LOOK_DONE) {
         this.trace.push({ decision: { ...look, action: look.action?.label }, executed: false, elapsed_ms: elapsed() });
         return stopDone(`Completion condition verified: ${doneWhen}`, look);
       }
-      return stop(status, reason, decision);
+      return stop(status, reason, decision, { overridable: true });
     };
 
     // jev-browse: a bot check offers nothing to act on, and the run never tries to get past one. It gets wallWaitMs to clear
@@ -541,7 +546,7 @@ export class BrowserTask {
         if (decision.operation === 'DONE' && doneWhen && (decision.doneProbability ?? 0) < 0.5) {
           record(false);
           if (++rejectedDone >= MAX_REJECTED_DONE) {
-            return stop('uncertain', `Jev chose DONE ${rejectedDone}× but "${doneWhen}" is not visible`, decision);
+            return stop('uncertain', `Jev chose DONE ${rejectedDone}× but "${doneWhen}" is not visible`, decision, { overridable: true });
           }
           // Jev learns its DONE was premature, instead of proposing the same DONE on the same evidence.
           const unsaved = this.#unsavedToggle(page);
@@ -647,7 +652,9 @@ export class BrowserTask {
             doneWhen && unsureOnMetGoal && doneProbability >= GUARDS.doneSteady
               ? (['done', `Completion condition verified: ${doneWhen}`] as const)
               : handBack;
-          const ended = status === 'done' ? await stopDone(reason, decision) : stop(status, reason, decision);
+          // Jev's own BLOCKED or unsure step is a judgment of progress; a submit the page already answered is not.
+          const judged = decision.operation === 'BLOCKED' || status === 'uncertain';
+          const ended = status === 'done' ? await stopDone(reason, decision) : stop(status, reason, decision, { overridable: judged });
           if (ended) return ended;
           continue;
         }
@@ -729,7 +736,7 @@ export class BrowserTask {
           const layer = covering.map((label) => `"${label}"`).join(', ');
           if (misses >= GUARDS.maxUnreachable) {
             const cause = layer ? `it is covered by a layer listing ${layer}` : 'something on the page covers it';
-            return stop('blocked', `"${action.label}" could not be reached ${misses} times: ${cause}`, decision);
+            return stop('blocked', `"${action.label}" could not be reached ${misses} times: ${cause}`, decision, { overridable: true });
           }
           if (misses === 2) {
             this.#history.push({
@@ -852,7 +859,7 @@ export class BrowserTask {
   #settle(summary: TaskSummary): TaskSummary {
     const { checks, doneWhen } = this.#options;
     if (!checks.length || !this.#ending) return summary;
-    const { page, decision } = this.#ending;
+    const { page, decision, overridable } = this.#ending;
     const results = runChecks(checks, page);
     const failed = results.filter((result) => !result.pass);
     if (summary.status === 'done' && failed.length) {
@@ -863,7 +870,7 @@ export class BrowserTask {
     const score = decision && this.#decidedOn.get(decision) === page ? decision.doneProbability : undefined;
     // The same bars a DONE needs, and the higher one right after an edit that nothing saved yet.
     const bar = this.#unsavedEdit ? GUARDS.doneSteady : LAST_LOOK_DONE;
-    if (['blocked', 'uncertain'].includes(summary.status) && !failed.length && doneWhen && score !== undefined && score >= bar) {
+    if (overridable && ['blocked', 'uncertain'].includes(summary.status) && !failed.length && doneWhen && score !== undefined && score >= bar) {
       this.#lastStatus = 'done';
       const { stuck: _stuck, ...rest } = summary;
       const reason = `All ${results.length} checks passed on the final page and "${doneWhen}" scored ${round(score)} there (the run had ended ${summary.status}: ${summary.reason})`;
