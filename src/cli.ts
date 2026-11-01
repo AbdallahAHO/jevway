@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
+import { loadEnvFile } from './setup/env-file.ts';
 import { CHECKS, type Check } from './task/checks.ts';
 import { createRunner } from './task/start-task.ts';
 
@@ -22,7 +23,10 @@ const USAGE = `jevway --goal "<outcome>" (--url <url> | --tab <url part>) [optio
   --record <dir>                  sharp screenshot before every action + final page, summary.json, index.html
 
 Prints one JSON summary. Exit code 0 only when status is "done".
-Needs TYPESAFE_API_KEY (Jev only) or OPENROUTER_API_KEY (every model).`;
+Needs TYPESAFE_API_KEY (Jev only) or OPENROUTER_API_KEY (every model), from the environment or ~/.config/jevway/env.`;
+
+// Keys and JEVWAY_* settings the environment lacks come from ~/.config/jevway/env.
+loadEnvFile();
 
 const { values: args } = parseArgs({
   options: {
@@ -68,6 +72,7 @@ try {
     model: args.model,
     screenshots: args.screenshots,
   });
+  runner.requireKey();
 } catch (error) {
   console.error(`jevway: ${(error as Error).message}`);
   process.exit(2);

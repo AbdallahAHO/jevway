@@ -1,7 +1,9 @@
 import { connectChrome, type BrowserSource, type ChromeHandle } from '../browser/chrome.ts';
 import { Tab } from '../browser/tab.ts';
+import type { Ask } from '../jev/decide.ts';
 import { createAsk, profileOptions, resolveModel } from '../jev/model.ts';
 import { JourneySession, type JourneyOptions } from '../journeys/journey-session.ts';
+import { missingKeyMessage } from '../setup/env-file.ts';
 import { hostsFromEnv, narrowHosts, outsideHosts } from './hosts.ts';
 import { BrowserTask, type TaskOptions } from './run-task.ts';
 
@@ -20,8 +22,10 @@ export interface StartOptions extends TaskOptions {
 }
 
 /**
- * Connects a browser once and starts tasks on tabs inside it. Needs the chosen model's key:
- * `TYPESAFE_API_KEY` for Jev (default), `OPENROUTER_API_KEY` for Clef-omni.
+ * Connects a browser once and starts tasks on tabs inside it. Tasks and journeys need the chosen model's key:
+ * `TYPESAFE_API_KEY` for Jev (default), `OPENROUTER_API_KEY` for Clef-omni. Without it the runner is still made, so an
+ * MCP server can list its tools; `start` and `startJourney` then reject with the fix before any browser connects, and
+ * `look` (no model call) works as usual.
  *
  * @example
  * const runner = createRunner('auto', { model: 'pplx-decider', screenshots: 'always' });
@@ -30,12 +34,23 @@ export interface StartOptions extends TaskOptions {
  */
 export const createRunner = (source: BrowserSource, choice: { model?: string; screenshots?: string } = {}) => {
   const { profile, screenshots } = resolveModel(choice);
-  const ask = createAsk(profile);
+  // Made on first use: a missing key fails the call that needs the model, not the server that lists the tools.
+  let client: Ask | undefined;
+  const ask = (): Ask => {
+    const missing = missingKeyMessage(profile);
+    if (missing) throw new Error(missing);
+    return (client ??= createAsk(profile));
+  };
   let chrome: Promise<ChromeHandle> | undefined;
   const browser = () => (chrome ??= connectChrome(source));
 
   return {
+    /** Throws the missing-key message, so the CLI can report it as a usage error before any browser starts. */
+    requireKey() {
+      ask();
+    },
     async start({ url, tab, confirmIrreversible, confirmTarget, allowedHosts, blockedHosts, ...options }: StartOptions) {
+      const decider = ask();
       // The server's lists, narrowed by the call; a start URL outside them is never opened.
       const hosts = narrowHosts(hostsFromEnv(), { allowed: allowedHosts, blocked: blockedHosts });
       const outside = url ? outsideHosts(url, hosts) : undefined;
@@ -43,7 +58,7 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
       const { cdp } = await browser();
       if (!url && !tab) throw new Error('Pass `url` to open a new tab or `tab` to reuse an open one.');
       const page = url ? await Tab.open(cdp, url) : await Tab.find(cdp, tab!);
-      const task = new BrowserTask(page, ask, {
+      const task = new BrowserTask(page, decider, {
         ...profileOptions(profile),
         ...definedOnly(options),
         hosts,
@@ -65,8 +80,9 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
     },
     /** Mobile journey mapping; in the user's own Chrome it opens a separate window so screenshots keep rendering. */
     async startJourney(options: JourneyOptions) {
+      const decider = ask();
       const { cdp } = await browser();
-      return JourneySession.start(cdp, ask, {
+      return JourneySession.start(cdp, decider, {
         newWindow: source === 'auto',
         ...profileOptions(profile),
         ...options,

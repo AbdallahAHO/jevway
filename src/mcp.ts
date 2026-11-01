@@ -5,6 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import type { JourneySession } from './journeys/journey-session.ts';
+import { loadEnvFile } from './setup/env-file.ts';
 import { CHECKS } from './task/checks.ts';
 import { lookAt } from './task/look.ts';
 import type { BrowserTask } from './task/run-task.ts';
@@ -13,7 +14,15 @@ import { createRunner } from './task/start-task.ts';
 // JEVWAY_BROWSER: auto (running Chrome, shared with chrome-devtools-mcp --auto-connect) | launch | launch-headless | http://host:port
 // JEVWAY_MODEL: jev (default) | pplx-decider | clef-omni | clef | clef-flash | gpt-6-luna (see src/jev/model.ts)
 // JEVWAY_SCREENSHOTS: off | fallback | always (vision models only)
+// Keys and JEVWAY_* settings the client's environment lacks come from ~/.config/jevway/env.
+loadEnvFile();
 const runner = createRunner(process.env.JEVWAY_BROWSER ?? 'auto');
+// Without a key the tools are still listed and each call that needs Jev answers with the fix; the client's server log gets it too.
+try {
+  runner.requireKey();
+} catch (error) {
+  console.error(`jevway-mcp: ${(error as Error).message}`);
+}
 // `running`: the session's current call. A cancelled call can still be finishing an input; the next call waits for it.
 const sessions = new Map<string, { task: BrowserTask; ownsTab: boolean; running?: Promise<unknown> }>();
 const journeys = new Map<string, JourneySession>();

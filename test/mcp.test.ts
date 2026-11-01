@@ -25,6 +25,7 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', async () => {
 vi.mock('../src/task/start-task.ts', () => ({
   createRunner: () => ({
     close: async () => undefined,
+    requireKey: () => undefined,
     start: async () => ({
       tab: { close: async () => undefined },
       update: () => undefined,
