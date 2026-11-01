@@ -174,6 +174,50 @@ if (profile.box && screenshots !== 'off') {
   });
 }
 
+// The caller's checks (plan 099) confirm a done and overturn one the page doesn't show; the done's quote (plan 100) is the page's own text.
+await scenario('fixture: caller checks confirm a done, and its quote is on the page', async () => {
+  const tab = await Tab.open(chrome.cdp, fixtureUrl);
+  const options = {
+    ...profileOptions(profile),
+    minConfidence,
+    screenshots,
+    goal: 'Search stays in Lisbon for 2 guests with free cancellation.',
+    values: { destination: 'Lisbon' },
+    doneWhen: 'Search results for stays in Lisbon are listed.',
+    maxSteps: 12,
+  };
+  const task = new BrowserTask(tab, ask, {
+    ...options,
+    checks: [
+      { type: 'text_contains', text: 'stays in Lisbon for 2 guest(s)' },
+      { type: 'checked', label: 'Free cancellation', state: true },
+      { type: 'value_equals', label: 'Guests', value: '2 guests' },
+      { type: 'element_exists', role: 'link', name: 'View Casa Flora' },
+    ],
+  });
+  const summary = await task.run();
+  // A second call on the same results with a check the page can't pass: Jev's done must come back uncertain.
+  const overturned = new BrowserTask(tab, ask, { ...options, checks: [{ type: 'text_contains', text: 'Booking confirmed' }] });
+  const unconfirmed = await overturned.run();
+  saveTrace('checks-evidence', task, [summary, unconfirmed]);
+  const state = await groundTruth(tab.targetId, 'window.__fixture');
+  const bodyText = String(await groundTruth(tab.targetId, 'document.body.innerText'));
+  await tab.close();
+  assert.equal(state.searched?.city, 'Lisbon', 'search was not applied to Lisbon');
+  assert.equal(state.searched?.guests, '2', 'search did not use 2 guests');
+  assert.equal(state.searched?.freeCancellation, true, 'free cancellation filter not applied');
+  expectStatus(summary, 'done');
+  assert.deepEqual(summary.checks?.map((check) => check.pass), [true, true, true, true], JSON.stringify(summary.checks));
+  assert.ok(summary.evidence, `no evidence on the done: ${JSON.stringify(task.trace.at(-1))}`);
+  const squash = (text: string) => text.replace(/\s+/g, ' ').trim();
+  assert.ok(squash(bodyText).includes(squash(summary.evidence.quote)), `quote not on the page: ${summary.evidence.quote}`);
+  process.stdout.write(`  evidence: "${summary.evidence.quote}" (${summary.evidence.confidence}) ${summary.evidence.deep_link ?? 'no link'}\n`);
+  assert.equal(unconfirmed.status, 'uncertain', `a failing check left ${unconfirmed.status}: ${unconfirmed.reason}`);
+  assert.match(unconfirmed.reason, /Booking confirmed/);
+  assert.equal(unconfirmed.evidence, undefined);
+  return summary;
+});
+
 // Rows wider than their scroll box (Langfuse's traces table): the row, not its checkbox, must be listed and opened.
 await scenario('fixture: wide table row opens its detail (recorded)', async () => {
   const tab = await Tab.open(chrome.cdp, fixtureUrl.replace('/stays.html', '/wide-table.html'));
@@ -336,7 +380,8 @@ await scenario('MCP stdio: tools list + browser_task + browser_task_end', async 
   try {
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
-    assert.ok(['browser_task', 'browser_task_end'].every((name) => names.includes(name)), names.join(', '));
+    assert.ok(['browser_task', 'browser_task_end', 'browser_look'].every((name) => names.includes(name)), names.join(', '));
+    assert.equal(tools.find((tool) => tool.name === 'browser_look')?.annotations?.readOnlyHint, true, 'browser_look is not read-only');
     const response: any = await client.callTool({
       name: 'browser_task',
       arguments: {
@@ -350,6 +395,14 @@ await scenario('MCP stdio: tools list + browser_task + browser_task_end', async 
     const summary = JSON.parse(response.content[0].text);
     writeFileSync(new URL('mcp.json', outDir), JSON.stringify(summary, null, 2));
     expectStatus(summary, 'done');
+    // A look at the same tab: no Jev request, the same page, nothing to act on.
+    const looked: any = await client.callTool({ name: 'browser_look', arguments: { session: summary.session } });
+    assert.ok(!looked.isError, looked.content[0].text);
+    const look = JSON.parse(looked.content[0].text);
+    writeFileSync(new URL('mcp-look.json', outDir), JSON.stringify(look, null, 2));
+    assert.equal(look.url, summary.url);
+    assert.match(look.page_text, /London/);
+    assert.ok(look.elements.length > 0 && !looked.content[0].text.includes('"node"'), 'the look listed node ids');
     const ended: any = await client.callTool({ name: 'browser_task_end', arguments: { session: summary.session } });
     assert.match(ended.content[0].text, /ended/);
     return summary;

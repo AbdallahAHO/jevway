@@ -136,9 +136,36 @@ interface RunResult {
   botWall?: string;
   url: string;
   summary?: Partial<TaskSummary>;
+  /** A done's quote (plan 100), whether the page's own text holds it, and what the extra request cost. */
+  evidence?: EvidenceCheck;
   error?: string;
 }
+interface EvidenceCheck {
+  asked: boolean;
+  quote?: string;
+  confidence?: number;
+  on_page?: boolean;
+  spans?: number;
+  /** The span Jev ranked first, even when it was too unsure to quote. */
+  top?: string;
+  latency_ms?: number;
+  input_tokens?: number;
+}
 const results: RunResult[] = [];
+const squash = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
+
+// The evidence request is the trace's EVIDENCE entry; the quote must be in the page's own text, read apart from the reader.
+const evidenceOf = async (summary: TaskSummary, task: BrowserTask, tab: Tab): Promise<EvidenceCheck | undefined> => {
+  const asked = task.trace.find((entry) => entry.decision.operation === 'EVIDENCE')?.decision;
+  if (!asked && !summary.evidence) return summary.status === 'done' ? { asked: false } : undefined;
+  const bodyText = String(await tab.evaluate('document.body?.innerText ?? ""'));
+  const probabilities: Record<string, number> = asked?.answers.evidence?.probabilities ?? {};
+  return {
+    asked: Boolean(asked),
+    ...(asked && { confidence: Math.round(asked.confidence * 1000) / 1000, spans: Object.keys(probabilities).length - 1, top: asked.candidates[0]?.element, latency_ms: asked.latencyMs, input_tokens: asked.inputTokens }),
+    ...(summary.evidence && { quote: summary.evidence.quote, on_page: squash(bodyText).includes(squash(summary.evidence.quote)) }),
+  };
+};
 
 for (const scenario of SCENARIOS.filter((s) => !only || only.includes(s.name))) {
   for (let run = 1; run <= runs; run++) {
@@ -163,7 +190,8 @@ for (const scenario of SCENARIOS.filter((s) => !only || only.includes(s.name))) 
       // Challenge pages can sit at the target URL itself (npm serves Cloudflare's at /package/zod).
       const botWall = (await findBotWall(tab, await tab.observe()))?.name;
       const passed = !botWall && scenario.passes(new URL(url));
-      result = { ...result, url, passed, summary, ...(botWall && { botWall }) };
+      const evidence = await evidenceOf(summary, task, tab);
+      result = { ...result, url, passed, summary, ...(botWall && { botWall }), ...(evidence && { evidence }) };
       writeFileSync(new URL(`${scenario.name}-${run}.json`, outDir), JSON.stringify({ summary, trace: task.trace }, null, 1));
       if (!passed) {
         // What the model saw at the end, for diagnosing a failure.
@@ -181,6 +209,12 @@ for (const scenario of SCENARIOS.filter((s) => !only || only.includes(s.name))) 
     process.stdout.write(
       `${result.passed ? '✔' : result.botWall ? `⊘ bot wall (${result.botWall})` : '✘'} ${scenario.name} #${run} — ${result.error ?? `${s?.status} in ${s?.elapsed_ms}ms · ${s?.steps?.length} actions · ${s?.jev?.requests} requests · ${s?.jev?.screenshots} screenshots${result.passed ? '' : ` · ${s?.reason} · ${result.url}`}`}\n`,
     );
+    const e = result.evidence;
+    if (e) {
+      process.stdout.write(
+        `    evidence: ${e.quote ? `"${e.quote.slice(0, 100)}" (${e.on_page ? 'on the page' : 'NOT ON THE PAGE'})` : 'none'}${e.asked ? ` · confidence ${e.confidence} · ${e.spans} spans · ${e.latency_ms}ms · ${e.input_tokens} tokens` : ''}\n`,
+      );
+    }
   }
 }
 
@@ -196,6 +230,8 @@ const table = [...new Set(results.map((r) => r.scenario))].map((name) => {
     median_requests: median(rows.flatMap((r) => (r.summary?.jev ? [r.summary.jev.requests] : []))),
     median_request_ms: median(rows.flatMap((r) => (r.summary?.jev ? [r.summary.jev.median_latency_ms] : []))),
     screenshots: rows.reduce((sum, r) => sum + (r.summary?.jev?.screenshots ?? 0), 0),
+    evidence: `${rows.filter((r) => r.evidence?.quote).length}/${rows.filter((r) => r.evidence?.asked).length}`,
+    evidence_on_page: rows.filter((r) => r.evidence?.on_page).length,
   };
 });
 writeFileSync(new URL('report.json', outDir), JSON.stringify({ profile: profile.name, screenshots, table, results }, null, 1));
