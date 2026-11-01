@@ -1,6 +1,7 @@
 import { TypeSafeClient } from '@typesafe-ai/sdk';
 import { askWith, type Ask } from './decide.ts';
 import { NEXT_ACTION_COMPACT } from './instructions.ts';
+import { recordedRoute, recordingAsk, replayingAsk, replayMode, type RecordedRoute } from './replay.ts';
 
 /** When a decision request carries a marked viewport screenshot. */
 export type ScreenshotMode = 'off' | 'fallback' | 'always';
@@ -149,21 +150,24 @@ export const estimateCostUsd = (model: string | null, inputTokens: number): numb
 /**
  * Resolves the model and screenshot mode from explicit choices, then `JEVWAY_MODEL` / `JEVWAY_SCREENSHOTS`.
  * Jev uses the TypeSafe API (images as `assets`, plus Box) when `TYPESAFE_API_KEY` is set, otherwise OpenRouter.
+ * Under `JEVWAY_REPLAY=replay` the recording's profile, route and screenshot mode are the defaults, with no key needed.
  * Screenshots on a model that cannot read images are a configuration error, not a silent no-op.
  *
  * @example
  * const { profile, screenshots } = resolveModel({ model: 'clef-omni' }); // screenshots: 'always'
  */
-export const resolveModel = ({
-  model = process.env.JEVWAY_MODEL || 'jev',
-  screenshots = process.env.JEVWAY_SCREENSHOTS || undefined,
-}: { model?: string; screenshots?: string } = {}) => {
+export const resolveModel = ({ model, screenshots }: { model?: string; screenshots?: string } = {}) => {
+  // A replay asks the questions the recording asked, of the same model id, so it takes the recorded route.
+  const recorded = replayMode() === 'replay' ? recordedRoute() : undefined;
+  model ??= process.env.JEVWAY_MODEL || recorded?.profile || 'jev';
+  screenshots ??= process.env.JEVWAY_SCREENSHOTS || recorded?.screenshots || undefined;
   if (!(model in MODELS)) throw new Error(`Unknown model "${model}"; use ${Object.keys(MODELS).join(' | ')}.`);
   const { direct, ...route }: Profile = MODELS[model as ModelName];
   const name = model as ModelName;
   const openRouter = { imageTransport: 'image_url' as const, box: false };
+  const directRoute = recorded ? recorded.route === 'direct' : Boolean(direct && process.env[direct.apiKeyEnv]?.trim());
   const profile: ModelProfile =
-    direct && process.env[direct.apiKeyEnv]?.trim()
+    direct && directRoute
       ? { ...route, ...direct, baseURL: undefined, name }
       : { ...openRouter, ...route, name };
   const mode = screenshots ?? profile.defaultScreenshots;
@@ -185,8 +189,28 @@ export const profileOptions = ({ model, minConfidence, compactRules, elementRisk
   box,
 });
 
-/** An `Ask` bound to the profile's API root, key and model. */
+/**
+ * An `Ask` bound to the profile's API root, key and model. `JEVWAY_REPLAY=record` saves every answer it gets into
+ * `JEVWAY_REPLAY_DIR`; `JEVWAY_REPLAY=replay` answers only from there, with no key, client or network.
+ *
+ * @example
+ * const ask = createAsk(resolveModel().profile);
+ */
 export const createAsk = (profile: ModelProfile): Ask => {
+  const mode = replayMode();
+  if (mode === 'replay') return replayingAsk(profile.model);
+  const ask = liveAsk(profile);
+  return mode === 'record' ? recordingAsk(ask, routeOf(profile)) : ask;
+};
+
+const routeOf = (profile: ModelProfile): RecordedRoute => ({
+  profile: profile.name,
+  model: profile.model,
+  route: profile.baseURL ? 'openrouter' : 'direct',
+  ...(process.env.JEVWAY_SCREENSHOTS?.trim() && { screenshots: process.env.JEVWAY_SCREENSHOTS.trim() }),
+});
+
+const liveAsk = (profile: ModelProfile): Ask => {
   const apiKey = process.env[profile.apiKeyEnv]?.trim();
   if (!apiKey) throw new Error(`Set ${profile.apiKeyEnv} to use ${profile.name}.`);
   return askWith(

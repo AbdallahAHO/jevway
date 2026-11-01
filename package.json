@@ -59,6 +59,7 @@
     "verify:signup": "node --env-file-if-exists=.env verify/signup.ts",
     "verify:vikunja": "node --env-file-if-exists=.env verify/vikunja.ts",
     "verify:agent": "node verify/agent.ts",
+    "verify:replay": "node verify/replay.ts",
     "report:render": "node verify/jobs/rerender.ts",
     "apps:forgejo:up": "docker compose -p jevway-forgejo -f verify/apps/forgejo/compose.yml up -d --wait && node verify/apps/forgejo/seed.ts users",
     "apps:forgejo:down": "docker compose -p jevway-forgejo -f verify/apps/forgejo/compose.yml down -v",
