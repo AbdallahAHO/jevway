@@ -1,3 +1,4 @@
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { renderReport, wilson, type JobResult, type RunResult } from '../verify/jobs/report.ts';
 import { reportFromResults } from '../verify/jobs/rerender.ts';
@@ -401,6 +402,16 @@ describe('edge cases', () => {
   it('never shows a secret value, wherever the run echoed it', () => {
     expect(html).not.toContain(SECRET);
     expect(text(panelOf(viewOf(html, 'sign-up'), 1))).toContain('[secret:password]');
+  });
+
+  it('keeps every inline script parseable, with hostile titles and reasons on the page', () => {
+    const hostile = render({ title: '</script><script>alert("t")</script> `${x}` \\ \u2028 end' });
+    const scriptsOf = (page: string) => [...page.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(([, source]) => source);
+    const scripts = scriptsOf(hostile);
+    // Only the page's own scripts: a title or reason that broke out would add one (a valid one, so count them).
+    expect(scripts.length).toBe(scriptsOf(render()).length);
+    expect(scripts.length).toBeGreaterThanOrEqual(2);
+    for (const source of scripts) expect(() => new vm.Script(source), source.slice(0, 80)).not.toThrow();
   });
 
   it('escapes page text, titles, reasons and addresses', () => {
