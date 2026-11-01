@@ -1129,6 +1129,14 @@ const checks: Check[] = [
       await pause(100);
       assert.equal((await fixtureState(tab)).removed, false, 'the confirm in the frame was accepted');
       assert.deepEqual(tab.takeDialogs(), [{ type: 'confirm', message: 'Remove the coupon?', accepted: false }]);
+      // A click the caller confirmed gets OK on its own confirm, from inside the frame too.
+      next = await tab.observe();
+      tab.armConfirm(['the coupon', 'Remove coupon']);
+      await tab.act(find(next.actions, 'button', /^Remove coupon$/)!, next);
+      tab.disarmConfirm();
+      await pause(100);
+      assert.equal((await fixtureState(tab)).removed, true, 'the confirmed confirm in the frame was declined');
+      assert.deepEqual(tab.takeDialogs(), [{ type: 'confirm', message: 'Remove the coupon?', accepted: true }]);
     },
   },
   {
