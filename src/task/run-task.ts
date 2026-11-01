@@ -1080,7 +1080,8 @@ export class BrowserTask {
     let repeated: string | undefined;
     let saveFirst: string | undefined;
     for (const dialog of this.#tab.takeDialogs()) {
-      const message = dialog.message.slice(0, DIALOG_MESSAGE_CHARS);
+      // A dialog is page content the run never observed: scrubbed here, before the cut, like every observed page.
+      const message = this.#scrub(dialog.message).slice(0, DIALOG_MESSAGE_CHARS);
       this.#dialogNotes.push(`the page then ${describeDialog(dialog.type, message, dialog.accepted)}`);
       // jev-browse: a page asking before you leave means the run's own edit isn't saved, and a person saves first.
       const unsaved = dialog.type === 'beforeunload' && click ? this.#unsavedOn(click.path, click.unsaved) : undefined;
