@@ -402,6 +402,7 @@ export class BrowserTask {
       // The stop signal lasts until the evidence request is answered: it is the call's last wait.
       this.#limit?.dispose();
       this.#limit = undefined;
+      for (const tab of this.#tabs) tab.stopSignal = undefined;
     }
     // A secret never leaves in a summary or a trace, wherever the page echoed it: the checks and the evidence included.
     for (; this.#traceScrubbed < this.trace.length; this.#traceScrubbed++) this.trace[this.#traceScrubbed] = this.#scrub(this.trace[this.#traceScrubbed]);
@@ -424,6 +425,8 @@ export class BrowserTask {
     let executed = 0;
     // Caller cancel or time budget: checked before every decision and every input, never during one.
     const limit = (this.#limit = startRunLimit({ signal, maxSeconds, actions: () => executed }));
+    // The tabs' own waits (a followed tab's load, a scroll's poll, frame reads) end on it too; a followed tab inherits it.
+    for (const tab of this.#tabs) tab.stopSignal = limit.signal;
     let decisions = 0;
     let staleRefusals = 0;
     let rejectedDone = 0;

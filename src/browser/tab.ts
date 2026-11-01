@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { CdpError, type CdpConnection, type CdpListener } from './cdp.ts';
 import { DEVICES, type Device } from './devices.ts';
-import { Frames, idBaseOf, mergeFrames, type FrameTarget } from './frames.ts';
+import { Frames, idBaseOf, mergeFrames, whenAborted, type FrameTarget } from './frames.ts';
 import { messageNames } from './words.ts';
 
 // Atomic DOM read from browser-use/jev-ultrafast (MIT): visible text + indexed controls + freshness guards.
@@ -127,6 +127,8 @@ export class Tab {
   #opened: string[] = [];
   #closed = false;
   #unsubscribe: (() => void)[] = [];
+  /** The running call's stop signal: the waits after an input end early on it (see `stopSignal`). */
+  #stop: AbortSignal | undefined;
   private cdp: CdpConnection;
   readonly targetId: string;
   private sessionId: string;
@@ -333,6 +335,17 @@ export class Tab {
    * const [opened] = tab.takeOpened();
    * if (opened) tab = await tab.follow(opened);
    */
+  /**
+   * Lends the running call's stop signal (caller cancel, time budget) to this tab's waits: a followed tab's address
+   * and load, a scroll's settle poll and frame reads end early on it. Inputs never take it, so one under way finishes.
+   *
+   * @example
+   * tab.stopSignal = limit.signal; // while a call runs; undefined after
+   */
+  set stopSignal(signal: AbortSignal | undefined) {
+    this.#stop = signal;
+  }
+
   async follow(targetId: string): Promise<Tab> {
     // A dialog the tab raised before it was followed freezes it, and Page.enable never re-sends it (probed): rather than
     // wait out every 30 s protocol timeout, the follow fails as a browser error, which ends the run `blocked`.
@@ -350,9 +363,14 @@ export class Tab {
       clearTimeout(timer);
     }
     // Set up, its dialogs are answered from here on. A popup is created on about:blank and then navigates: wait for its URL, then for it to load.
-    const begun = Date.now();
-    while (Date.now() - begun < POPUP_URL_MS && (await next.#evaluate('location.href').catch(() => 'about:blank')) === 'about:blank') {
-      await sleep(50);
+    const stop = whenAborted(this.#stop);
+    try {
+      const begun = Date.now();
+      // A stop answers null, which ends the wait as if the address had come.
+      const address = () => Promise.race([next.#evaluate('location.href').catch(() => 'about:blank'), stop.promise]);
+      while (Date.now() - begun < POPUP_URL_MS && (await address()) === 'about:blank') await Promise.race([sleep(50), stop.promise]);
+    } finally {
+      stop.release();
     }
     await next.#waitForLoad(Date.now() + 15_000);
     await next.#evaluate(INPUT_COUNTER).catch(() => undefined);
@@ -366,6 +384,7 @@ export class Tab {
     next.want([], { files: this.#files });
     next.#wanted = this.#wanted;
     next.#confirmArm = this.#confirmArm;
+    next.#stop = this.#stop;
     return next;
   }
 
@@ -406,14 +425,20 @@ export class Tab {
   }
 
   async #waitForLoad(deadline: number) {
-    while (Date.now() < deadline) {
-      // A frozen renderer never answers: the wait ends at its deadline, not after one more 30 s protocol call.
-      const state = await Promise.race([
-        this.#evaluate('document.readyState').catch(() => null),
-        sleep(deadline - Date.now()).then(() => null),
-      ]);
-      if (state === 'complete') return;
-      await sleep(20);
+    const stop = whenAborted(this.#stop);
+    try {
+      while (Date.now() < deadline && !this.#stop?.aborted) {
+        // A frozen renderer never answers: the wait ends at its deadline (or a stop), not after one more 30 s protocol call.
+        const state = await Promise.race([
+          this.#evaluate('document.readyState').catch(() => null),
+          sleep(deadline - Date.now()).then(() => null),
+          stop.promise,
+        ]);
+        if (state === 'complete') return;
+        await Promise.race([sleep(20), stop.promise]);
+      }
+    } finally {
+      stop.release();
     }
   }
 
@@ -473,7 +498,7 @@ export class Tab {
 
   // The main frame's state with every readable frame joined in (ids, text, password fields); unchanged on a page without them.
   async #withFrames(main: Omit<PageState, 'fingerprint'>): Promise<Omit<PageState, 'fingerprint'>> {
-    const frames = await this.#frames.read({ w: main.w, h: main.h }, READ_STATE, this.#wanted).catch(() => []);
+    const frames = await this.#frames.read({ w: main.w, h: main.h }, READ_STATE, this.#wanted, this.#stop).catch(() => []);
     return frames.length ? { ...main, ...mergeFrames(main, frames) } : main;
   }
 
@@ -566,12 +591,19 @@ export class Tab {
     });
     if (Number.isNaN(start)) return {};
     let last = start;
-    for (const begun = Date.now(); Date.now() - begun < 1_500; ) {
-      await sleep(50);
-      const now = await offsets();
-      if (Number.isNaN(now)) return {};
-      if (now === last && (now !== start || Date.now() - begun >= 500)) break;
-      last = now;
+    // The wheel has gone out: a stop ends only the poll, and the distance so far is reported.
+    const stop = whenAborted(this.#stop);
+    try {
+      for (const begun = Date.now(); Date.now() - begun < 1_500; ) {
+        await Promise.race([sleep(50), stop.promise]);
+        if (this.#stop?.aborted) break;
+        const now = await offsets();
+        if (Number.isNaN(now)) return {};
+        if (now === last && (now !== start || Date.now() - begun >= 500)) break;
+        last = now;
+      }
+    } finally {
+      stop.release();
     }
     return { scrolled: Math.round(Math.abs(last - start)) };
   }

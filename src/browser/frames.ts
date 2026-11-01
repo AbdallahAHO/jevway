@@ -274,14 +274,19 @@ export class Frames {
    * Reads every visible frame with `script` (the snapshot), places its actions in the viewport and drops those the parent
    * covers. A frame that is hidden, too small, too slow or failing is skipped; this never throws for a frame.
    */
-  async read(viewport: { w: number; h: number }, script: string, wanted: string[]): Promise<FrameSnapshot[]> {
+  async read(viewport: { w: number; h: number }, script: string, wanted: string[], signal?: AbortSignal): Promise<FrameSnapshot[]> {
+    // A stopped run reads no frame: its page is reported as the main document shows it.
+    if (signal?.aborted) return [];
     this.#viewport = viewport;
     await this.#releaseObjects();
     const frames = await this.list().catch(() => []);
-    // Read side by side, so a page full of slow frames costs one frame's cap, not their sum.
+    // Read side by side, so a page full of slow frames costs one frame's cap, not their sum; a stop ends the slow ones.
+    const stop = whenAborted(signal);
     const reads = await Promise.all(
-      frames.slice(0, MAX_PLACED).map((frame) => withTimeout(this.#readOne(frame, script, wanted), FRAME_READ_MS + 500).catch(() => null)),
-    );
+      frames
+        .slice(0, MAX_PLACED)
+        .map((frame) => Promise.race([withTimeout(this.#readOne(frame, script, wanted), FRAME_READ_MS + 500).catch(() => null), stop.promise])),
+    ).finally(stop.release);
     const read = reads.filter((one) => one !== null).slice(0, MAX_FRAMES);
     // In reading order: top to bottom, then left to right.
     return read.sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x).map(({ snapshot }) => snapshot);
@@ -522,6 +527,26 @@ const hostOf = (url: string) => {
   } catch {
     return url.slice(0, 60);
   }
+};
+
+/**
+ * A wait's view of the run's stop signal: `promise` resolves null once `signal` aborts (never without one), and
+ * `release` drops the listener when the wait is over, so a long call's many waits leave none behind.
+ *
+ * @example
+ * const stop = whenAborted(signal);
+ * try { await Promise.race([sleep(50), stop.promise]); } finally { stop.release(); }
+ */
+export const whenAborted = (signal?: AbortSignal) => {
+  let release = () => undefined as void;
+  const promise = new Promise<null>((resolve) => {
+    if (!signal) return;
+    if (signal.aborted) return resolve(null);
+    const listener = () => resolve(null);
+    signal.addEventListener('abort', listener, { once: true });
+    release = () => signal.removeEventListener('abort', listener);
+  });
+  return { promise, release: () => release() };
 };
 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
