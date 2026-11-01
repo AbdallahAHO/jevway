@@ -322,18 +322,38 @@ export class Tab {
    * if (opened) tab = await tab.follow(opened);
    */
   async follow(targetId: string): Promise<Tab> {
-    const next = await Tab.attach(this.cdp, targetId);
-    if (this.#device) await next.emulate(this.#device);
-    next.want([], { files: this.#files });
-    next.#wanted = this.#wanted;
-    next.#confirmArm = this.#confirmArm;
-    // A popup is created on about:blank and then navigates: wait for its URL, then for it to load.
+    // A dialog the tab raised before it was followed freezes it, and Page.enable never re-sends it (probed): rather than
+    // wait out every 30 s protocol timeout, the follow fails as a browser error, which ends the run `blocked`.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const frozen = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new CdpError(`The new tab did not answer within ${FOLLOW_MS / 1000} s: it may be showing a dialog it raised before jev-browse could answer it`)),
+        FOLLOW_MS,
+      );
+    });
+    let next: Tab;
+    try {
+      next = await Promise.race([this.#setUpFollowed(targetId), frozen]);
+    } finally {
+      clearTimeout(timer);
+    }
+    // Set up, its dialogs are answered from here on. A popup is created on about:blank and then navigates: wait for its URL, then for it to load.
     const begun = Date.now();
     while (Date.now() - begun < POPUP_URL_MS && (await next.#evaluate('location.href').catch(() => 'about:blank')) === 'about:blank') {
       await sleep(50);
     }
     await next.#waitForLoad(Date.now() + 15_000);
     await next.#evaluate(INPUT_COUNTER).catch(() => undefined);
+    return next;
+  }
+
+  // The protocol calls that a dialog raised before the follow would freeze: attach (with its dialog answer), device, values.
+  async #setUpFollowed(targetId: string): Promise<Tab> {
+    const next = await Tab.attach(this.cdp, targetId);
+    if (this.#device) await next.emulate(this.#device);
+    next.want([], { files: this.#files });
+    next.#wanted = this.#wanted;
+    next.#confirmArm = this.#confirmArm;
     return next;
   }
 
@@ -700,6 +720,8 @@ export const jpegSize = (base64: string) => {
   return null;
 };
 
+// How long setting up a followed tab may take before it counts as frozen; its load wait is capped apart, below.
+const FOLLOW_MS = 5_000;
 // How long a followed tab may stay on about:blank before it is read as it is (a popup a script writes into).
 const POPUP_URL_MS = 3_000;
 

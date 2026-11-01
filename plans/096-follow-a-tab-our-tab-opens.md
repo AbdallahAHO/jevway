@@ -66,7 +66,10 @@ the recording's screencast (stays on the first tab); iframes.
    that document loaded within ~20 ms (probe 3). The only cost is in the safe direction of the existing invariant: a
    page listener registered earlier that stops a press from reaching `window` makes a delivered click read as not
    delivered, which ends the run `blocked` (`InputNotDelivered`); it can never make a click run twice. A dialog the
-   page raises before it is followed waits until `Page.enable` and is then answered as usual.
+   page raises before it is followed freezes the tab, and `Page.enable` does not re-send it (probed 2026-11-01:
+   `Page.enable` itself hangs and `Page.handleJavaScriptDialog` answers "No dialog is showing"). Following such a tab
+   fails after 5 s (`FOLLOW_MS`) as a browser error, which ends the run `blocked` instead of waiting out 30 s protocol
+   timeouts; the frozen tab is left open for the user. Accepted by the reviewer, with this window named in `AGENTS.md`.
 3. **When.** After each executed action the run checks for a tab its tab opened before reading the page, and once more
    after the usual wait for a change; it also checks before each decision (a popup opened late). The newest such tab
    becomes the session's tab, and the step that opened it says so in history: its element gains
