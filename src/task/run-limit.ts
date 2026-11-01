@@ -58,11 +58,11 @@ export const startRunLimit = ({ signal, maxSeconds, actions }: { signal?: AbortS
     /** Settles like `work`, or rejects with the stop as soon as the run is stopped, whether or not `work` heeds the signal. */
     within: <T>(work: Promise<T>) =>
       new Promise<T>((resolve, reject) => {
-        const halt = stopped();
-        if (halt) return reject(halt);
+        // `work` is always handled, even when the stop wins: a request rejected after the stop must not go unhandled.
         const onStop = () => reject(stopped());
-        controller.signal.addEventListener('abort', onStop, { once: true });
         work.then(resolve, reject).finally(() => controller.signal.removeEventListener('abort', onStop));
+        if (controller.signal.aborted) onStop();
+        else controller.signal.addEventListener('abort', onStop, { once: true });
       }),
     dispose: () => {
       clearTimeout(timer);

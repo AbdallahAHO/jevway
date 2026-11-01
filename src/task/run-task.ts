@@ -816,6 +816,9 @@ export class BrowserTask {
   // One decision per step; `fallback` takes a second, screenshot-backed look at a shaky or stalled one.
   async #decide(page: PageState, { lastLook = false } = {}): Promise<Decision> {
     const { goal, values, doneWhen, screenshots, compactRules, elementRisk, pageRisk, imageTransport, box, minConfidence } = this.#options;
+    // No request starts after a stop.
+    const halt = this.#limit?.stopped();
+    if (halt) throw halt;
     this.#rememberLines(page);
     const limit = this.#limit;
     // Every request carries the call's stop signal (it cancels the HTTP request, its retries and a Retry-After sleep), and
