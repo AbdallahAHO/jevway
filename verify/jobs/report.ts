@@ -1,8 +1,10 @@
 // The jobs report: one self-contained page next to the run folders it links to.
+import { DEVICES } from '../../src/browser/devices.ts';
 import type { Tab } from '../../src/browser/tab.ts';
-import { shownValues } from '../../src/jev/secrets.ts';
+import { scrubberFor, shownValues } from '../../src/jev/secrets.ts';
 import { escapeHtml as escape, type RecordedStep } from '../../src/task/recording.ts';
 import type { TaskStatus, TaskSummary } from '../../src/task/run-task.ts';
+import { FONT_LINK, HEAD_SCRIPT, SCRIPT, STYLE } from './report-page.ts';
 
 /**
  * A calling agent's second call on the same session: what it asks next, from whatever the first call left behind
@@ -70,7 +72,7 @@ export interface Job {
 export type Phrasing = 'as-written' | 'terse';
 
 /** The goal for the first call: the terse wording when asked for and the job has one. */
-export const goalFor = (job: Job, phrasing: Phrasing) => (phrasing === 'terse' && job.terseGoal) || job.goal;
+export const goalFor = (job: Pick<Job, 'goal' | 'terseGoal'>, phrasing: Phrasing) => (phrasing === 'terse' && job.terseGoal) || job.goal;
 
 export interface RunResult {
   run: number;
@@ -96,6 +98,21 @@ export interface RunResult {
 
 export interface JobResult {
   job: Job;
+  runs: RunResult[];
+}
+
+/**
+ * A job as the report reads it: `Job` without its functions, so a job read back from `results.json` (where `confirms`
+ * is saved as its source, e.g. "/register/i") renders the same as the live one.
+ */
+export type ReportJob = Omit<Job, 'passes' | 'followUp' | 'confirms'> & {
+  confirms?: RegExp | string;
+  /** Present (as a function) on a live two-call job; absent once saved. */
+  followUp?: unknown;
+};
+
+export interface ReportResult {
+  job: ReportJob;
   runs: RunResult[];
 }
 
@@ -132,182 +149,402 @@ export const isFlaky = (runs: RunResult[]) => {
   return passed > 0 && passed < runs.length;
 };
 
+// --- numbers a reader compares
+
 const median = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] : 0);
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
+const thousands = (n: number) => `${(n / 1000).toFixed(1)}k`;
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const NUMBER_WORDS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty'];
+const counted = (n: number) => NUMBER_WORDS[n] ?? String(n);
 
+const ran = (r: RunResult) => r.summaries.length > 0;
 const elapsed = (r: RunResult) => r.summaries.reduce((t, s) => t + s.elapsed_ms, 0);
 const requests = (r: RunResult) => r.summaries.reduce((t, s) => t + s.jev.requests, 0);
+const inputTokens = (r: RunResult) => r.summaries.reduce((t, s) => t + s.jev.input_tokens, 0);
 const actions = (r: RunResult) => r.summaries.reduce((t, s) => t + s.steps.length, 0);
-const statuses = (r: RunResult) => r.summaries.map((s) => s.status).join(' → ');
-const verdict = (r: RunResult) => (r.passed ? 'pass' : r.reached ? 'some' : 'fail');
+const passCount = (runs: RunResult[]) => runs.filter((r) => r.passed).length;
+
+// --- how a run ended, in words and marks
+
+const NOT_RUN = 'not run (suite stopped)';
+const statusWord = (status: string) => status.replaceAll('_', ' ');
+const notRun = (r: RunResult) => r.error === NOT_RUN;
+/** The run's end as one word or two: its last status, or why it has none. */
+const ending = (r: RunResult) => (ran(r) ? statusWord(r.summaries.at(-1)!.status) : notRun(r) ? 'not run' : 'error');
+// ● the check held and the status was expected; ◐ the check held, the status was not; ○ missed (muted when never run).
+const markOf = (r: RunResult) =>
+  r.passed ? { mark: '●', tone: 'held', word: 'passed' } : r.reached ? { mark: '◐', tone: 'reached', word: 'check held, status not expected' } : { mark: '○', tone: notRun(r) ? 'unrun' : 'missed', word: notRun(r) ? 'not run' : 'missed' };
+const mark = (r: RunResult) => {
+  const { mark: symbol, tone, word } = markOf(r);
+  return `<span class="${tone}" title="Run ${r.run}: ${word}">${symbol}</span>`;
+};
+const marks = (runs: RunResult[]) => `<span class="marks" aria-label="${passCount(runs)} of ${runs.length} runs passed">${runs.map(mark).join('')}</span>`;
 
 const noRowForSecondCall = 'The first call ended done but the table had no row to continue with, so the second call never ran.';
-
-const runChip = (r: RunResult) => {
-  // A run that needed no action started on a page that already met the goal (state saved by an earlier run).
-  const already = r.summaries.length && actions(r) === 0 ? ' · already met at start' : '';
-  const detail = r.summaries.length ? `${statuses(r)} · ${seconds(elapsed(r))} · ${requests(r)} req${already}` : 'error';
-  const mark = r.passed ? '✔' : r.reached ? '◐' : '✘';
-  return `<a class="chip ${verdict(r)}" href="${r.dir}index.html" title="${escape(r.followUpMissing ? noRowForSecondCall : (r.summaries.at(-1)?.reason ?? r.error ?? ''))}">${mark} Run ${r.run} · ${detail}</a>`;
+/** Why a run did not pass, in one sentence. */
+const whyMissed = (r: RunResult) => {
+  if (notRun(r)) return 'Not run: the suite stopped before this run.';
+  if (r.error) return r.error;
+  if (r.followUpMissing) return noRowForSecondCall;
+  const last = r.summaries.at(-1)!;
+  return r.reached ? `reached the right page, but Jev reported ${statusWord(last.status)}: ${last.reason}` : `${statusWord(last.status)}: ${last.reason}`;
 };
 
-const stepList = (featured: RunResult, recording: Recording, videoId: string) =>
-  recording.steps
-    .map(
-      (s, i) => `<li${recording.video && s.video_at !== undefined ? ` data-video="${videoId}" data-at="${s.video_at}"` : ''}>
-  <a class="thumb" href="${featured.dir}${s.file}"><img src="${featured.dir}${s.file}" loading="lazy" alt=""></a>
-  <div><span class="n">${i + 1}</span>${escape(s.description)}${s.unreachable ? ` <span class="miss">✘ not reached${(s.attempts ?? 1) > 1 ? ` ×${s.attempts}` : ''}: covered</span>` : ''}
-  <div class="meta">${s.confidence !== undefined ? `confidence ${s.confidence.toFixed(2)} · ` : ''}${recording.video && s.video_at !== undefined ? `▶ ${s.video_at.toFixed(1)} s · ` : ''}<span class="url">${escape(new URL(s.url).pathname + new URL(s.url).search)}</span></div></div>
-</li>`,
-    )
-    .join('\n');
+// --- what a job is
 
-const jobSection = (
-  { job, runs }: JobResult,
-  readRecording: (dir: string) => Recording | undefined,
-  index: number,
-  phrasing: Phrasing,
+type Kind = 'Write' | 'Read' | 'Hand-back';
+const kindOf = (job: ReportJob, suiteWrites: boolean): Kind => (job.expect ? 'Hand-back' : suiteWrites ? 'Write' : 'Read');
+const isTwoCall = (job: ReportJob, runs: RunResult[]) => Boolean(job.followUp || job.firstDoneWhen || runs.some((r) => r.followUp || r.followUpMissing));
+const confirmRule = (job: ReportJob) => (job.confirms instanceof RegExp ? String(job.confirms) : typeof job.confirms === 'string' ? job.confirms : undefined);
+/** The run a reader sees first: one that passed, else one that ran, else the first. */
+const featuredRun = (runs: RunResult[]) => runs.find((r) => r.passed) ?? runs.find(ran) ?? runs[0];
+
+// --- the suite, from its title and out folder
+
+/**
+ * The hero's first sentence from a suite title like "Forgejo: 11 write jobs with jev-browse".
+ *
+ * @example
+ * suiteSentence('Forgejo: 11 write jobs with jev-browse', 11) // 'Eleven write jobs on Forgejo.'
+ */
+const suiteSentence = (title: string, jobCount: number) => {
+  const parts = /^(.+?):\s+(\d+)\s+(.*?)jobs?\s+with jev-browse$/.exec(title.trim());
+  if (!parts) return `${title.replace(/\.$/, '')}.`;
+  const [, app, count, kind] = parts;
+  const n = Number(count) || jobCount;
+  return `${counted(n)} ${kind}${n === 1 ? 'job' : 'jobs'} on ${app}.`;
+};
+// verify/out/<suite>-<ISO time with - for : and .>: the suite and when it started.
+const FOLDER = /^(?:(.+)-)?(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-\d{2}-\d{3}Z$/;
+const startedAt = (outFolder?: string) => {
+  const parts = outFolder && FOLDER.exec(outFolder);
+  return parts ? `started ${parts[2]} ${parts[3]}:${parts[4]} UTC` : 'time unknown';
+};
+const suiteName = (title: string, outFolder?: string) => {
+  const parts = outFolder && FOLDER.exec(outFolder);
+  return parts && parts[1] ? `verify:${parts[1]}` : title;
+};
+
+/**
+ * The video frame's opening tag, shaped like the recorded viewport: a landscape device's own aspect (desktop is
+ * 1120×780), a phone's portrait recording in a frame of fixed height, so it never fills a whole screen.
+ */
+const screenFor = (deviceName: string) => {
+  const device = Object.hasOwn(DEVICES, deviceName) ? DEVICES[deviceName as keyof typeof DEVICES] : DEVICES.desktop;
+  return device.height > device.width ? '<div class="screen portrait">' : `<div class="screen" style="aspect-ratio:${device.width} / ${device.height}">`;
+};
+
+// --- small pieces of markup
+
+const ARROW = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>';
+const BACK_ARROW = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m11 18-6-6 6-6"/></svg>';
+const quoted = (text: string) => `“${escape(text)}”`;
+const pathOf = (url: string) => {
+  try {
+    const { pathname, search } = new URL(url);
+    return pathname + search;
+  } catch {
+    return url;
+  }
+};
+const keyValues = (values: Record<string, string>) =>
+  Object.entries(values)
+    .map(([key, value]) => `<span class="kv">${escape(key)}</span>${escape(value)}`)
+    .join('<br>');
+const indexLabel = (i: number) => String(i + 1).padStart(2, '0');
+const isFinished = (step: RecordedStep) => step.operation === step.operation.toLowerCase();
+
+/**
+ * One step as a card: the shot, then its number, video time and confidence, what happened, and where. The run's
+ * Finished shots (lowercase operation, the status) read "Finished: <status>", their reason in the alt text.
+ */
+const shotCard = (step: RecordedStep, i: number, dir: string, open: { href: string } | { video: boolean }) => {
+  const finished = isFinished(step);
+  const label = finished ? `Finished: ${statusWord(step.operation)}` : step.description;
+  const timed = 'video' in open && open.video && step.video_at !== undefined;
+  const meta = [
+    indexLabel(i),
+    ...(step.video_at !== undefined && ('href' in open || timed) ? [clock(step.video_at)] : []),
+    ...(step.unreachable ? [`<span class="missed">not reached${(step.attempts ?? 1) > 1 ? ` ×${step.attempts}` : ''}: covered</span>`] : step.confidence !== undefined && !finished ? [step.confidence.toFixed(2)] : []),
+  ].join(' · ');
+  const src = `${dir}${step.file}`;
+  const body = `<img src="${escape(src)}" alt="${escape(step.description)}" loading="lazy" decoding="async" width="1120" height="780">
+<span class="caption"><span class="meta num">${meta}</span><span class="what">${escape(label)}</span><span class="where">${escape(pathOf(step.url))}</span></span>`;
+  const className = `shot${finished ? ' finished' : ''}`;
+  if ('href' in open) return `<a class="${className}" href="${escape(open.href)}">${body}</a>`;
+  const data = timed ? ` data-at="${step.video_at}"` : ` data-src="${escape(src)}"`;
+  return `<button type="button" class="${className}" data-index="${i}"${data}>${body}</button>`;
+};
+
+// --- the overview
+
+const figure = (value: string, label: string) => `<p><span class="figure">${value}</span> <span class="meta">${label}</span></p>`;
+
+const overviewRow = (result: ReportResult, recording: Recording | undefined, suiteWrites: boolean, featured: RunResult) => {
+  const { job, runs } = result;
+  const passed = passCount(runs);
+  const kinds = [passed === runs.length && 'held', isFlaky(runs) && 'flaky', job.expect && 'handback', passed === 0 && 'failed'].filter(Boolean).join(' ');
+  const href = `#${job.id}`;
+  const strip = recording?.steps.length
+    ? `<div class="strip" aria-label="Steps of run ${featured.run}">${recording.steps.map((s, i) => shotCard(s, i, featured.dir, { href })).join('')}</div>`
+    : `<p class="small no-recording">No recording for run ${featured.run}${featured.error ? `: ${escape(featured.error)}` : '.'}</p>`;
+  return `<article class="job-row" data-kinds="${kinds}">
+<div class="grid4">
+<p class="meta">${marks(runs)}<br>${passed}/${runs.length} · ${kindOf(job, suiteWrites)}${recording?.steps.length ? ` · ${plural(recording.steps.length, 'step')}` : ''}</p>
+<h3 class="row-title c2"><a href="${escape(href)}">${escape(job.title)}</a></h3>
+<p class="small c3">${escape(job.job)}</p>
+<a class="action c4 end" href="${escape(href)}">Watch run ${featured.run} ${ARROW}</a>
+</div>
+${strip}
+</article>`;
+};
+
+const METHOD = [
+  ['Start', 'Each run opens a fresh tab on the app’s start page with its storage cleared; write suites first put the app back in its seeded state. Runs don’t share anything but the sign-in.'],
+  ['Judge', 'A run passes when the ground-truth check holds (the final page, or the app’s own API) and the run ended with the status the job expects: done, or a hand-back for jobs that must stop. ● passed, ◐ the check held but the run ended with another status, ○ missed. Jev’s own status is never the judge.'],
+  ['Record', 'Every action is shot before it runs, with its target outlined, and the whole run is a screencast. The shots are for people only and never reach the model.'],
+];
+
+const overviewView = (
+  { title, results, suiteWrites, runsPerJob }: { title: string; results: ReportResult[]; suiteWrites: boolean; runsPerJob: string },
+  recordingOf: (r: RunResult) => Recording | undefined,
 ) => {
-  const passed = runs.filter((r) => r.passed).length;
-  // Show a passing run when there is one; otherwise the first, so the failure is visible.
-  const featured = runs.find((r) => r.passed) ?? runs[0];
-  const recording = featured && readRecording(featured.dir);
-  const videoId = `video-${job.id}`;
-  const failures = runs
-    .filter((r) => !r.passed)
-    .map((r) => {
-      const last = r.summaries.at(-1);
-      const why =
-        r.error ??
-        (r.followUpMissing
-          ? noRowForSecondCall
-          : r.reached
-            ? `reached the right page, but Jev reported ${last?.status}: ${last?.reason}`
-            : `${last?.status}: ${last?.reason}`);
-      return `<li class="${verdict(r)}">Run ${r.run}: ${escape(why)}${r.url ? ` <span class="url">${escape(r.url)}</span>` : ''}</li>`;
-    })
+  const runs = results.flatMap((r) => r.runs);
+  const passed = passCount(runs);
+  const finished = runs.filter(ran);
+  const flaky = results.filter((r) => isFlaky(r.runs)).length;
+  const held = results.filter((r) => passCount(r.runs) === r.runs.length).length;
+  const failed = results.filter((r) => passCount(r.runs) === 0).length;
+  const handBacks = results.filter((r) => r.job.expect).length;
+  const latency = median(runs.flatMap((r) => r.summaries.map((s) => s.jev.median_latency_ms)));
+  const filters = [
+    ['all', 'All', results.length],
+    ['held', 'Every run held', held],
+    ...(flaky ? [['flaky', 'Flaky', flaky]] : []),
+    ...(handBacks ? [['handback', 'Hand-backs', handBacks]] : []),
+    ...(failed ? [['failed', 'Failed', failed]] : []),
+  ] as [string, string, number][];
+  const rows = results.map((result) => {
+    const featured = featuredRun(result.runs);
+    return overviewRow(result, featured && recordingOf(featured), suiteWrites, featured);
+  });
+  return `<section class="view" id="overview" aria-label="Overview">
+<div class="wrapper">
+<div class="intro grid4"><h1 class="hero c3s2">${escape(suiteSentence(title, results.length))} ${passed} of ${plural(runs.length, 'run')} ended the way the job expects.</h1></div>
+<div class="figures grid4" aria-label="Totals">
+${figure(`${passed}/${runs.length}`, `runs passed · ${interval(passed, runs.length)}`)}
+${figure(String(flaky), `flaky ${flaky === 1 ? 'job' : 'jobs'} of ${results.length}`)}
+${figure(seconds(median(finished.map(elapsed))), 'median run')}
+${figure(String(median(finished.map(requests))), `Jev requests per run, ${latency} ms each`)}
+</div>
+<section class="section" id="jobs" aria-labelledby="jobs-title">
+<div class="section-head grid4"><p class="small c2">Jobs<br>${runsPerJob}</p><h2 class="section-title c3s2" id="jobs-title">What jev-browse was asked to do</h2></div>
+<div class="filters grid4 needs-js"><p class="meta">Show</p><div class="textlinks c2s3" role="group" aria-label="Filter jobs">${filters
+    .map(([key, label, count]) => `<button type="button" data-filter="${key}" aria-pressed="${key === 'all'}">${label} <span class="num">${count}</span></button>`)
+    .join('')}</div></div>
+${rows.join('\n')}
+</section>
+<section class="section" id="method" aria-labelledby="method-title">
+<div class="section-head grid4"><p class="small c2">Method<br>How a run is judged</p><h2 class="section-title c3s2" id="method-title">Ground truth, not the agent’s word</h2></div>
+${METHOD.map(([label, body]) => `<div class="method-row grid4"><p class="meta">${label}</p><p class="small c2s3">${body}</p></div>`).join('\n')}
+</section>
+</div>
+</section>`;
+};
+
+// --- one job: its runs' players first, then each run's facts
+
+const runSwitcher = (runs: RunResult[], current: RunResult) =>
+  `<div class="textlinks c1s3" role="group" aria-label="Runs">${runs
+    .map((r) => `<button type="button" data-show-run="${r.run}" aria-pressed="${r === current}">Run ${r.run} ${mark(r)} ${escape(ending(r))}</button>`)
+    .join('')}</div>`;
+
+/** The video (or the first shot without one, or a quiet note without a recording), its timeline, the run switcher, the steps. */
+const player = (r: RunResult, recording: Recording | undefined, runs: RunResult[], featured: boolean, screen: string) => {
+  const steps = recording?.steps ?? [];
+  const bar = `<div class="player-bar grid4">${runSwitcher(runs, r)}<span class="meta clock c4 end">${recording?.video ? clock(0) : ''}</span></div>`;
+  if (!steps.length) {
+    const note = notRun(r) ? 'Not run: the suite stopped before this run.' : r.error ? `This run ended in an error before it recorded anything: ${escape(r.error)}` : `No recording was found for run ${r.run}.`;
+    return `<div class="screen quiet"><p class="meta">Run ${r.run}</p><p class="small">${note}</p></div>\n${bar}`;
+  }
+  const poster = `${r.dir}${steps[0].file}`;
+  const timed = steps.filter((s) => s.video_at !== undefined);
+  if (!recording!.video || !timed.length) {
+    return `${screen}<img data-frame src="${escape(poster)}" alt="${escape(steps[0].description)}"></div>
+<p class="small screen-note">No video for this run (it needs ffmpeg): pick a step to see its shot.</p>
+${bar}
+<div class="strip" aria-label="Steps of run ${r.run}">${steps.map((s, i) => shotCard(s, i, r.dir, { video: false })).join('')}</div>`;
+  }
+  // The last frame holds 1.5 s (recording.ts), so this is the video's length until its metadata says otherwise.
+  const duration = Math.max(...timed.map((s) => s.video_at!)) + 1.5;
+  // Wide enough that the two closest ticks don't overlap (about 1.75rem apart); a long one scrolls inside its own box.
+  const times = timed.map((s) => s.video_at!).sort((a, b) => a - b);
+  const closest = Math.min(...times.slice(1).map((t, i) => t - times[i]).filter((gap) => gap > 0), duration);
+  const width = Math.min(200, Math.max(steps.length * 2, (1.75 * duration) / closest));
+  const ticks = steps
+    .map((s, i) => (s.video_at === undefined ? '' : `<button type="button" class="tick" aria-label="Play from step ${i + 1}" data-at="${s.video_at}" data-index="${i}" style="left:${((s.video_at / duration) * 100).toFixed(2)}%">${i + 1}</button>`))
     .join('');
-  const followUp = featured?.followUp;
-  return `<section id="${job.id}">
-<header><h2><span class="idx">${index + 1}</span>${escape(job.title)}</h2><span class="score ${passed === runs.length ? 'pass' : passed ? 'some' : 'fail'}">${passed}/${runs.length} <small>· ${interval(passed, runs.length)}${isFlaky(runs) ? ' · flaky' : ''}</small></span></header>
-<p class="jtbd">${escape(job.job)}</p>
-<dl>
-  <dt>Goal given to Jev</dt><dd>${escape(goalFor(job, phrasing))}</dd>
-  ${job.values ? `<dt>Values</dt><dd><code>${escape(JSON.stringify(shownValues(job.values, job.secretKeys)))}</code></dd>` : ''}
-  <dt>Done when</dt><dd>${escape(job.doneWhen)}</dd>
-  ${job.confirms ? `<dt>Confirmation</dt><dd>The calling agent confirms only the click the user asked for: <code>${escape(String(job.confirms))}</code>${job.confirmTarget ? ` for <code>${escape(job.confirmTarget)}</code>` : ''}${featured?.confirmations?.length ? `. Run ${featured.run}: ${featured.confirmations.map((c) => `${c.given ? 'confirmed' : 'handed back'} <code>${escape(c.label)}</code>`).join(', ')}` : ''}.</dd>` : ''}
-  ${job.followUp ? `<dt>Second call</dt><dd>The calling agent reads what the first call left behind (a table, a mailbox) and continues the same session${followUp ? ` with <code>${escape(JSON.stringify(followUp))}</code>` : ''}.</dd>` : ''}
-  <dt>Checked by</dt><dd>${job.expect ? `Pass: ends ${escape(job.expect.join(' or '))}, and the check holds: ` : ''}${escape(job.check)}</dd>
-</dl>
-<div class="chips">${runs.map(runChip).join('')}</div>
-${failures ? `<ul class="failures">${failures}</ul>` : ''}
-${
-  recording
-    ? `<h3>Run ${featured.run}, step by step</h3>
-${recording.video ? `<video id="${videoId}" src="${featured.dir}${recording.video}" controls muted playsinline preload="metadata"></video>` : ''}
-<ol class="steps">${stepList(featured, recording, videoId)}</ol>`
-    : ''
-}
+  const posterAttribute = featured ? ` poster="${escape(poster)}"` : ` data-poster="${escape(poster)}"`;
+  return `${screen}<video src="${escape(`${r.dir}${recording!.video}`)}" preload="none"${posterAttribute} controls muted playsinline aria-label="Screencast of run ${r.run}"></video></div>
+<div class="timeline-scroll"><div class="timeline" style="min-width:${width.toFixed(1)}rem"><div class="track"></div><div class="played"></div><div class="ticks">${ticks}</div></div></div>
+${bar}
+<div class="strip" aria-label="Steps of run ${r.run}">${steps.map((s, i) => shotCard(s, i, r.dir, { video: true })).join('')}</div>`;
+};
+
+const fact = (label: string, body: string) => `<div class="fact grid4"><dt>${label}</dt><dd class="c2s3">${body}</dd></div>`;
+
+/** The run's facts as hairline rows: what Jev was given, how the run was judged, what it did and what it cost. */
+const runFacts = (job: ReportJob, r: RunResult, runs: RunResult[], phrasing: Phrasing) => {
+  const values = job.values && Object.keys(job.values).length ? keyValues(shownValues(job.values, job.secretKeys)) : 'None';
+  const expected = job.expect ? `Pass: ends ${escape(job.expect.map(statusWord).join(' or '))}, and the check holds: ` : '';
+  const judged = ran(r) ? (r.reached ? ' <span class="held">· held</span>' : ' <span class="missed">· missed</span>') : ' <span class="unrun">· not judged</span>';
+  const rows = [
+    fact('Goal given to Jev', escape(goalFor(job, phrasing))),
+    fact('Values', values),
+    ...(job.firstDoneWhen ? [fact('First done when', escape(job.firstDoneWhen))] : []),
+    fact('Done when', escape(job.doneWhen)),
+  ];
+  const rule = confirmRule(job);
+  if (rule || job.confirmTarget || r.confirmations?.length) {
+    const asked = `The calling agent confirms only the click the user’s request names${rule ? ` (<code>${escape(rule)}</code>)` : ''}${job.confirmTarget ? `, for ${quoted(job.confirmTarget)}` : ''}.`;
+    const given = r.confirmations?.length ? ` This run: ${r.confirmations.map((c) => `${c.given ? 'confirmed' : 'handed back'} ${quoted(c.label)}`).join(', ')}.` : ran(r) ? ' This run asked for none.' : '';
+    rows.push(fact('Confirmation', asked + given));
+  }
+  if (isTwoCall(job, runs)) {
+    const second = r.followUp
+      ? `The calling agent read what the first call left behind and continued the same session${Object.keys(r.followUp).length ? ` with<br>${keyValues(shownValues(r.followUp, job.secretKeys))}` : ', with no new values'}.`
+      : r.followUpMissing
+        ? `${noRowForSecondCall}${r.rowsRead?.length ? ` Rows read:<br>${r.rowsRead.map((row) => keyValues(row).replaceAll('<br>', ' · ')).join('<br>')}` : ' The table had no rows.'}`
+        : ran(r)
+          ? 'Not made: the first call did not end done.'
+          : 'Not made.';
+    rows.push(fact('Second call', second));
+  }
+  rows.push(fact('Checked by', `${expected}${escape(job.check)}${judged}`));
+  if (ran(r)) {
+    const already = actions(r) === 0 ? ' · already met at start: no action was needed' : '';
+    rows.push(fact('Calls', `${escape(r.summaries.map((s) => statusWord(s.status)).join(' → '))} · ${plural(actions(r), 'action')}${already}`));
+    rows.push(fact('Final reason', escape(r.summaries.at(-1)!.reason)));
+  }
+  if (r.error) rows.push(fact('Error', escape(r.error)));
+  if (r.url) rows.push(fact('Final address', `<span class="address">${escape(r.url)}</span>`));
+  if (ran(r)) {
+    const latency = median(r.summaries.map((s) => s.jev.median_latency_ms));
+    rows.push(fact('Cost', `<span class="num">${plural(requests(r), 'Jev request')} · ${thousands(inputTokens(r))} input tokens · ${seconds(elapsed(r))} · ${latency} ms median request</span>`));
+    rows.push(fact('Files', `<a href="${escape(`${r.dir}index.html`)}">${escape(r.dir)}index.html</a> · <a href="${escape(`${r.dir}summary.json`)}">summary.json</a> · <a href="${escape(`${r.dir}trace.json`)}">trace.json</a>`));
+  }
+  return `<dl class="facts">${rows.join('\n')}</dl>`;
+};
+
+const runPanel = (job: ReportJob, r: RunResult, recording: Recording | undefined, runs: RunResult[], featured: RunResult, { phrasing, screen }: { phrasing: Phrasing; screen: string }) => {
+  const verdict = r.passed ? 'Passed' : r.reached ? 'Check held, status not expected' : notRun(r) ? 'Not run' : 'Missed';
+  const headline = ran(r) ? `${escape(ending(r))}, in ${seconds(elapsed(r))}` : escape(ending(r));
+  return `<div class="run player${r === featured ? ' current' : ''}" data-run="${r.run}">
+${player(r, recording, runs, r === featured, screen)}
+<div class="run-head grid4"><p class="small c2">Run ${r.run}<br>${verdict}</p><h2 class="section-title c3s2">${headline}</h2></div>
+${runFacts(job, r, runs, phrasing)}
+</div>`;
+};
+
+const jobView = (
+  { job, runs }: ReportResult,
+  index: number,
+  next: ReportResult,
+  { suiteWrites, phrasing, screen }: { suiteWrites: boolean; phrasing: Phrasing; screen: string },
+  recordingOf: (r: RunResult) => Recording | undefined,
+) => {
+  const passed = passCount(runs);
+  const featured = featuredRun(runs);
+  const finished = runs.filter(ran);
+  const missed = runs.filter((r) => !r.passed);
+  const medians = finished.length ? `median ${seconds(median(finished.map(elapsed)))} · ${plural(median(finished.map(actions)), 'action')} · ${plural(median(finished.map(requests)), 'request')}` : '';
+  const failures = missed.length
+    ? `<section class="failures" aria-label="Runs that did not pass">
+<div class="section-head grid4"><p class="small c2">Failures<br>${missed.length} of ${plural(runs.length, 'run')}</p><h2 class="section-title c3s2">What went wrong</h2></div>
+${missed.map((r) => `<div class="fact grid4"><p class="meta">Run ${r.run}</p><p class="c2s3">${escape(whyMissed(r))}${r.url ? ` <span class="address">${escape(r.url)}</span>` : ''}</p></div>`).join('\n')}
+</section>`
+    : '';
+  return `<section class="view job-view" id="${escape(job.id)}" aria-labelledby="title-${escape(job.id)}">
+<div class="wrapper">
+<header class="job-head grid4">
+<p class="meta"><a class="back" href="#jobs">${BACK_ARROW} All jobs</a><br>Job ${indexLabel(index)} · ${kindOf(job, suiteWrites)}</p>
+<h1 class="job-title c2s2" id="title-${escape(job.id)}">${escape(job.title)}</h1>
+<p class="meta c4 end">${marks(runs)}<br>${passed}/${runs.length} passed · ${interval(passed, runs.length)}${isFlaky(runs) ? ' · flaky' : ''}${medians ? `<br>${medians}` : ''}</p>
+<p class="small story c2s2">${escape(job.job)}</p>
+</header>
+${runs.map((r) => runPanel(job, r, recordingOf(r), runs, featured, { phrasing, screen })).join('\n')}
+${failures}
+<nav class="next" aria-label="Next job"><div class="next-row grid4"><p class="meta">Next job</p><a class="row-title c2s2" href="#${escape(next.job.id)}">${escape(next.job.title)}</a><a class="action c4 end" href="#${escape(next.job.id)}">Next job ${ARROW}</a></div></nav>
+</div>
 </section>`;
 };
 
 /**
- * The whole report: totals, a table of jobs, then each job's statement, goal, check, runs, and its featured
- * run as a video with a described, clickable step list.
+ * The whole report as one self-contained page: an overview (the suite in a sentence, its figures, every job as a row
+ * with its featured run's step shots) and one view per job, opened by `#<job id>`, that starts with the run's
+ * screencast and keeps it, the timeline and the step shots in sync, then lists the run's facts. Every run of a job
+ * can be switched to. Pure: the same input gives the same page (the time shown is the out folder's start time).
+ *
+ * @example
+ * writeFileSync('report.html', renderReport({ title: 'Forgejo: 11 write jobs with jev-browse', results, model, screenshots,
+ *   device: 'desktop', phrasing: 'as-written', readRecording, outFolder: 'forgejo-2026-11-01T15-43-33-653Z', writes: true }));
  */
 export const renderReport = ({
   title,
-  results,
+  results: given,
   model,
   screenshots,
   device,
   phrasing,
   readRecording,
+  outFolder,
+  writes,
 }: {
-  /** The page title and heading, e.g. "Langfuse demo: 16 jobs with jev-browse". */
+  /** The page title, e.g. "Langfuse demo: 16 jobs with jev-browse"; the hero's first sentence is made from it. */
   title: string;
-  results: JobResult[];
+  results: ReportResult[];
   model: string;
   screenshots: string;
   device: string;
   phrasing: Phrasing;
   readRecording: (dir: string) => Recording | undefined;
+  /** The out folder's name, e.g. "forgejo-2026-11-01T15-43-33-653Z": names the suite and its start time. */
+  outFolder?: string;
+  /** The suite changes the app's state (it resets it before each run); a job of a suite that confirms clicks counts too. */
+  writes?: boolean;
 }) => {
-  const runs = results.flatMap((r) => r.runs);
-  const passed = runs.filter((r) => r.passed).length;
-  const summaries = runs.flatMap((r) => r.summaries);
-  const flaky = results.filter((r) => isFlaky(r.runs)).length;
-  const rows = results
-    .map(({ job, runs }) => {
-      const ran = runs.filter((r) => r.summaries.length);
-      const ok = runs.filter((r) => r.passed).length;
-      const reached = runs.filter((r) => r.reached && !r.passed).length;
-      return `<tr><td><a href="#${job.id}">${escape(job.title)}</a></td><td class="${ok === runs.length ? 'pass' : ok ? 'some' : 'fail'}">${ok}/${runs.length}${reached ? ` <small>(+${reached} reached)</small>` : ''}</td><td>${interval(ok, runs.length)}</td><td>${isFlaky(runs) ? '<span class="some">flaky</span>' : ''}</td><td>${seconds(median(ran.map(elapsed)))}</td><td>${median(ran.map(actions))}</td><td>${median(ran.map(requests))}</td></tr>`;
-    })
-    .join('');
+  // A value the caller marked secret never shows, wherever a run echoed it (a reason, a step, an address).
+  const results = given.map(({ job, runs }) => {
+    const scrub = scrubberFor(job.values ?? {}, job.secretKeys);
+    return { job: { ...scrub({ ...job, values: undefined }), values: job.values }, runs: scrub(runs), scrub };
+  });
+  const scrubOf = new Map(results.flatMap(({ runs, scrub }) => runs.map((r) => [r, scrub] as const)));
+  const recordingOf = (r: RunResult) => {
+    const recording = readRecording(r.dir);
+    return recording && scrubOf.get(r)!(recording);
+  };
+  const suiteWrites = Boolean(writes) || results.some((r) => r.job.confirms !== undefined);
+  const counts = [...new Set(results.map((r) => r.runs.length))];
+  const runsPerJob = counts.length === 1 ? `${plural(counts[0], 'run')} each` : `${Math.min(...counts)}–${Math.max(...counts)} runs each`;
+  const views = results.map((result, i) => jobView(result, i, results[(i + 1) % results.length], { suiteWrites, phrasing, screen: screenFor(device) }, recordingOf));
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>${escape(title)}</title>
-<style>
-:root{--bg:#fafaf9;--card:#fff;--fg:#1c1917;--muted:#78716c;--line:#e7e5e4;--pass:#15803d;--some:#b45309;--fail:#b91c1c;--accent:#4f46e5}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0c0a09;--card:#1c1917;--fg:#f5f5f4;--muted:#a8a29e;--line:#292524;--pass:#4ade80;--some:#fbbf24;--fail:#f87171;--accent:#a5b4fc}}
-:root[data-theme="dark"]{--bg:#0c0a09;--card:#1c1917;--fg:#f5f5f4;--muted:#a8a29e;--line:#292524;--pass:#4ade80;--some:#fbbf24;--fail:#f87171;--accent:#a5b4fc}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,sans-serif}
-main{max-width:1180px;margin:0 auto;padding:32px 16px 80px}
-h1{font-size:28px;margin:0 0 4px}.sub{color:var(--muted);margin:0 0 24px}
-.totals{display:flex;gap:12px;flex-wrap:wrap;margin:0 0 24px}
-.total{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;min-width:140px}
-.total b{display:block;font-size:24px}.total span{color:var(--muted);font-size:13px}
-table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:0 0 40px}
-th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:500;font-size:13px}
-td a{color:inherit}.pass{color:var(--pass)}.some{color:var(--some)}.fail{color:var(--fail)}
-section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px;margin:0 0 32px}
-section header{display:flex;justify-content:space-between;align-items:center;gap:12px}
-h2{margin:0;font-size:20px;display:flex;align-items:center;gap:10px}
-.idx{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--card);font-size:14px}
-.score{font-weight:700;font-size:18px}
-.jtbd{font-style:italic;color:var(--muted);margin:10px 0 16px}
-dl{display:grid;grid-template-columns:150px 1fr;gap:6px 16px;margin:0 0 16px}dt{color:var(--muted);font-size:13px}dd{margin:0}
-.chips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
-.chip{border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:13px;text-decoration:none}
-.chip.pass{color:var(--pass)}.chip.fail{color:var(--fail)}
-.failures{font-size:14px;margin:0 0 12px;padding-left:20px}.chip.some{color:var(--some)}
-.miss{color:var(--fail);font-size:13px;margin-left:6px}
-h3{font-size:15px;margin:20px 0 10px}
-video{width:100%;border-radius:8px;background:#000;display:block;margin:0 0 16px}
-.steps{list-style:none;padding:0;margin:0;display:grid;gap:10px}
-.steps li{display:grid;grid-template-columns:220px 1fr;gap:14px;align-items:start;padding:8px;border-radius:8px}
-.steps li[data-at]{cursor:pointer}.steps li[data-at]:hover{background:var(--bg)}
-.thumb img{width:100%;border-radius:6px;border:1px solid var(--line);display:block}
-.n{font-weight:700;margin-right:8px;color:var(--accent)}
-.meta{color:var(--muted);font-size:12px;margin-top:4px;overflow-wrap:anywhere}.url{font-family:ui-monospace,monospace}
-@media (max-width:640px){dl{grid-template-columns:1fr}.steps li{grid-template-columns:1fr}section{padding:16px}}
-</style></head><body><main>
-<h1>${escape(title)}</h1>
-<p class="sub">Each job starts on the app's start page. ✔ means the ground-truth check held <em>and</em> the run ended with an expected status (done, unless the job expects a hand-back); ◐ means the check held but the run ended with another status. ${escape(model)} · screenshots ${escape(screenshots)} · device ${escape(device)} · phrasing ${escape(phrasing)} · ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC</p>
-<div class="totals">
-  <div class="total"><b class="${passed === runs.length ? 'pass' : 'some'}">${passed}/${runs.length}</b><span>runs passed · ${interval(passed, runs.length)}</span></div>
-  <div class="total"><b class="${flaky ? 'some' : 'pass'}">${flaky}</b><span>flaky jobs (of ${results.length})</span></div>
-  <div class="total"><b>${seconds(median(runs.filter((r) => r.summaries.length).map(elapsed)))}</b><span>median run time</span></div>
-  <div class="total"><b>${median(runs.filter((r) => r.summaries.length).map(requests))}</b><span>median Jev requests</span></div>
-  <div class="total"><b>${median(summaries.map((s) => s.jev.median_latency_ms))} ms</b><span>median request latency</span></div>
-</div>
-<table><thead><tr><th>Job</th><th>Passed</th><th>95% CI</th><th>Flaky</th><th>Median time</th><th>Actions</th><th>Requests</th></tr></thead><tbody>${rows}</tbody></table>
-${results.map((r, i) => jobSection(r, readRecording, i, phrasing)).join('\n')}
+<meta name="description" content="${escape(`${title}: every run judged by ground truth, recorded as video and step shots.`)}">
+<link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+<link rel="stylesheet" href="${FONT_LINK}">
+${HEAD_SCRIPT}
+<style>${STYLE}</style>
+</head><body>
+<nav class="top" aria-label="Report"><div class="wrapper"><a href="#overview">jev-browse / ${escape(suiteName(title, outFolder))}</a><div class="links"><a href="#jobs">Jobs</a><a href="#method">Method</a></div></div></nav>
+<main>
+${overviewView({ title, results, suiteWrites, runsPerJob }, recordingOf)}
+${views.join('\n')}
 </main>
-<script>
-// Clicking a step plays its job's video from that moment.
-document.addEventListener('click', (event) => {
-  if (event.target.closest('a')) return;
-  const step = event.target.closest('[data-at]');
-  const video = step && document.getElementById(step.dataset.video);
-  if (!video) return;
-  video.currentTime = Number(step.dataset.at);
-  video.play();
-  video.scrollIntoView({ behavior: 'smooth', block: 'center' });
-});
-</script>
+<footer><div class="wrapper"><span>${escape(model)} · screenshots ${escape(screenshots)} · ${escape(device)} · phrasing ${escape(phrasing)} · ${startedAt(outFolder)}</span><span>${outFolder ? `verify/out/${escape(outFolder)}` : 'out folder unknown'}</span></div></footer>
+${SCRIPT}
 </body></html>
 `;
 };

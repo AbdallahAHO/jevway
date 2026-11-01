@@ -137,7 +137,8 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
   }
   // Terse phrasing only covers the jobs that have a terseGoal.
   const selectedJobs = jobs.filter((j) => (!only || only.includes(j.id)) && (phrasing === 'as-written' || j.terseGoal));
-  const outDir = new URL(`../out/${name}-${new Date().toISOString().replace(/[:.]/g, '-')}/`, import.meta.url);
+  const outFolder = `${name}-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  const outDir = new URL(`../out/${outFolder}/`, import.meta.url);
   mkdirSync(outDir, { recursive: true });
   process.stdout.write(`model: ${profile.name} (${profile.model}) · screenshots: ${screenshots} · ${runs} runs each · device ${device.name} · phrasing ${phrasing} · ${browser}\n`);
 
@@ -265,13 +266,23 @@ export const runJobs = async ({ name, title, startUrl, browser, jobs, before, re
       return undefined;
     }
   };
+  const model = `${profile.name} (${profile.model})`;
+  // A suite writes when it resets the app before each run, or a job confirms a click (sign-up does both without a reset).
+  const writes = Boolean(reset) || selectedJobs.some((job) => job.confirms);
   writeFileSync(
     report,
-    renderReport({ title: title(results.length), results, model: `${profile.name} (${profile.model})`, screenshots, device: device.name, phrasing, readRecording: readSteps }),
+    renderReport({ title: title(results.length), results, model, screenshots, device: device.name, phrasing, readRecording: readSteps, outFolder, writes }),
   );
-  // A value the job marks secret is written as the marker, as jev-browse itself would show it.
-  const written = results.map((result) => ({ ...result, job: { ...result.job, values: result.job.values && shownValues(result.job.values, result.job.secretKeys) } }));
-  writeFileSync(new URL('results.json', outDir), JSON.stringify({ device: device.name, phrasing, runsPerJob: runs, results: written }, null, 1));
+  // A value the job marks secret is written as the marker, as jev-browse itself would show it. `confirms` is saved as its
+  // source ("/register/i"), so `verify/jobs/rerender.ts` can show it; the fields after `results` let it rebuild the page.
+  const written = results.map((result) => ({
+    ...result,
+    job: { ...result.job, values: result.job.values && shownValues(result.job.values, result.job.secretKeys), confirms: result.job.confirms && String(result.job.confirms) },
+  }));
+  writeFileSync(
+    new URL('results.json', outDir),
+    JSON.stringify({ device: device.name, phrasing, runsPerJob: runs, results: written, title: title(results.length), model, screenshots, writes }, null, 1),
+  );
   const passed = results.flatMap((r) => r.runs).filter((r) => r.passed).length;
   const total = results.flatMap((r) => r.runs).length;
   const { low, high } = wilson(passed, total);

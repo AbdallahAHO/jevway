@@ -329,7 +329,7 @@ describe('a job view', () => {
 
   it('lists every failed run with its reason and address', () => {
     const view = text(viewOf(html, 'flaky'));
-    expect(view).toContain('Run 2: blocked: "Save rule" could not be reached 3 times');
+    expect(view).toContain('Run 2 blocked: "Save rule" could not be reached 3 times');
     expect(view).toContain('http://app.test/ada/app/settings/branches');
   });
 
