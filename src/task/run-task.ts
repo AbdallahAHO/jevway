@@ -184,6 +184,9 @@ const COVERED_OVERLAP_BELOW = 0.1;
 const DONE_EVIDENT = 0.9;
 // The last look before a loop guard hands back accepts the goal as met at this done check: the same bar a DONE needs.
 const LAST_LOOK_DONE = 0.5;
+// Jev's page-error and sign-in-wall answers end the run from these scores; set from recorded runs (plans/103).
+const PAGE_ERROR_STOP = 0.7;
+const SIGN_IN_WALL_STOP = 0.7;
 // A next-step head this sure of another action contradicts a single done spike (measured on Jev: 2 of 16 such spikes were false DONEs).
 const HEAD_DISAGREES = 0.6;
 // The screenshot look confirms the spike at the same bar a DONE needs.
@@ -292,6 +295,8 @@ export class BrowserTask {
    * the stop was a judgment of progress the caller's checks may overturn (see #settle). Every other stop is final.
    */
   #ending: { page: PageState; decision?: Decision; firstRequest: number; overridable: boolean } | undefined;
+  /** The lines the last executed action brought to the page: what a page error is quoted from when no page message is shown. */
+  #lastNewText: string | undefined;
   #tab: Tab;
   /** Every tab this session drove, the first one first: the ones after it were opened by the session's own clicks. */
   #tabs: Tab[];
@@ -638,6 +643,24 @@ export class BrowserTask {
           continue;
         }
 
+        // jev-browse: an error the page shows after this call acted, or a sign-in wall no supplied value passes, is the caller's to handle.
+        const signIn = this.#signInWall(decision, page);
+        const error = executed > 0 ? this.#pageError(decision, page) : undefined;
+        if (signIn || error) {
+          record(false);
+          if (!(await this.#tab.fresh(page))) {
+            page = await this.#observe();
+            continue;
+          }
+          if (signIn) {
+            return {
+              ...stop('blocked', `The page asks to sign in at ${signIn.origin} and no supplied value fits its fields; sign in there (or pass the values), then call again.`, decision),
+              wall: signIn,
+            };
+          }
+          return stop('blocked', error!, decision);
+        }
+
         decision = this.#openDisclosure(this.#boxRescue(decision, page), page);
         if (decision.operation === 'DONE' && doneWhen && (decision.doneProbability ?? 0) < 0.5) {
           record(false);
@@ -923,6 +946,7 @@ export class BrowserTask {
         if (submitted) {
           this.#submits = [...this.#submits, { ...submitted, answer: newTextOf(page.text, submitted.textBefore) }].slice(-SUBMITS_KEPT);
         }
+        this.#lastNewText = newTextOf(page.text, textBefore) || undefined;
         if (submitted || (clickedWithEditPending && !this.#unsavedEdit)) this.#said = this.#saidAfter(bareLabel(action.label), page, textBefore);
         // A click that flipped a collapsed control open leaves the run's own menu: it is closed before the run says done.
         // A fold the disclosure rescue opened is for reading what is inside it, so it stays open.
@@ -1091,6 +1115,27 @@ export class BrowserTask {
     const typed = this.#typedFields.filter((field) => field.path === path).at(-1);
     if (typed) return `unsaved text in "${typed.label}"`;
     return ticked ? `unsaved changes to "${ticked.label}"` : undefined;
+  }
+
+  // The reason to hand back when Jev says the page shows an error and the page has new words to quote: the page message, else
+  // the lines the last action brought. An error read from text that was there before the action is not the run's doing.
+  #pageError(decision: Decision, page: PageState): string | undefined {
+    if ((decision.answers.page_error?.noul ?? 0) < PAGE_ERROR_STOP) return undefined;
+    const said = this.#said?.path === pathOf(page.url) ? this.#said.text : undefined;
+    const quote = said ?? this.#lastNewText;
+    const last = this.#history.findLast((step) => !step.not_executed);
+    if (!quote || !last) return undefined;
+    return `The page shows an error after "${last.element}": "${quote}"; tell the user what it says, or call again with other values.`;
+  }
+
+  // A sign-in wall the run can't pass: Jev says the screen blocks the goal, it has an empty field, and no supplied value fits any empty one.
+  #signInWall(decision: Decision, page: PageState): TaskSummary['wall'] {
+    if ((decision.answers.sign_in_wall?.noul ?? 0) < SIGN_IN_WALL_STOP) return undefined;
+    const emptyFields = page.actions.filter((action) => action.kind === 'fill' && !action.value).map((action) => action.label);
+    const emptyPassword = page.passwordFields?.some((field) => !field.filled) ?? false;
+    if (!emptyFields.length && !emptyPassword) return undefined;
+    if (!emptyFields.every((label) => decision.fieldsWithoutValue.includes(label))) return undefined;
+    return { kind: 'sign_in', origin: originOf(page.url) };
   }
 
   // Keeps observing a page that still looks like `before`; stops at the first change, after changeWaitMs, or when the call is stopped.
@@ -1579,6 +1624,14 @@ const pathOf = (url: string) => {
 // A line with no words, only digits, separators and a unit (a footer's "2ms" render time), changes on every load and says nothing the page did.
 const NO_WORDS = /^[\d\s.,:%]+(ms|s|%)?$/i;
 
+const originOf = (url: string) => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+};
+
 const linesOf = (text: string) => text.split('\n').map((line) => line.trim()).filter(Boolean);
 
 // The lines of `text` that are not in `known`; the reader's own password and loading lines say nothing the page did.
@@ -1667,14 +1720,6 @@ const round = (value: number) => Math.round(value * 1000) / 1000;
 class ModelCallError extends Error {}
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
-
-const originOf = (url: string) => {
-  try {
-    return new URL(url).origin;
-  } catch {
-    return url;
-  }
-};
 
 // The hand-back for a bot wall: what it is, what made it one, and who can pass it.
 const wallReason = (wall: BotWall) =>
