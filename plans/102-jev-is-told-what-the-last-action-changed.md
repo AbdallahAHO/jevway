@@ -1,5 +1,23 @@
 # Plan 102: Jev is told what the last action changed
 
+> **Result: REJECTED (2026-11-01).** Measured a regression on Forgejo against the same-day baseline, and the cause is in
+> the idea, not a bug. Baseline at `39f5928`: Forgejo ×3 **33/33** (`verify/out/forgejo-2026-11-01T14-02-58-394Z`).
+> With 102: **28/33** (`…T15-03-14-731Z`); with the scroll fix (decision 4a): **29/33** (`…T15-08-19-903Z`).
+> - **wiki-off 1/3 in both runs** (baseline 3/3). Twice, right after unticking "Enable repository wiki", the request
+>   carried `changed: ['checkbox "Enable repository wiki": checked true -> false']` and Jev answered DONE three times
+>   (0.80/0.82/0.63, then 0.65/0.69/0.64) with done checks 0.40 or lower, never clicking Save settings: `uncertain`.
+>   Telling Jev that a form control changed reads to it as the outcome, although nothing was saved. The rule written
+>   before the re-run (a second premature DONE after a `changed:` naming the checkbox) applied.
+> - The other wiki-off loss in each run was BLOCKED (0.23) right after Units, then `needs_input` on "Website"; the key
+>   was only the URL change there, so it is not counted against the idea.
+> - delete-repo 0/3 in the first run (a scroll listed the viewport as added/removed) was fixed by decision 4a: 3/3.
+> - protect-main #2 `uncertain` on "Save rule" at 0.29 and bad-name #2 `needs_confirmation` repeated in the re-run are
+>   known margin items (plans/LOG.md, round 8).
+> - Cost: 8467 input tokens per request against the baseline's 8392 (+0.9%).
+> - The headless slice was not run for 102: the Forgejo result decided it.
+> - Code commits reverted (`f307ac5`, `bb5d884`, `e138361`, `9459a31`). A future `last_change` must not present a
+>   control's new state as a result while the edit is unsaved (plan 064's unsaved-edit state knows when that is).
+
 > **Executor instructions**: Follow this plan step by step. Your reviewer maintains `plans/README.md`; do not edit it.
 > This plan changes what Jev is asked, so it moves Jev's verified baseline: it is kept only if the measurement slice shows
 > no regression against a same-day baseline, and REJECTED with the numbers otherwise (as plan 082 was).
