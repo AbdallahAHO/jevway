@@ -992,6 +992,36 @@ const checks: Check[] = [
       assert.deepEqual(down, { id: 'scroll_down', kind: 'scroll', label: 'Scroll down', delta: 560 });
     },
   },
+  {
+    name: 'a link that opens a new tab is noted by its opener and followed with the click counter in place',
+    file: 'opens-tab.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const link = find(page.actions, 'link', /Open the docs/);
+      assert.ok(link, `link not listed: ${labelsOf(page.actions)}`);
+      await tab.act(link, page);
+      let opened: string[] = [];
+      for (let waited = 0; waited < 2000 && !opened.length; waited += 50) {
+        opened = tab.takeOpened();
+        if (!opened.length) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.equal(opened.length, 1, 'the new tab was not noted');
+      const next = await tab.follow(opened[0]);
+      try {
+        const there = await next.observe();
+        assert.match(there.url, /opened-tab\.html$/);
+        const button = find(there.actions, 'button', /Mark as read/);
+        assert.ok(button, `button not listed in the new tab: ${labelsOf(there.actions)}`);
+        // The click goes through the delivery check, so the counter must be in place on this first document.
+        await next.act(button, there);
+        assert.equal((await fixtureState(next)).read, true);
+      } finally {
+        await next.close();
+      }
+      assert.equal(next.closed, true, 'a closed tab does not say so');
+      await assert.rejects(next.observe(), StalePage);
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port.
