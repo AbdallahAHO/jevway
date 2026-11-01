@@ -4079,6 +4079,20 @@ describe('a bot wall', () => {
     expect(performance.now() - started).toBeLessThan(1500);
   });
 
+  it('stops waiting out a check as soon as the caller cancels, and reports the cancel', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'WAIT' }]);
+    const { asTab } = fakeTab([wallPage()]);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 100);
+    const started = performance.now();
+    const summary = await new BrowserTask(asTab, ask, { goal: 'Open zod', doneWhen: 'x', changeWaitMs: 0, wallWaitMs: 30_000 }).run({
+      signal: controller.signal,
+    });
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(summary).toMatchObject({ status: 'blocked', reason: 'Cancelled by the caller' });
+    expect(requests).toHaveLength(0);
+  });
+
   it('runs a page that only discusses captchas as any other page', async () => {
     const { ask, requests } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
     const thread = page({
