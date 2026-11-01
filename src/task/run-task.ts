@@ -96,7 +96,7 @@ export interface TaskSummary {
   stuck?: { operation: string; element?: string; candidates: Candidate[] };
   /** Present once, when this call's `confirm_irreversible` was dropped because the previous call did not end `needs_confirmation`. */
   confirm_ignored?: string;
-  /** Present when the run ended `blocked` on a wall the caller must get past itself (a person passes a bot check). */
+  /** Present when the run ended `blocked` at a wall the caller must get past itself: a bot check a person passes, or a sign-in no supplied value fits. */
   wall?: TaskWall;
   /** On `needs_input`: each field that wants a value, with its role and the URL pathname it is on. */
   missing?: { label: string; role?: string; path: string }[];
