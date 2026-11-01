@@ -5199,6 +5199,8 @@ describe('Jev is asked whether the run is stuck, recorded only', () => {
     const summary = await task.run();
     expect(summary.status).toBe('done');
     expect(acted).toHaveLength(1);
-    expect(task.trace.map((entry) => entry.decision.answers.stuck?.noul)).toEqual([1, 1]);
+    // The done's evidence request is a separate question, with no stuck score.
+    const steps = task.trace.filter((entry) => entry.decision.operation !== 'EVIDENCE');
+    expect(steps.map((entry) => entry.decision.answers.stuck?.noul)).toEqual([1, 1]);
   });
 });
