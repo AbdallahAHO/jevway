@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
+import { runDoctor } from './setup/doctor-command.ts';
 import { loadEnvFile } from './setup/env-file.ts';
 import { CHECKS, type Check } from './task/checks.ts';
 import { createRunner } from './task/start-task.ts';
 
 const USAGE = `jevway --goal "<outcome>" (--url <url> | --tab <url part>) [options]
+jevway doctor [--plan] [--live]   check the setup (key, browser, Node, ffmpeg); --help for more
 
   --values '{"city":"Lisbon"}'   text values Jev may type
   --secret-keys token,otp         keys of --values that are secrets: Jev sees the key only, output shows [secret:<key>]
@@ -26,7 +28,8 @@ Prints one JSON summary. Exit code 0 only when status is "done".
 Needs TYPESAFE_API_KEY (Jev only) or OPENROUTER_API_KEY (every model), from the environment or ~/.config/jevway/env.`;
 
 // Keys and JEVWAY_* settings the environment lacks come from ~/.config/jevway/env.
-loadEnvFile();
+const fromEnvFile = loadEnvFile();
+if (process.argv[2] === 'doctor') process.exit(await runDoctor(process.argv.slice(3), fromEnvFile));
 
 const { values: args } = parseArgs({
   options: {

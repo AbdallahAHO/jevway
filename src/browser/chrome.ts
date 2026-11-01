@@ -27,16 +27,28 @@ export const connectChrome = async (source: BrowserSource): Promise<ChromeHandle
   return { cdp, endpoint, close: async () => cdp.close() };
 };
 
-// Chrome writes DevToolsActivePort (port + browser path) when remote debugging is allowed.
-const autoEndpoint = () => {
+/**
+ * The port and browser path Chrome writes to `DevToolsActivePort` while remote debugging is allowed
+ * (chrome://inspect/#remote-debugging). The file can outlive Chrome, so a port here may no longer answer.
+ *
+ * @example
+ * devToolsActivePort() // { port: '9222', path: '/devtools/browser/…', file: '…/Google/Chrome/DevToolsActivePort' }
+ */
+export const devToolsActivePort = () => {
   const file = chromeProfileDirs()
     .map((dir) => join(dir, 'DevToolsActivePort'))
     .find(existsSync);
-  if (!file) {
+  if (!file) return undefined;
+  const [port, path] = readFileSync(file, 'utf8').trim().split('\n');
+  return { port, path, file };
+};
+
+const autoEndpoint = () => {
+  const active = devToolsActivePort();
+  if (!active) {
     throw new Error('No running Chrome with remote debugging. Open chrome://inspect/#remote-debugging and allow it.');
   }
-  const [port, path] = readFileSync(file, 'utf8').trim().split('\n');
-  return `ws://127.0.0.1:${port}${path}`;
+  return `ws://127.0.0.1:${active.port}${active.path}`;
 };
 
 const chromeProfileDirs = () => {
@@ -52,15 +64,18 @@ const explicitEndpoint = async (url: string) => {
   return version.webSocketDebuggerUrl as string;
 };
 
-const chromeExecutable = () => {
-  const candidates = [
+/** The Chrome `launch` starts: `CHROME_PATH`, else the usual install path for this OS; undefined when none exists. */
+export const findChrome = () =>
+  [
     process.env.CHROME_PATH,
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/usr/bin/google-chrome',
     '/usr/bin/chromium',
     'C:/Program Files/Google/Chrome/Application/chrome.exe',
-  ];
-  const found = candidates.find((path) => path && existsSync(path));
+  ].find((path) => path && existsSync(path));
+
+const chromeExecutable = () => {
+  const found = findChrome();
   if (!found) throw new Error('Chrome not found. Set CHROME_PATH.');
   return found;
 };
