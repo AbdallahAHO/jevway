@@ -105,6 +105,21 @@ Lowercase conventional commits, no AI attribution, no push.
 - `JEV_REAL_RUNS=3 pnpm verify:real`: per site, each run's quote, confidence, whether `document.body.innerText`
   contains it, and the request's latency and input tokens. Set `EVIDENCE_SURE` from these runs and say how.
 
+### Measured (2026-11-01, Jev 1.14 direct)
+- **`pnpm verify` 9/9** (`verify/out/2026-11-01T15-02-48-797Z/`): quotes "2 stays in Lisbon for 2 guest(s)" (0.84) and the
+  MCP run's "1 stays in London for 1 guest(s)" (0.67). With the first wording, "Game started." and "Casa Flora" lost to
+  `absent`; a 6-page probe (9.8k tokens) led to the second wording (most specific span; `absent` only when nothing
+  supports it): MDN 0.76 → 0.94, the booking page picks "Reference JV-1042.", a no-results page stays `absent` 0.95.
+- **Public sites ×3** (`verify/out/real-2026-11-01T15-14-02-223Z/`), 19 done runs asked: quotes on MDN 3/3
+  ("Array.prototype.flat()", 0.93–0.96), Airbnb 2/3 ("Nov 15 – 17", 0.79–0.83), GitHub 1/1 ("The React Framework
+  nextjs.org", 0.72), Wikipedia 1/3 ("Edit", 0.57: no evidence at all). Every quote is in `document.body.innerText`.
+  Unsure picks: Hacker News "| comments" 0.40–0.43, Google Flights "10 results returned." 0.30–0.33.
+- **`absent` on the 3 false Booking dones** (city page, no dates): `absent` 0.59 and 0.65, and a generic line at 0.44.
+  `absent` also came on true dones (Wikipedia #1, Airbnb #2, gotchas' list conditions), so it stays out of the status.
+- **Threshold `EVIDENCE_SURE` = 0.6**: right spans scored 0.67–0.96 in runs, "Edit" 0.57.
+- **Cost:** 19 requests, 26.0k input tokens (median 1.4k, about $0.00006 each), median 166 ms, max 570 ms. Spans per
+  page 25–77 (cap 100 never reached).
+
 ## Done criteria
 
 - [ ] tests red first, then `pnpm typecheck` and `pnpm test` green

@@ -189,8 +189,9 @@ const LAST_LOOK_DONE = 0.5;
 const HEAD_DISAGREES = 0.6;
 // The screenshot look confirms the spike at the same bar a DONE needs.
 const SPIKE_CONFIRMED = LAST_LOOK_DONE;
-// An evidence span Jev chose less surely than this is no quote (provisional: see plan 100's measurements).
-const EVIDENCE_SURE = 0.5;
+// An evidence span Jev chose less surely than this is no quote. Measured (plan 100): right spans scored 0.67–0.96 in runs,
+// Wikipedia's "Edit" 0.57, and unsure picks ("| comments", "10 results returned.") 0.30–0.44.
+const EVIDENCE_SURE = 0.6;
 // Enter is offered only after typing into a search or filter field (a filtered list often updates only on Enter); elsewhere it could submit a form.
 const SEARCH_LIKE = /search|query|find|filter/i;
 const UNSAVED_EDIT_NOTE =
