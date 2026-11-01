@@ -3,7 +3,7 @@ import { DEVICES } from '../../src/browser/devices.ts';
 import type { Tab } from '../../src/browser/tab.ts';
 import { scrubberFor, shownValues } from '../../src/jev/secrets.ts';
 import type { RecordedStep } from '../../src/task/recording.ts';
-import { clock, escapeHtml as escape, fact, indexLabel, playerMarkup, plural, shotCard, statusWord } from '../../src/task/recording-page.ts';
+import { clock, dollars, escapeHtml as escape, fact, indexLabel, playerMarkup, plural, seconds, shotCard, statusWord, stripOpening, thousands, type Viewport } from '../../src/task/recording-page.ts';
 import type { TaskStatus, TaskSummary } from '../../src/task/run-task.ts';
 import { ARROW, BACK_ARROW, FONT_LINK, HEAD_SCRIPT, SCRIPT, STYLE } from './report-page.ts';
 
@@ -120,6 +120,8 @@ export interface ReportResult {
 interface Recording {
   video: string | null;
   steps: RecordedStep[];
+  /** The page size it was recorded at; absent in recordings made before it was saved. */
+  viewport?: Viewport;
 }
 
 /**
@@ -153,11 +155,7 @@ export const isFlaky = (runs: RunResult[]) => {
 // --- numbers a reader compares
 
 const median = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] : 0);
-const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 
-const thousands = (n: number) => `${(n / 1000).toFixed(1)}k`;
-// Two significant digits: a run costs fractions of a cent.
-const dollars = (usd: number) => (usd === 0 ? '$0' : usd < 1 ? `$${usd.toPrecision(2)}` : `$${usd.toFixed(2)}`);
 const NUMBER_WORDS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty'];
 const counted = (n: number) => NUMBER_WORDS[n] ?? String(n);
 
@@ -231,13 +229,10 @@ const suiteName = (title: string, outFolder?: string) => {
   return parts && parts[1] ? `verify:${parts[1]}` : title;
 };
 
-/**
- * The video frame's opening tag, shaped like the recorded viewport: a landscape device's own aspect (desktop is
- * 1120×780), a phone's portrait recording in a frame of fixed height, so it never fills a whole screen.
- */
-const screenFor = (deviceName: string) => {
-  const device = Object.hasOwn(DEVICES, deviceName) ? DEVICES[deviceName as keyof typeof DEVICES] : DEVICES.desktop;
-  return device.height > device.width ? '<div class="screen portrait">' : `<div class="screen" style="aspect-ratio:${device.width} / ${device.height}">`;
+/** The suite's device as a viewport: the frame's shape for a recording that doesn't name its own (desktop is 1120×780). */
+const deviceViewport = (deviceName: string): Viewport => {
+  const { width, height } = Object.hasOwn(DEVICES, deviceName) ? DEVICES[deviceName as keyof typeof DEVICES] : DEVICES.desktop;
+  return { width, height };
 };
 
 // --- small pieces of markup
@@ -251,13 +246,13 @@ const keyValues = (values: Record<string, string>) =>
 
 const figure = (value: string, label: string) => `<p><span class="figure">${value}</span> <span class="meta">${label}</span></p>`;
 
-const overviewRow = (result: ReportResult, recording: Recording | undefined, suiteWrites: boolean, featured: RunResult) => {
+const overviewRow = (result: ReportResult, recording: Recording | undefined, suiteWrites: boolean, featured: RunResult, device: Viewport) => {
   const { job, runs } = result;
   const passed = passCount(runs);
   const kinds = [passed === runs.length && 'held', isFlaky(runs) && 'flaky', job.expect && 'handback', passed === 0 && 'failed'].filter(Boolean).join(' ');
   const href = `#${job.id}`;
   const strip = recording?.steps.length
-    ? `<div class="strip" aria-label="Steps of run ${featured.run}">${recording.steps.map((s, i) => shotCard(s, i, featured.dir, { href })).join('')}</div>`
+    ? `${stripOpening(`run ${featured.run}`, recording.viewport ?? device)}${recording.steps.map((s, i) => shotCard(s, i, featured.dir, { href: `${href}-r${featured.run}-s${i + 1}` })).join('')}</div>`
     : `<p class="small no-recording">No recording for run ${featured.run}${featured.error ? `: ${escape(featured.error)}` : '.'}</p>`;
   return `<article class="job-row" data-kinds="${kinds}">
 <div class="grid4">
@@ -277,7 +272,7 @@ const METHOD = [
 ];
 
 const overviewView = (
-  { title, results, suiteWrites, runsPerJob }: { title: string; results: ReportResult[]; suiteWrites: boolean; runsPerJob: string },
+  { title, results, suiteWrites, runsPerJob, device }: { title: string; results: ReportResult[]; suiteWrites: boolean; runsPerJob: string; device: Viewport },
   recordingOf: (r: RunResult) => Recording | undefined,
 ) => {
   const runs = results.flatMap((r) => r.runs);
@@ -302,7 +297,7 @@ const overviewView = (
   ] as [string, string, number][];
   const rows = results.map((result) => {
     const featured = featuredRun(result.runs);
-    return overviewRow(result, featured && recordingOf(featured), suiteWrites, featured);
+    return overviewRow(result, featured && recordingOf(featured), suiteWrites, featured, device);
   });
   return `<section class="view" id="overview" aria-label="Overview">
 <div class="wrapper">
@@ -336,14 +331,14 @@ const runSwitcher = (runs: RunResult[], current: RunResult) =>
     .join('')}</div>`;
 
 /** The video (or the first shot without one, or a quiet note without a recording), its timeline, the run switcher, the steps. */
-const player = (r: RunResult, recording: Recording | undefined, runs: RunResult[], featured: boolean, screen: string) => {
+const player = (r: RunResult, recording: Recording | undefined, runs: RunResult[], featured: boolean, device: Viewport) => {
   const steps = recording?.steps ?? [];
   const bar = `<div class="player-bar grid4">${runSwitcher(runs, r)}<span class="meta clock c4 end">${recording?.video ? clock(0) : ''}</span></div>`;
   if (!steps.length) {
     const note = notRun(r) ? 'Not run: the suite stopped before this run.' : r.error ? `This run ended in an error before it recorded anything: ${escape(r.error)}` : `No recording was found for run ${r.run}.`;
     return `<div class="screen quiet"><p class="meta">Run ${r.run}</p><p class="small">${note}</p></div>\n${bar}`;
   }
-  return playerMarkup({ dir: r.dir, video: recording!.video, steps, label: `run ${r.run}`, featured, screen, bar });
+  return playerMarkup({ dir: r.dir, video: recording!.video, steps, label: `run ${r.run}`, featured, viewport: recording!.viewport ?? device, bar });
 };
 
 /** The run's facts as hairline rows: what Jev was given, how the run was judged, what it did and what it cost. */
@@ -389,11 +384,11 @@ const runFacts = (job: ReportJob, r: RunResult, runs: RunResult[], phrasing: Phr
   return `<dl class="facts">${rows.join('\n')}</dl>`;
 };
 
-const runPanel = (job: ReportJob, r: RunResult, recording: Recording | undefined, runs: RunResult[], featured: RunResult, { phrasing, screen }: { phrasing: Phrasing; screen: string }) => {
+const runPanel = (job: ReportJob, r: RunResult, recording: Recording | undefined, runs: RunResult[], featured: RunResult, { phrasing, device }: { phrasing: Phrasing; device: Viewport }) => {
   const verdict = r.passed ? 'Passed' : r.reached ? 'Check held, status not expected' : notRun(r) ? 'Not run' : 'Missed';
   const headline = ran(r) ? `${escape(ending(r))}, in ${seconds(elapsed(r))}` : escape(ending(r));
   return `<div class="run player${r === featured ? ' current' : ''}" data-run="${r.run}">
-${player(r, recording, runs, r === featured, screen)}
+${player(r, recording, runs, r === featured, device)}
 <div class="run-head grid4"><p class="small c2">Run ${r.run}<br>${verdict}</p><h2 class="section-title c3s2">${headline}</h2></div>
 ${runFacts(job, r, runs, phrasing)}
 </div>`;
@@ -403,7 +398,7 @@ const jobView = (
   { job, runs }: ReportResult,
   index: number,
   next: ReportResult,
-  { suiteWrites, phrasing, screen }: { suiteWrites: boolean; phrasing: Phrasing; screen: string },
+  { suiteWrites, phrasing, device }: { suiteWrites: boolean; phrasing: Phrasing; device: Viewport },
   recordingOf: (r: RunResult) => Recording | undefined,
 ) => {
   const passed = passCount(runs);
@@ -425,7 +420,7 @@ ${missed.map((r) => `<div class="fact grid4"><p class="meta">Run ${r.run}</p><p 
 <p class="meta c4 end">${marks(runs)}<br>${passed}/${runs.length} passed · ${interval(passed, runs.length)}${isFlaky(runs) ? ' · flaky' : ''}${medians ? `<br>${medians}` : ''}</p>
 <p class="small story c2s2">${escape(job.job)}</p>
 </header>
-${runs.map((r) => runPanel(job, r, recordingOf(r), runs, featured, { phrasing, screen })).join('\n')}
+${runs.map((r) => runPanel(job, r, recordingOf(r), runs, featured, { phrasing, device })).join('\n')}
 ${failures}
 <nav class="next" aria-label="Next job"><div class="next-row grid4"><p class="meta">Next job</p><a class="row-title c2s2" href="#${escape(next.job.id)}">${escape(next.job.title)}</a><a class="action c4 end" href="#${escape(next.job.id)}">Next job ${ARROW}</a></div></nav>
 </div>
@@ -479,7 +474,7 @@ export const renderReport = ({
   const suiteWrites = Boolean(writes) || results.some((r) => r.job.confirms !== undefined);
   const counts = [...new Set(results.map((r) => r.runs.length))];
   const runsPerJob = counts.length === 1 ? `${plural(counts[0], 'run')} each` : `${Math.min(...counts)}–${Math.max(...counts)} runs each`;
-  const views = results.map((result, i) => jobView(result, i, results[(i + 1) % results.length], { suiteWrites, phrasing, screen: screenFor(device) }, recordingOf));
+  const views = results.map((result, i) => jobView(result, i, results[(i + 1) % results.length], { suiteWrites, phrasing, device: deviceViewport(device) }, recordingOf));
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>${escape(title)}</title>
@@ -491,7 +486,7 @@ ${HEAD_SCRIPT}
 </head><body>
 <nav class="top" aria-label="Report"><div class="wrapper"><a href="#overview">jevway / ${escape(suiteName(title, outFolder))}</a><div class="links"><a href="#jobs">Jobs</a><a href="#method">Method</a></div></div></nav>
 <main>
-${overviewView({ title, results, suiteWrites, runsPerJob }, recordingOf)}
+${overviewView({ title, results, suiteWrites, runsPerJob, device: deviceViewport(device) }, recordingOf)}
 ${views.join('\n')}
 </main>
 <footer><div class="wrapper"><span>${escape(model)} · screenshots ${escape(screenshots)} · ${escape(device)} · phrasing ${escape(phrasing)} · ${startedAt(outFolder)}</span><span>${outFolder ? `verify/out/${escape(outFolder)}` : 'out folder unknown'}</span></div></footer>

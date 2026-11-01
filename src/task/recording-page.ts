@@ -16,6 +16,10 @@ export const statusWord = (status: string) => status.replaceAll('_', ' ');
 export const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 export const indexLabel = (i: number) => String(i + 1).padStart(2, '0');
+export const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+export const thousands = (n: number) => `${(n / 1000).toFixed(1)}k`;
+// Two significant digits: a run costs fractions of a cent.
+export const dollars = (usd: number) => (usd === 0 ? '$0' : usd < 1 ? `$${usd.toPrecision(2)}` : `$${usd.toFixed(2)}`);
 export const pathOf = (url: string) => {
   try {
     const { pathname, search } = new URL(url);
@@ -31,6 +35,31 @@ export const isFinished = (step: RecordedStep) => step.operation === step.operat
 export const fact = (label: string, body: string) => `<div class="fact grid4"><dt>${label}</dt><dd class="c2s3">${body}</dd></div>`;
 
 // --- the player
+
+/** The page size a run was recorded at, in CSS pixels (`summary.json`'s `viewport`). */
+export interface Viewport {
+  width: number;
+  height: number;
+}
+
+/**
+ * The video frame's opening tag, shaped like the recording: its own aspect, a portrait (phone) one capped in height and
+ * centred so it never fills a whole screen or sits in a wide empty band. Unknown (an old recording): the video takes
+ * its own size.
+ *
+ * @example
+ * screenFrame({ width: 393, height: 852 }) // '<div class="screen portrait" style="aspect-ratio:393 / 852">'
+ */
+export const screenFrame = (viewport?: Viewport) => {
+  if (!viewport) return '<div class="screen intrinsic">';
+  return `<div class="screen${viewport.height > viewport.width ? ' portrait' : ''}" style="aspect-ratio:${viewport.width} / ${viewport.height}">`;
+};
+
+/** A step strip's opening tag: its shots take the recording's aspect, a portrait strip fits twice as many. */
+export const stripOpening = (label: string, viewport?: Viewport) => {
+  const shape = viewport ? `${viewport.height > viewport.width ? ' portrait' : ''}" style="--shot-aspect:${viewport.width} / ${viewport.height}` : '';
+  return `<div class="strip${shape}" aria-label="Steps of ${label}">`;
+};
 
 /**
  * One step as a card: the shot, then its number, video time and confidence, what happened, and where. The run's
@@ -59,11 +88,11 @@ export const shotCard = (step: RecordedStep, i: number, dir: string, open: { hre
 
 /**
  * The video (or the first shot when there is no video), its timeline with one tick per step, the `bar` (a run switcher
- * and the clock), then the step strip. `screen` is the frame's opening tag. Only a `featured` player fetches its poster;
+ * and the clock), then the step strip, all shaped like the recording's `viewport`. Only a `featured` player fetches its poster;
  * the others hold it in `data-poster` until shown.
  *
  * @example
- * playerMarkup({ dir: 'run-1/', video: 'run.mp4', steps, label: 'run 1', featured: true, screen: '<div class="screen">', bar })
+ * playerMarkup({ dir: 'run-1/', video: 'run.mp4', steps, label: 'run 1', featured: true, viewport: { width: 1120, height: 780 }, bar })
  */
 export const playerMarkup = ({
   dir,
@@ -71,8 +100,9 @@ export const playerMarkup = ({
   steps,
   label,
   featured,
-  screen,
+  viewport,
   bar,
+  preload = 'none',
 }: {
   dir: string;
   video: string | null;
@@ -80,16 +110,20 @@ export const playerMarkup = ({
   /** Names the run in labels, e.g. "run 2". */
   label: string;
   featured: boolean;
-  screen: string;
+  viewport?: Viewport;
   bar: string;
+  /** `metadata` when the page holds one video: it then knows its length (and, for an old recording, its size) at once. */
+  preload?: 'none' | 'metadata';
 }) => {
+  const screen = screenFrame(viewport);
+  const strip = stripOpening(label, viewport);
   const poster = `${dir}${steps[0].file}`;
   const timed = steps.filter((s) => s.video_at !== undefined);
   if (!video || !timed.length) {
     return `${screen}<img data-frame src="${escape(poster)}" alt="${escape(steps[0].description)}"></div>
 <p class="small screen-note">No video for this run (it needs ffmpeg): pick a step to see its shot.</p>
 ${bar}
-<div class="strip" aria-label="Steps of ${label}">${steps.map((s, i) => shotCard(s, i, dir, { video: false })).join('')}</div>`;
+${strip}${steps.map((s, i) => shotCard(s, i, dir, { video: false })).join('')}</div>`;
   }
   // The last frame holds 1.5 s (recording.ts), so this is the video's length until its metadata says otherwise.
   const duration = Math.max(...timed.map((s) => s.video_at!)) + 1.5;
@@ -101,10 +135,10 @@ ${bar}
     .map((s, i) => (s.video_at === undefined ? '' : `<button type="button" class="tick" aria-label="Play from step ${i + 1}" data-at="${s.video_at}" data-index="${i}" style="left:${((s.video_at / duration) * 100).toFixed(2)}%">${i + 1}</button>`))
     .join('');
   const posterAttribute = featured ? ` poster="${escape(poster)}"` : ` data-poster="${escape(poster)}"`;
-  return `${screen}<video src="${escape(`${dir}${video}`)}" preload="none"${posterAttribute} controls muted playsinline aria-label="Screencast of ${label}"></video></div>
+  return `${screen}<video src="${escape(`${dir}${video}`)}" preload="${preload}"${posterAttribute} controls muted playsinline aria-label="Screencast of ${label}"></video></div>
 <div class="timeline-scroll"><div class="timeline" style="min-width:${width.toFixed(1)}rem"><div class="track"></div><div class="played"></div><div class="ticks">${ticks}</div></div></div>
 ${bar}
-<div class="strip" aria-label="Steps of ${label}">${steps.map((s, i) => shotCard(s, i, dir, { video: true })).join('')}</div>`;
+${strip}${steps.map((s, i) => shotCard(s, i, dir, { video: true })).join('')}</div>`;
 };
 
 // --- the stylesheet: tokens, the grid, type, the player and fact rows
@@ -178,7 +212,10 @@ code { font-family: var(--font-mono); font-size: 0.8125rem; }
 .shot { flex: 0 0 72%; display: flex; flex-direction: column; gap: 0.625rem; scroll-snap-align: start; min-width: 0; color: var(--foreground); }
 @media (min-width: 40rem) { .shot { flex-basis: calc((100% - 2 * var(--gap)) / 3); } }
 @media (min-width: 64rem) { .shot { flex-basis: calc((100% - 3 * var(--gap)) / 4); } }
-.shot img { width: 100%; height: auto; aspect-ratio: 1120 / 780; object-fit: cover; object-position: top; border-radius: 0.75rem; background: var(--muted); transition: opacity 160ms ease; }
+.strip.portrait .shot { flex-basis: calc((100% - var(--gap)) / 2.6); }
+@media (min-width: 40rem) { .strip.portrait .shot { flex-basis: calc((100% - 4 * var(--gap)) / 5); } }
+@media (min-width: 64rem) { .strip.portrait .shot { flex-basis: calc((100% - 7 * var(--gap)) / 8); } }
+.shot img { width: 100%; height: auto; aspect-ratio: var(--shot-aspect, 1120 / 780); object-fit: cover; object-position: top; border-radius: 0.75rem; background: var(--muted); transition: opacity 160ms ease; }
 .caption { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
 .caption .meta, .caption .where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .meta-line { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; min-width: 0; }
@@ -200,7 +237,10 @@ a.shot:hover img { opacity: 0.85; }
 .back { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--foreground); }
 .screen { margin-top: 2rem; width: 100%; aspect-ratio: 16 / 10; border-radius: 2rem; overflow: hidden; background: var(--muted); }
 .screen video, .screen img { width: 100%; height: 100%; object-fit: contain; background: var(--muted); }
-.screen.portrait { aspect-ratio: auto; height: min(80svh, 52rem); }
+/* A phone recording: as wide as its own aspect needs at a capped height, centred in the grid */
+.screen.portrait { width: auto; max-width: 100%; height: min(80svh, 52rem); margin-inline: auto; }
+.screen.intrinsic { aspect-ratio: auto; width: fit-content; max-width: 100%; margin-inline: auto; }
+.screen.intrinsic video, .screen.intrinsic img { width: auto; height: auto; max-height: min(80svh, 52rem); }
 .screen.quiet { aspect-ratio: auto; max-height: none; display: grid; align-content: center; gap: 0.5rem; min-height: 14rem; padding: 2rem; }
 .screen.quiet p { max-width: 40rem; }
 .screen-note { margin-top: 0.75rem; }
@@ -232,7 +272,7 @@ footer span { overflow-wrap: anywhere; }
 /**
  * Keeps each player (`.run`) on one step: its video, its timeline ticks and its step shots. Clicking a tick or a shot
  * seeks (and plays, muted); playing marks the current step's tick and shot and scrolls the strip, never the page.
- * Without a video, a shot shows in the frame.
+ * Without a video, a shot shows in the frame. A `seek-step` event (`detail.index`) goes to a step without playing.
  */
 export const PLAYER_SCRIPT = `<script>
 (() => {
@@ -268,17 +308,25 @@ export const PLAYER_SCRIPT = `<script>
       shots.forEach((shot, n) => { if (shot.dataset.at !== undefined && time + 0.05 >= Number(shot.dataset.at)) index = n; });
       return index;
     };
-    const seek = (index) => {
+    const seek = (index, play) => {
       mark(index);
       const shot = shots[index];
       if (frame && shot && shot.dataset.src) frame.src = shot.dataset.src;
       if (!video || !shot || shot.dataset.at === undefined) return;
       video.currentTime = Number(shot.dataset.at);
-      video.play().catch(() => {});
+      if (play) video.play().catch(() => {});
     };
-    ticks.forEach((tick) => tick.addEventListener('click', () => seek(Number(tick.dataset.index))));
+    // A reader's seek: plays from there, and the address names the step so it can be shared (#<view>-r<run>-s<step>).
+    const choose = (index) => {
+      seek(index, true);
+      const view = panel.closest('.job-view');
+      if (view && panel.dataset.run) history.replaceState(null, '', '#' + view.id + '-r' + panel.dataset.run + '-s' + (index + 1));
+    };
+    ticks.forEach((tick) => tick.addEventListener('click', () => choose(Number(tick.dataset.index))));
     // A click anywhere on a card seeks, except on its full-size link.
-    shots.forEach((shot, n) => shot.addEventListener('click', (event) => { if (!event.target.closest('a')) seek(n); }));
+    shots.forEach((shot, n) => shot.addEventListener('click', (event) => { if (!event.target.closest('a')) choose(n); }));
+    // A link to a step (the router): go there without playing.
+    panel.addEventListener('seek-step', (event) => seek(event.detail.index, false));
     if (!video) return;
     const place = () => {
       if (!video.duration || !isFinite(video.duration)) return;

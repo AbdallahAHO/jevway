@@ -54,12 +54,25 @@ nav.top .links { display: flex; gap: 1rem; color: var(--muted-foreground); }
 .next-row { border-top: 1px solid var(--muted); padding-block: 2rem; }
 `;
 
-/** Which view, run and step a hash opens (stub). */
-export const HASH_TARGET = 'const hashTarget = () => null;';
+/**
+ * Which view, run and step a hash opens, as page script: `#<view id>` opens the view; `#<view>-r<run>-s<step>` (an
+ * overview shot's link, or the address after a reader seeks) opens that run at that step; `#<view>-r<run>` and the agent
+ * report's older `#<chore>-<run>` open that run. A whole hash that is a view's id always wins.
+ *
+ * @example
+ * hashTarget('flaky-r3-s2', (id) => id === 'flaky') // { id: 'flaky', run: 3, step: 2 }
+ */
+export const HASH_TARGET = String.raw`const hashTarget = (hash, isView) => {
+  if (!hash) return null;
+  if (isView(hash)) return { id: hash };
+  const parts = /^(.+)-r(\d+)(?:-s(\d+))?$/.exec(hash) || /^(.+)-(\d+)$/.exec(hash);
+  if (!parts || !isView(parts[1])) return null;
+  return parts[3] ? { id: parts[1], run: Number(parts[2]), step: Number(parts[3]) } : { id: parts[1], run: Number(parts[2]) };
+};`;
 
 /**
  * The page's behaviour, all reading data- attributes of server-rendered HTML:
- * - the hash picks the view (a job id, else the overview);
+ * - the hash picks the view (a job id, else the overview), and a step link its run and step (`HASH_TARGET`);
  * - text-link filters narrow the job rows;
  * - each job's run switcher shows one run's panel;
  * - the players themselves are `PLAYER_SCRIPT`'s (the video, its ticks and shots on the same step).
@@ -70,15 +83,36 @@ export const SCRIPT = `${PLAYER_SCRIPT}
   const overview = document.getElementById('overview');
   const views = [...document.querySelectorAll('.view')];
 
-  // --- views: #<job id> opens that job; an empty, #jobs, #method or unknown hash shows the overview
+  ${HASH_TARGET}
+
+  // --- one run's panel shown in a job view, its video given the poster it held back
+  const showRun = (view, run) => {
+    let shownPanel = null;
+    for (const panel of view.querySelectorAll('.run')) {
+      const shown = panel.dataset.run === run;
+      panel.classList.toggle('current', shown);
+      if (shown) shownPanel = panel;
+      const video = panel.querySelector('video');
+      if (!video) continue;
+      if (!shown) video.pause();
+      else if (!video.poster && video.dataset.poster) video.poster = video.dataset.poster;
+    }
+    return shownPanel;
+  };
+
+  // --- views: #<job id> opens that job (#<job>-r<run>-s<step> at that run and step); an empty, #jobs, #method or
+  // unknown hash shows the overview
   const route = () => {
-    let id = '';
-    try { id = decodeURIComponent(location.hash.slice(1)); } catch {}
-    const target = id ? document.getElementById(id) : null;
-    const job = target && target.classList.contains('job-view') ? target : null;
+    let hash = '';
+    try { hash = decodeURIComponent(location.hash.slice(1)); } catch {}
+    const found = hashTarget(hash, (id) => Boolean(document.getElementById(id)?.classList.contains('job-view')));
+    const job = found ? document.getElementById(found.id) : null;
+    const target = job || !hash ? null : document.getElementById(hash);
     const current = job || overview;
     for (const view of views) view.classList.toggle('current', view === current);
     for (const video of document.querySelectorAll('video')) if (!current.contains(video)) video.pause();
+    const panel = job && found.run !== undefined ? showRun(job, String(found.run)) : null;
+    if (panel && found.step) panel.dispatchEvent(new CustomEvent('seek-step', { detail: { index: found.step - 1 } }));
     if (job || !target) window.scrollTo(0, 0);
     else target.scrollIntoView();
   };
@@ -94,18 +128,11 @@ export const SCRIPT = `${PLAYER_SCRIPT}
     });
   }
 
-  // --- run switcher: show one run's panel, giving its video the poster it held back
+  // --- run switcher
   for (const button of document.querySelectorAll('[data-show-run]')) {
     button.addEventListener('click', () => {
       const view = button.closest('.job-view');
-      for (const panel of view.querySelectorAll('.run')) {
-        const shown = panel.dataset.run === button.dataset.showRun;
-        panel.classList.toggle('current', shown);
-        const video = panel.querySelector('video');
-        if (!video) continue;
-        if (!shown) video.pause();
-        else if (!video.poster && video.dataset.poster) video.poster = video.dataset.poster;
-      }
+      showRun(view, button.dataset.showRun);
       // The pressed button now sits in a hidden panel: keep focus on the same run's button in the shown one.
       view.querySelector('.run.current [data-show-run="' + button.dataset.showRun + '"]')?.focus();
     });
