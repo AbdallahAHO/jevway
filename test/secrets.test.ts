@@ -32,6 +32,16 @@ describe('scrubbing secret values', () => {
     expect(scrubbed.image).toBe(image);
   });
 
+  it('scrubs any key of a whole request, also one added later, and leaves an image part as it is', () => {
+    const scrub = scrubberFor({ token: 'k3y' }, ['token']);
+    const image = { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,k3y' } };
+    const request = { state: [image, { page: { text: 'k3y' }, last_change: { field: 'API token', now: 'K3Y' } }], questions: { q: { goal: 'k3y' } } };
+    expect(scrub(request)).toEqual({
+      state: [image, { page: { text: '[secret:token]' }, last_change: { field: 'API token', now: '[secret:token]' } }],
+      questions: { q: { goal: '[secret:token]' } },
+    });
+  });
+
   it('is the identity when nothing is marked, or a marked key has no value', () => {
     const value = { text: 'k3y' };
     expect(scrubberFor({ token: 'k3y' }, [])(value)).toBe(value);

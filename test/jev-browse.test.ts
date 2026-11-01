@@ -4246,6 +4246,24 @@ describe('values the caller marks secret', () => {
     expect(request.state[0].image_url.url).toBe(`data:image/jpeg;base64,${screenshot}`);
   });
 
+  it('keeps a secret typed into a field out of every request Jev gets, with screenshots each step', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '2', risk_2: 0.1 }]);
+    const { asTab } = fakeTab([echoing('b'), echoing('c')]);
+    await new BrowserTask(asTab, ask, {
+      goal: 'Copy it',
+      values: { token: TOKEN },
+      secretKeys: ['token'],
+      screenshots: 'always',
+      elementRisk: true,
+      maxSteps: 1,
+      changeWaitMs: 0,
+    }).run();
+    expect(requests.length).toBeGreaterThan(1);
+    expect(leaks(requests)).toEqual([]);
+    expect(JSON.stringify(requests[0])).toContain(`"current_value":"${MARKER}"`);
+    expect(requests[0].state[0]).toEqual({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,SCREENSHOT' } });
+  });
+
   it('scrubs it from follow-up questions too', async () => {
     const { ask, requests } = scriptedJev([{ operation: 'CLICK', click_target: '2', risk_2: 0.1 }]);
     await decide(ask, { page: echoing('b'), goal: 'Copy it', history: [], checkCommitRisk: true, values: { token: TOKEN }, secretKeys: ['token'], elementRisk: 'chosen' });
