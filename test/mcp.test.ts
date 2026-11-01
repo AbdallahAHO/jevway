@@ -57,6 +57,7 @@ describe('tools/list', () => {
     expect(hints).toEqual({
       browser_task: expect.objectContaining({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }),
       browser_task_end: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }),
+      browser_look: expect.objectContaining({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }),
       journey_start: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }),
       journey_step: expect.objectContaining({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }),
       journey_autopilot: expect.objectContaining({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }),
