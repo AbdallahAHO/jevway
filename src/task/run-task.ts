@@ -315,6 +315,29 @@ export class BrowserTask {
     return scrubberFor(this.#options.values, this.#options.secretKeys)(value);
   }
 
+  // jev-browse: a page is scrubbed of secrets as soon as the run reads it, so every label, value, history line, page
+  // message and reason is built from scrubbed text before anything cuts it short (a cut secret no longer matches the
+  // later whole-request scrub). What input needs stays as read: the freshness marker, guards, keys and fingerprint,
+  // a select option's value; the tab still types the real value.
+  async #observe(): Promise<PageState> {
+    const page = await this.#tab.observe();
+    if (!this.#options.secretKeys.length) return page;
+    const scrub = scrubberFor(this.#options.values, this.#options.secretKeys);
+    return {
+      ...page,
+      url: scrub(page.url),
+      title: scrub(page.title),
+      text: scrub(page.text),
+      ...(page.passwordFields && { passwordFields: page.passwordFields.map((field) => ({ ...field, name: scrub(field.name) })) }),
+      actions: page.actions.map((action) => ({
+        ...action,
+        label: scrub(action.label),
+        ...(action.value !== undefined && action.kind !== 'select' && { value: scrub(action.value) }),
+        ...(action.current_value !== undefined && { current_value: scrub(action.current_value) }),
+      })),
+    };
+  }
+
   /** The tab the session is on now: a tab its clicks opened, once followed, or the one it started on. */
   get tab() {
     return this.#tab;
@@ -357,7 +380,7 @@ export class BrowserTask {
 
   // Puts a tab switch on the last step of this call, with the page now in use (read here unless the caller just did).
   async #afterSwitch(switched: 'opened' | 'closed', firstStep: number, read?: PageState): Promise<PageState> {
-    const page = read ?? (await this.#tab.observe());
+    const page = read ?? (await this.#observe());
     const note = switched === 'opened' ? `new tab opened: ${page.url}` : `the tab closed; back on ${page.url}`;
     const last = this.#history.length - 1;
     if (last >= firstStep) this.#history[last] = { ...this.#history[last], element: `${this.#history[last].element} (${note})`, page_changed: true };
@@ -491,7 +514,7 @@ export class BrowserTask {
         page_changed: true,
         confidence: 1,
       });
-      page = await this.#tab.observe();
+      page = await this.#observe();
       return true;
     };
     // Every way of ending `done` goes through here: undefined means a menu was closed first, so the loop decides again.
@@ -500,7 +523,7 @@ export class BrowserTask {
       // The page may have turned into a bot check while Jev decided: done is never returned on one.
       if (!(await this.#tab.fresh(page))) {
         // A page that can't be read now keeps the done Jev decided on.
-        const now = await this.#tab.observe().catch(() => undefined);
+        const now = await this.#observe().catch(() => undefined);
         if (now && (await findBotWall(this.#tab, now))) {
           page = now;
           const { wall } = await wallAfterWait();
@@ -534,7 +557,7 @@ export class BrowserTask {
         await limit.pause(WALL_POLL_MS);
         if (limit.stopped()) break;
         // A challenge that clears navigates: a page still loading is looked at again on the next poll.
-        page = await this.#tab.observe().catch((error) => {
+        page = await this.#observe().catch((error) => {
           if (error instanceof StalePage) return page;
           throw error;
         });
@@ -555,7 +578,7 @@ export class BrowserTask {
       // A dialog from before this call is told to Jev on the first step; one the page keeps raising ends the run.
       const repeatedAtStart = this.#reportDialogs(firstStep);
       if (repeatedAtStart) return stop('blocked', repeatedAtStart);
-      page = await this.#tab.observe();
+      page = await this.#observe();
       while (executed < maxSteps) {
         const halt = limit.stopped();
         if (halt) return stop(halt.status, halt.reason);
@@ -576,7 +599,7 @@ export class BrowserTask {
           decision = await this.#decideWithRetry(page);
         } catch (error) {
           if (!(error instanceof StalePage)) throw error;
-          page = await this.#tab.observe();
+          page = await this.#observe();
           continue;
         }
         const doneProbability = decision.doneProbability ?? 0;
@@ -610,7 +633,7 @@ export class BrowserTask {
         if (doneWhen && blockedOnMetGoal) {
           record(false);
           if (this.#sendBackUnsavedEdit(decision, doneProbability)) {
-            page = await this.#tab.observe();
+            page = await this.#observe();
             continue;
           }
           const ended = await stopDone(`Completion condition verified: ${doneWhen}`, decision);
@@ -634,13 +657,13 @@ export class BrowserTask {
             confidence: round(decision.confidence),
           });
           await limit.pause(300);
-          page = await this.#tab.observe();
+          page = await this.#observe();
           continue;
         }
 
         if (decision.operation === 'DONE' && doneWhen && this.#sendBackUnsavedEdit(decision, decision.doneProbability ?? 0)) {
           record(false);
-          page = await this.#tab.observe();
+          page = await this.#observe();
           continue;
         }
 
@@ -652,7 +675,7 @@ export class BrowserTask {
             not_executed: 'covered on screen by another layer; clear it first',
             confidence: round(decision.confidence),
           });
-          page = await this.#tab.observe();
+          page = await this.#observe();
           continue;
         }
         const unpicked = this.#unpickedMenuValue(decision, page);
@@ -665,7 +688,7 @@ export class BrowserTask {
             not_executed: `not accepted: the menu you opened lists "${unpicked.option.label}" (${unpicked.key}) and it isn't picked yet; pick it first, or answer BLOCKED`,
             confidence: round(decision.confidence),
           });
-          page = await this.#tab.observe();
+          page = await this.#observe();
           continue;
         }
         const undo = this.#undoesOwnToggle(decision, page);
@@ -686,7 +709,7 @@ export class BrowserTask {
             not_executed: `not accepted: "${undo.label}" is now ${state} because this run clicked it, and ${afterIt}`,
             confidence: round(decision.confidence),
           });
-          page = await this.#tab.observe();
+          page = await this.#observe();
           continue;
         }
         const handBack = this.#handBack(decision, page);
@@ -703,7 +726,7 @@ export class BrowserTask {
                 : 'no supplied value fits this field; type nothing here — choose another step, or BLOCKED if the goal needs a value you were not given',
             confidence: round(decision.confidence),
           });
-          page = await this.#tab.observe();
+          page = await this.#observe();
           continue;
         }
         if (handBack) {
@@ -719,7 +742,7 @@ export class BrowserTask {
           // A stop decided on a page that has since changed is stale: re-observe instead of reporting it.
           if (!(await this.#tab.fresh(page))) {
             record(false);
-            page = await this.#tab.observe();
+            page = await this.#observe();
             continue;
           }
           record(false);
@@ -788,7 +811,7 @@ export class BrowserTask {
             }
             if (PAGE_LEVEL_KINDS.includes(action.kind)) this.#pageLevelStale++;
             this.#recording?.discardLast();
-            page = await this.#tab.observe();
+            page = await this.#observe();
             continue;
           }
           // Unreachable on an unchanged page: retrying blind repeats the same miss, so Jev has to hear about it.
@@ -809,7 +832,7 @@ export class BrowserTask {
               page_changed: true,
               confidence: 1,
             });
-            page = await this.#tab.observe();
+            page = await this.#observe();
             continue;
           }
           const misses = this.#unreachable.node === action.node ? this.#unreachable.count + 1 : 1;
@@ -832,7 +855,7 @@ export class BrowserTask {
               confidence: round(decision.confidence),
             });
           }
-          page = await this.#tab.observe();
+          page = await this.#observe();
           continue;
         }
         record(true);
@@ -871,16 +894,16 @@ export class BrowserTask {
         try {
           // A tab the action opened is followed before the page is read; a tab it closed is left for the one before it.
           switched = await this.#switchTabs();
-          page = await this.#tab.observe().catch(async (error) => {
+          page = await this.#observe().catch(async (error) => {
             if (!(error instanceof StalePage) || !this.#tab.closed) throw error;
             switched = await this.#switchTabs();
-            return this.#tab.observe();
+            return this.#observe();
           });
           // A slow click handler or a loading page hasn't reacted yet: a person waits a moment before trying again.
           if (!switched && page.fingerprint === before) {
             page = await this.#awaitChange(before, page);
             switched = await this.#switchTabs();
-            if (switched) page = await this.#tab.observe();
+            if (switched) page = await this.#observe();
           }
         } catch (error) {
           // An action that ran is reported even when the page can't be read afterwards, so the caller never repeats it blindly.
@@ -891,7 +914,7 @@ export class BrowserTask {
         this.#history.push({
           ...ran,
           // A field that is gone (navigated, submitted) can't say; one still on the page must show what was typed.
-          ...(field && { value_kept: field.value === text }),
+          ...(field && { value_kept: field.value === this.#scrub(text) }),
           page_changed: page.fingerprint !== before,
           confidence,
         });
@@ -908,8 +931,7 @@ export class BrowserTask {
         const saidNow = submitted || (clickedWithEditPending && !this.#unsavedEdit);
         if (saidNow) this.#said = this.#saidAfter(bareLabel(action.label), page, textBefore);
         // jev-browse: Jev sees one page at a time, so code names what this action changed; new words a page message already shows are left out.
-        // Compared on scrubbed pages: last_change cuts long values, and a cut secret would no longer match the request's scrub.
-        this.#lastChange = lastChange(this.#scrub(pageBefore), this.#scrub(page), this.#scrub(ran), { withText: !(saidNow && this.#said) });
+        this.#lastChange = lastChange(pageBefore, page, ran, { withText: !(saidNow && this.#said) });
         // A click that flipped a collapsed control open leaves the run's own menu: it is closed before the run says done.
         // A fold the disclosure rescue opened is for reading what is inside it, so it stays open.
         if (decision.operation === 'CLICK' && decision.via !== 'disclosure' && action.expanded === 'false' && page.actions.some((a) => a.node === action.node && a.expanded === 'true')) {
@@ -960,7 +982,8 @@ export class BrowserTask {
     const { checks, doneWhen } = this.#options;
     if (!checks.length || !this.#ending) return summary;
     const { page, decision, overridable } = this.#ending;
-    const results = runChecks(checks, page);
+    // The page was scrubbed when read, so a check naming a secret is read the same way.
+    const results = runChecks(this.#scrub(checks), page);
     const failed = results.filter((result) => !result.pass);
     if (summary.status === 'done' && failed.length) {
       this.#lastStatus = 'uncertain';
@@ -1084,7 +1107,7 @@ export class BrowserTask {
     while (page.fingerprint === before && performance.now() < deadline && !this.#limit?.stopped()) {
       await (this.#limit?.pause(CHANGE_POLL_MS) ?? new Promise((resolve) => setTimeout(resolve, CHANGE_POLL_MS)));
       if (this.#limit?.stopped()) break;
-      page = await this.#tab.observe();
+      page = await this.#observe();
     }
     return page;
   }
