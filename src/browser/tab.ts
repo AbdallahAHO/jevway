@@ -525,6 +525,7 @@ export class Tab {
 
   async close() {
     for (const unsubscribe of this.#unsubscribe.splice(0)) unsubscribe();
+    this.#closed = true;
     await this.cdp.send('Target.closeTarget', { targetId: this.targetId }).catch(() => undefined);
   }
 
