@@ -8,6 +8,8 @@ import type { PageState } from './tab.ts';
 export interface BotWall {
   /** What the reason names: "Cloudflare", "Cloudflare Turnstile", "reCAPTCHA", "hCaptcha", "Turnstile" or '"unusual traffic" page'. */
   name: string;
+  /** Whose check it is, for the summary's `wall.name`: a Cloudflare page with a Turnstile box is `cloudflare`. */
+  provider: 'cloudflare' | 'recaptcha' | 'hcaptcha' | 'turnstile' | 'unusual-traffic';
   /** The title and markers that made it a wall, at most 4; never page content beyond them. */
   evidence: string[];
 }
@@ -54,7 +56,7 @@ const normalized = (text: string) => text.replace(/[‘’]/g, "'").replace(/\s+
  *
  * @example
  * detectBotWall({ title: 'Just a moment...', text: 'Performing security verification\nRay ID: …' });
- * // { name: 'Cloudflare', evidence: ['title "just a moment..."', 'ray id:', 'performing security verification'] }
+ * // { name: 'Cloudflare', provider: 'cloudflare', evidence: ['title "just a moment..."', 'ray id:', 'performing security verification'] }
  */
 export const detectBotWall = (page: Pick<PageState, 'title' | 'text'>, boxes: ChallengeBox[] = []): BotWall | undefined => {
   const title = normalized(page.title);
@@ -76,8 +78,11 @@ export const detectBotWall = (page: Pick<PageState, 'title' | 'text'>, boxes: Ch
   // The brand lines say whose check it is, so they lead; the rest follow in page order.
   const inPageOrder = [...matched].sort((a, b) => Number(!a.brand) - Number(!b.brand) || head.indexOf(a.text) - head.indexOf(b.text));
   const evidence = [...(titleHit ? [`title "${titleHit}"`] : []), ...inPageOrder.map((m) => m.text)].slice(0, MAX_EVIDENCE);
-  return { name, evidence };
+  const provider = cloudflare ? 'cloudflare' : boxes[0] ? PROVIDER_OF_BOX[boxes[0]] : 'unusual-traffic';
+  return { name, provider, evidence };
 };
+
+const PROVIDER_OF_BOX = { reCAPTCHA: 'recaptcha', hCaptcha: 'hcaptcha', Turnstile: 'turnstile' } as const;
 
 // In-page: the visible challenge boxes at least 16000 px² (a checkbox widget is ~300×78), never an invisible reCAPTCHA.
 export const CHALLENGE_BOXES = `(() => {
@@ -104,7 +109,7 @@ export const CHALLENGE_BOXES = `(() => {
  * wall from its text.
  *
  * @example
- * const wall = await findBotWall(tab, await tab.observe()); // { name: 'Cloudflare', evidence: [...] } on npm's challenge
+ * const wall = await findBotWall(tab, await tab.observe()); // { name: 'Cloudflare', provider: 'cloudflare', evidence: [...] } on npm's challenge
  */
 export const findBotWall = async (tab: { evaluate(expression: string): Promise<unknown> }, page: Pick<PageState, 'title' | 'text'>) => {
   const head = normalized(page.text).slice(0, HEAD_CHARS);

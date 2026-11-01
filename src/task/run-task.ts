@@ -53,6 +53,15 @@ export interface TaskOptions {
 
 export type TaskStatus = 'done' | 'needs_input' | 'needs_confirmation' | 'uncertain' | 'blocked' | 'step_budget';
 
+/** What stood between the run and the site when it ended `blocked` on a wall: a bot check, or a sign-in screen. */
+export interface TaskWall {
+  kind: 'bot_check' | 'sign_in';
+  /** The origin of the page the wall is on, e.g. `https://www.npmjs.com`. */
+  origin: string;
+  /** For a bot check, whose: cloudflare, recaptcha, hcaptcha, turnstile or unusual-traffic. */
+  name?: string;
+}
+
 export interface TaskSummary {
   status: TaskStatus;
   reason: string;
@@ -68,6 +77,8 @@ export interface TaskSummary {
   stuck?: { operation: string; element?: string; candidates: Candidate[] };
   /** Present once, when this call's `confirm_irreversible` was dropped because the previous call did not end `needs_confirmation`. */
   confirm_ignored?: string;
+  /** Present when the run ended `blocked` on a wall the caller must get past itself (a person passes a bot check). */
+  wall?: TaskWall;
 }
 
 export interface TraceEntry {
@@ -365,7 +376,7 @@ export class BrowserTask {
         if (now && (await findBotWall(this.#tab, now))) {
           page = now;
           const { wall } = await wallAfterWait();
-          return wall ? stop('blocked', wallReason(wall), decision) : undefined;
+          return wall ? stopAtWall(wall, decision) : undefined;
         }
       }
       return stop('done', reason, decision);
@@ -402,6 +413,11 @@ export class BrowserTask {
       return { wall, cleared: !wall };
     };
 
+    const stopAtWall = (wall: BotWall, decision?: Decision): TaskSummary => ({
+      ...stop('blocked', wallReason(wall), decision),
+      wall: { kind: 'bot_check', origin: originOf(page.url), name: wall.provider },
+    });
+
     // Browser and model errors end the run as `blocked`: the calling agent keeps the session and decides what next.
     try {
       // A dialog from before this call is told to Jev on the first step; one the page keeps raising ends the run.
@@ -418,7 +434,7 @@ export class BrowserTask {
         this.#tab.disarmConfirm();
         // Checked before a decision is spent: a challenge page has nothing for Jev to pick.
         const { wall } = await wallAfterWait();
-        if (wall) return stop('blocked', wallReason(wall));
+        if (wall) return stopAtWall(wall);
         if (++decisions > maxSteps * 2) return stop('step_budget', `Made ${maxSteps * 2} decisions without finishing`);
         let decision: Decision;
         try {
@@ -1346,6 +1362,14 @@ const round = (value: number) => Math.round(value * 1000) / 1000;
 class ModelCallError extends Error {}
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+const originOf = (url: string) => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return url;
+  }
+};
 
 // The hand-back for a bot wall: what it is, what made it one, and who can pass it.
 const wallReason = (wall: BotWall) =>
