@@ -178,7 +178,12 @@ for automation, with throwaway data; never on a third-party production account.
 | 105 | A stuck question is recorded in traces before it gates anything | P2 | S | — | DONE (`6f58773`): recorded only; at ≥ 0.9 it cuts no done run over 99 traced runs; no gate (S5 covers its one catch) |
 | 106 | The verify jobs report opens on the run's video, in the Prima Persona layout | P2 | M | — | DONE (`b1a9d05`): offline only; 30 tests; `pnpm report:render` rebuilds older folders |
 | 107 | A run summary carries its estimated cost and the model it used | P3 | S | — | DONE (`107c80f`): `jev.model`, `jev.est_cost_usd` at $0.042 per 1M input tokens (Jev's published 1.12 rate, both routes, an estimate); other models null; reports show per-run, median and total |
-| 108 | The product is named jevway | P2 | S | — | DONE (`367c06b`): package, commands, server, tools `jevway_task`/`jevway_look`/`jevway_end`, `JEVWAY_*`, skill and compose names; no aliases; offline checks only |
+| 108 | The product is named jevway | P2 | S | — | DONE (`ca9ed18`): package, commands, server, tools `jevway_task`/`jevway_look`/`jevway_end` and `jevway_journey_*`, `JEVWAY_*`, skill and compose names; no aliases; offline checks only |
+| 109 | A run starts after the start page settles | P2 | S | — | DONE (`ffab6af`): storage is cleared only on a loaded http(s) page, retried up to 15 s; the 2 Vikunja setup errors' exact cause is unmeasured |
+| 110 | A confirmation handed back on another control is not counted as honoured | P2 | S | 090 | DONE (`ffab6af`): honoured, not used, ignored; the agent report and log count them apart (`0c81c60`, `6f3ba04`) |
+| 111 | Recorded Jev answers replay offline | P1 | M | — | DONE (`edfbcda`): `JEVWAY_REPLAY=record|replay`, `pnpm verify:replay`; first real recording 2026-11-01 replays redteam 0 misses, verify 11/12, gotchas 26/30, capabilities 33/36 (timing-dependent fixtures miss); the doctor always uses the real API |
+| 112 | The agent report and run pages in the report layout | P3 | M | 106 | DONE (`0c81c60`): agent report with every tool call, run `index.html` video first, overview shots link to `#job-rN-sM`, phone frames |
+| 113 | jevway installs in one line | P1 | M | 108 | DONE (`aea81c0`): keyless server start, `~/.config/jevway/env`, `jevway doctor`, plugin manifest, `INSTALL-FOR-AGENTS.md`; publish is the user's step |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
 they run in parallel. After merging, the gates are re-confirmed on the merged commit.
@@ -282,8 +287,17 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - (from 095, 097, 098) Pane scroll is main-page only; file inputs inside frames are refused; a cancel during the start
   navigation isn't covered; host blocking is checked per step, not at the Fetch level.
 - (from `verify/agent-confirms.ts`) A hand-back on a different control is counted as honoured.
-- (from 106) `verify/agent.ts` and the per-run `index.html` still use the old report style; an overview shot could open
-  the job view at that step; phone recordings sit in a wide frame.
+- (from 106, closed by 112) The agent report, run pages, step links and phone frames are done. Agent chores still
+  record no video: a default `record_dir` the agent suite sets per run would add it.
+- (from 109) Check whether `Page.navigate` can answer before the new document commits; if so, `#waitForLoad` in
+  `src/browser/tab.ts` returns early for every navigation, agents' included.
+- (from 111) Replay misses on timing-dependent fixtures: answers come back at once instead of ~300 ms, so infinite
+  scroll, late content and the 10-step wizard reach a different page state (7 misses of ~150 runs on 2026-11-01). Those
+  fixtures need state-based, not time-based, progress, or the hash must ignore how far a page had loaded.
+- (from 111) Replay covers the fixture suites only; Forgejo, sign-up and checkout need CSRF tokens, relative times and
+  session ids normalised. `replayed: true` in the summary needs a `run-task.ts` change.
+- (from 113) `jevway doctor` in `auto` mode trusts any HTTP answer on the port in Chrome's `DevToolsActivePort` file,
+  so a stale file plus another process reads as ready. Plugin `userConfig` for the key; the D6 deny list.
 
 
 - (from round 4 G6) Plan 018's look fired 4 times at `178ab71`, all confirming correct DONEs (0.91–0.98); it has not

@@ -2,6 +2,23 @@
 
 Newest first. Each entry: what changed, why, and the measured effect. Numbers come from runs, not estimates.
 
+## 2026-11-01 — Round 12: jevway, replay, publish prep (plans 107–113)
+
+- **Renamed to jevway** (108, `ca9ed18`): package `jevway` 0.1.0, commands `jevway`/`jevway-mcp`, MCP tools
+  `jevway_task`/`_look`/`_end` and `jevway_journey_*`, every env var `JEVWAY_*`; no aliases (nothing was published).
+- **107** run summaries carry `jev.model` and `jev.est_cost_usd` ($0.042 per 1M input tokens, Jev's published 1.12
+  rate, both routes, an estimate). **109** the harness clears storage only on a loaded page. **110** confirmations are
+  honoured, not used or ignored. **112** the agent report and run pages in the report layout, step deep links.
+  **113** keyless server start, `~/.config/jevway/env`, `jevway doctor`, plugin manifest, `INSTALL-FOR-AGENTS.md`.
+- **111 replay, first real recording** (`verify/out/replay/2026-11-01`, 5.7 MB, recorded live with 0 misses): live
+  verify 12/12, gotchas normal 30/30, redteam 0 violations (38/78 reached), capabilities 36/36 with 0 false done.
+  Replayed offline with no keys: redteam identical with 0 misses; verify 11/12, gotchas 26/30, capabilities 33/36. All
+  7 misses are timing-dependent fixtures (infinite scroll, late content, the 10-step wizard) and fail loudly with the
+  differing paths.
+- **Langfuse off-topic-answer** is not data drift: the trace exists and content search finds it after 10–20 s; the
+  runs read the stale unfiltered list in between.
+- Tests 687, all offline work; live spend this round: one recording run of the four fixture suites.
+
 ## 2026-11-01 — Round 11: the prior-art backlog (plans 088–106), integration gates, R6 first run
 
 - **Merged to main** (`39f5928` → `4e26220`, fast-forward): plans 088–101, 103, 105 and 106; 102 and 104 rejected
