@@ -142,6 +142,7 @@ pnpm test      # offline: action space, request shape, answer validation, task-l
 pnpm verify    # live: headless Chrome + real Jev, checked against independent ground truth
 pnpm verify:real   # live public sites, a fresh browser per run, 5 runs each (JEV_REAL_RUNS, JEV_REAL_ONLY)
 pnpm verify:langfuse   # 10 jobs in Langfuse's demo project, signed-in Chrome on :9333, recorded into report.html
+pnpm report:render verify/out/<folder>   # rebuild a jobs suite's report.html from its results.json, offline
 ```
 
 `pnpm verify` runs:
@@ -154,7 +155,7 @@ pnpm verify:langfuse   # 10 jobs in Langfuse's demo project, signed-in Chrome on
 
 `pnpm verify:real` runs Wikipedia, MDN, GitHub, Hacker News, npm, Booking.com and Google Flights. Every task stops before login or payment, passes are checked against the final URL, and bot walls (Cloudflare, captchas) are reported apart from failures, judged by the same detector the run uses (`src/browser/bot-wall.ts`).
 
-Traces go to `verify/out/`. Results are in [docs/verification.md](docs/verification.md).
+Traces go to `verify/out/`. A jobs suite's `report.html` opens on an overview of its jobs, each with its featured run's step shots; a job's view starts with the run's video, its steps on a timeline and a strip that follow the video, every run one click away, then what Jev was given and how the run was judged. Results are in [docs/verification.md](docs/verification.md).
 
 How jev-browse compares with other open-source Jev browser projects, and which of their ideas are planned or rejected: [docs/prior-art.md](docs/prior-art.md).
 
