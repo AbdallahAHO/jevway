@@ -2,8 +2,8 @@
 import { DEVICES } from '../../src/browser/devices.ts';
 import type { Tab } from '../../src/browser/tab.ts';
 import { scrubberFor, shownValues } from '../../src/jev/secrets.ts';
-import type { RecordedStep } from '../../src/task/recording.ts';
-import { clock, dollars, escapeHtml as escape, fact, indexLabel, playerMarkup, plural, seconds, shotCard, statusWord, stripOpening, thousands, type Viewport } from '../../src/task/recording-page.ts';
+import type { RecordedStep } from '../../src/recording/recording.ts';
+import { clock, dollars, escapeHtml as escape, fact, indexLabel, playerMarkup, plural, seconds, shotCard, statusWord, stripOpening, thousands, type Viewport } from '../../src/recording/recording-page.ts';
 import type { TaskStatus, TaskSummary } from '../../src/task/run-task.ts';
 import { ARROW, BACK_ARROW, FONT_LINK, HEAD_SCRIPT, SCRIPT, STYLE } from './report-page.ts';
 

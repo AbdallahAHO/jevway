@@ -1,6 +1,6 @@
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { renderSteps, type RecordedStep } from '../src/task/recording.ts';
+import { renderSteps, type RecordedStep } from '../src/recording/recording.ts';
 import type { TaskStatus, TaskSummary } from '../src/task/run-task.ts';
 
 // The index.html a run's record folder holds: what a CLI or MCP user with record_dir opens.

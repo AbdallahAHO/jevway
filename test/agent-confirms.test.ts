@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { confirmCounts, confirmTargets, confirmUse, describeConfirmTarget, isHonoured, type BrowserCall } from '../verify/agent-confirms.ts';
+import { confirmCounts, confirmTargets, confirmUse, describeConfirmTarget, isHonoured, type BrowserCall } from '../verify/agent/confirms.ts';
 
 const SCRATCH = 'Delete the repository http://localhost:3311/ada/scratch.';
 const call = (status: string, args: BrowserCall['args'] = {}, session = 's1'): BrowserCall => ({ args, result: { status, session } });

@@ -18,7 +18,7 @@ import {
   thousands,
   type Viewport,
 } from './recording-page.ts';
-import type { TaskSummary } from './run-task.ts';
+import type { TaskSummary } from '../task/run-task.ts';
 
 /** What Jev is about to do on a screen, in the terms the task loop knows. */
 export interface StepIntent {

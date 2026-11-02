@@ -13,8 +13,8 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
-import { renderSteps } from '../../src/task/recording.ts';
-import { agentRunReader, renderAgentReport, type ChoreRun, type Totals } from '../agent-report.ts';
+import { renderSteps } from '../../src/recording/recording.ts';
+import { agentRunReader, renderAgentReport, type ChoreRun, type Totals } from '../agent/report.ts';
 import type { Phrasing, ReportJob, ReportResult, RunResult } from './report.ts';
 import { renderReport } from './report.ts';
 

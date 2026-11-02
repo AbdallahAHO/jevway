@@ -9,7 +9,7 @@ import { ANY_HOST, narrowHosts, outsideHosts, type HostRules } from './hosts.ts'
 import { scrubberFor } from '../jev/secrets.ts';
 import { describeFailure, runChecks, type Check, type CheckResult } from './checks.ts';
 import { deepLink, quoteSpans } from './evidence.ts';
-import { Recording } from './recording.ts';
+import { Recording } from '../recording/recording.ts';
 import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
 import { checkUploadFiles, fileNames } from './upload-files.ts';
 

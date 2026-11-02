@@ -2,11 +2,11 @@
 // tool calls, the agent's final answer and how the run was judged. Same layout as the jobs report (report.ts).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { RecordedStep } from '../src/task/recording.ts';
-import { escapeHtml as escape, fact, indexLabel, playerMarkup, plural, statusWord, type Viewport } from '../src/task/recording-page.ts';
-import { describeConfirmTarget, type BrowserCall, type ConfirmTarget } from './agent-confirms.ts';
-import { figure, startedAt, wilson } from './jobs/report.ts';
-import { ARROW, BACK_ARROW, FONT_LINK, HEAD_SCRIPT, SCRIPT, STYLE } from './jobs/report-page.ts';
+import type { RecordedStep } from '../../src/recording/recording.ts';
+import { escapeHtml as escape, fact, indexLabel, playerMarkup, plural, statusWord, type Viewport } from '../../src/recording/recording-page.ts';
+import { describeConfirmTarget, type BrowserCall, type ConfirmTarget } from './confirms.ts';
+import { figure, startedAt, wilson } from '../jobs/report.ts';
+import { ARROW, BACK_ARROW, FONT_LINK, HEAD_SCRIPT, SCRIPT, STYLE } from '../jobs/report-page.ts';
 
 /** One run of one chore, as the suite saved it in `results.json` `rows`. */
 export interface ChoreRun {

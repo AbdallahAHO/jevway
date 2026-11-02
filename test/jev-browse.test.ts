@@ -13,7 +13,7 @@ import { matchTarget, overlap, readBox, toViewportRect } from '../src/jev/box.ts
 import * as model from '../src/jev/model.ts';
 import { resolveModel } from '../src/jev/model.ts';
 import { recordingAsk, replayingAsk } from '../src/jev/replay.ts';
-import { describeStep, frameDurations, videoOffset } from '../src/task/recording.ts';
+import { describeStep, frameDurations, videoOffset } from '../src/recording/recording.ts';
 import { BrowserTask } from '../src/task/run-task.ts';
 import { createRunner } from '../src/task/start-task.ts';
 

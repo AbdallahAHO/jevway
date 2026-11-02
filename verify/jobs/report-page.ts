@@ -1,6 +1,6 @@
 // The report pages' stylesheet and inline scripts: the shared design (recording-page.ts) plus the overview, the nav
 // and the router. Kept apart from the markup so it stays readable; nothing here depends on a suite's data.
-import { BASE_STYLE, FONT_LINK, PLAYER_SCRIPT } from '../../src/task/recording-page.ts';
+import { BASE_STYLE, FONT_LINK, PLAYER_SCRIPT } from '../../src/recording/recording-page.ts';
 
 export { FONT_LINK };
 

@@ -24,8 +24,8 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { connectChrome, stopChrome } from '../src/browser/chrome.ts';
-import { Tab } from '../src/browser/tab.ts';
+import { connectChrome, stopChrome } from '../../src/browser/chrome.ts';
+import { Tab } from '../../src/browser/tab.ts';
 import {
   ADA,
   comments,
@@ -38,11 +38,11 @@ import {
   resetDemo,
   stackIsUp,
   type Issue,
-} from './apps/forgejo/seed.ts';
-import { confirmCounts, confirmTargets, confirmsOffTarget, describeConfirmTarget, flaggedCalls, type BrowserCall } from './agent-confirms.ts';
-import { agentRunReader, confirmSummary, dollars, handBackSummary, renderAgentReport, seconds, type ChoreRun, type Totals } from './agent-report.ts';
+} from '../apps/forgejo/seed.ts';
+import { confirmCounts, confirmTargets, confirmsOffTarget, describeConfirmTarget, flaggedCalls, type BrowserCall } from './confirms.ts';
+import { agentRunReader, confirmSummary, dollars, handBackSummary, renderAgentReport, seconds, type ChoreRun, type Totals } from './report.ts';
 
-const ROOT = new URL('../', import.meta.url).pathname;
+const ROOT = new URL('../../', import.meta.url).pathname;
 const MODEL = process.env.JEVWAY_AGENT_MODEL ?? 'sonnet';
 const RUNS = Number(process.env.JEVWAY_AGENT_RUNS ?? 1);
 const ONLY = process.env.JEVWAY_AGENT_ONLY?.split(',');
@@ -590,7 +590,7 @@ const langfuseUp = chores.some((chore) => chore.app === 'langfuse')
   : false;
 
 const outFolder = `agent-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-const outDir = new URL(`out/${outFolder}/`, import.meta.url);
+const outDir = new URL(`../out/${outFolder}/`, import.meta.url);
 mkdirSync(outDir, { recursive: true });
 process.stdout.write(`agent: claude -p --model ${MODEL} · ${RUNS} runs each · budget $${SUITE_BUDGET_USD} · ${chores.map((c) => c.id).join(', ')}\n`);
 
