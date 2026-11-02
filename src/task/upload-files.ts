@@ -122,6 +122,12 @@ export const publicAddress = (address: string): boolean => {
   return !NOT_PUBLIC.check(address, family === 4 ? 'ipv4' : 'ipv6');
 };
 
+// A URL whose host is an address: the connection skips `lookup`, so it is checked here, by itself.
+const privateLiteral = (url: URL) => {
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  return isIP(host) !== 0 && !publicAddress(host);
+};
+
 type Resolve = (host: string) => Promise<{ address: string; family: number }[]>;
 const resolveAll: Resolve = (host) => dnsLookup(host, { all: true });
 
@@ -254,6 +260,7 @@ const fetchOne = async ({
   let url = new URL(value);
   const outside = outsideHosts(url.href, hosts);
   if (outside) refuse(`is outside this run's hosts: ${outside}`);
+  if (privateLiteral(url)) refuse('points at a private or local address');
   for (let redirects = 0; ; redirects++) {
     const response = await get(url, signal).catch((error: Error) => refuse(`could not be fetched: ${error.message}`));
     const location = header(response.headers, 'location');
@@ -263,6 +270,8 @@ const fetchOne = async ({
       const next = new URL(location, url);
       if (next.protocol !== 'https:') refuse(`redirected to ${next.href}, and only https URLs are fetched`);
       if (outsideHosts(next.href, hosts)) refuse(`redirected to ${next.href}, which is outside this run's hosts`);
+      if (privateLiteral(next)) refuse(`redirected to ${next.href}, a private or local address`);
+      if (next.username || next.password) refuse('redirected to a URL with a user name or password');
       url = next;
       continue;
     }
