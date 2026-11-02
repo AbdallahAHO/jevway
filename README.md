@@ -7,10 +7,8 @@
 Give your coding agent a browser goal and get back one short, checked summary. [TypeSafe Jev](https://docs.typesafe.ai)
 picks each click, type and select in about 300 ms, so your agent stops spending a turn on every step.
 
-```text
-agent ──jevway_task(goal, values, done_when)──▶ jevway ──one decision per step──▶ Chrome
-agent ◀── { status, url, page_text, steps } ──┘          (the same Chrome chrome-devtools sees)
-```
+<!-- Source: docs/images/how-it-flows.mmd (render with @mermaid-js/mermaid-cli: -t default -b white -s 2) -->
+![Your agent hands jevway a goal; each step jevway reads the page, asks Jev for one decision and acts in Chrome; the agent gets one summary back](docs/images/how-it-flows.png)
 
 jevway is an MCP server and a CLI. It works with Claude Code, Codex, Cursor, OpenCode and any other MCP client, in your
 own signed-in Chrome or a throwaway one.

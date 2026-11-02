@@ -14,12 +14,34 @@ It goes to `out_dir`, or `$JEVWAY_JOURNEYS_DIR/<host>/<timestamp>` (default `./j
 
 ## The loop
 
-```text
-jevway_journey_start(url, device?, intent?)   → first screen: report + screenshot
-  ├─ jevway_journey_step(next, flow?, description?, insight?)   you pick the tap
-  └─ jevway_journey_autopilot(screens? | intent?)                Jev explores and checks back
-jevway_journey_annotate(screen, description?, insight?, relabel?)   describe screens afterwards
-jevway_journey_finish()                       → viewer, journey.json, what's still undescribed
+```mermaid
+flowchart LR
+    start["<b>jevway_journey_start</b><br/>url · device · intent"]
+    screen{{"Screen report<br/>+ screenshot"}}
+
+    subgraph explore["Explore: repeat"]
+        direction TB
+        step["<b>jevway_journey_step</b><br/>you pick the tap"]
+        auto["<b>jevway_journey_autopilot</b><br/>Jev explores and checks back"]
+    end
+
+    annotate["<b>jevway_journey_annotate</b><br/>describe screens,<br/>regroup steps"]
+    finish["<b>jevway_journey_finish</b>"]
+    out[/"index.html viewer<br/>journey.json<br/>screens/*.png"/]
+
+    start --> screen
+    screen --> step
+    screen --> auto
+    step -. "new screen" .-> screen
+    auto -. "new screens" .-> screen
+    screen -- "when mapped" --> annotate --> finish --> out
+
+    classDef tool fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
+    classDef state fill:#fffbeb,stroke:#f59e0b,color:#451a03
+    classDef output fill:#ecfdf5,stroke:#10b981,color:#064e3b
+    class start,step,auto,annotate,finish tool
+    class screen state
+    class out output
 ```
 
 Every reply to `start`, `step` and `autopilot` carries a JSON report and a light JPEG of the screen, so a multimodal agent

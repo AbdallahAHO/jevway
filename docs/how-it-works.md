@@ -23,10 +23,38 @@ The technical specification of jevway, taken from the code. Every number below i
 
 jevway is an MCP server (`jevway-mcp`, `src/mcp.ts`) and a CLI (`jevway`, `src/cli.ts`). A calling agent hands it a whole browser goal, a start page and the text values the goal needs. A task loop (`src/task/run-task.ts`) reads the page over the Chrome DevTools Protocol (CDP), sends one decision request per step to a model on TypeSafe's System One API (`/v1/systemone`), checks the answer, and performs the single input the answer names. When the goal is visibly done, or the next decision belongs to the caller, the agent gets one short summary back.
 
-```text
-agent ──jevway_task(goal, values, done_when)──▶ jevway-mcp ──▶ task loop ──observe / act over CDP──▶ Chrome tab
-agent ◀── one summary { status, reason, url, page_text, steps, … } ──┘    │
-                                                                         └──/v1/systemone──▶ Jev (TypeSafe API or OpenRouter)
+```mermaid
+flowchart LR
+    agent(["Calling agent<br/>or CLI user"])
+
+    subgraph jevway["jevway process"]
+        direction TB
+        entry["<b>Entry points</b><br/>src/mcp.ts · src/cli.ts"]
+        loop["<b>Task loop</b><br/>src/task/run-task.ts<br/><i>guards · hand-backs · done check</i>"]
+        decide["<b>Request + validation</b><br/>src/jev/decide.ts<br/><i>only listed ids are accepted</i>"]
+        tab["<b>Guarded tab</b><br/>src/browser/tab.ts<br/><i>freshness · hit-test · real input</i>"]
+        entry --> loop
+        loop --> decide
+        loop --> tab
+    end
+
+    subgraph browser["Chrome"]
+        page["Tab<br/><i>snapshot.js reads the page<br/>and every frame</i>"]
+    end
+
+    jev[("Jev<br/>/v1/systemone<br/>TypeSafe API or OpenRouter")]
+
+    agent -- "goal · values · done_when" --> entry
+    entry -. "one summary" .-> agent
+    decide <-- "one decision request per step<br/>+ follow-ups" --> jev
+    tab <-- "Chrome DevTools Protocol" --> page
+
+    classDef ext fill:#f1f5f9,stroke:#64748b,color:#0f172a
+    classDef core fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
+    classDef model fill:#ecfdf5,stroke:#10b981,color:#064e3b
+    class agent,page ext
+    class entry,loop,decide,tab core
+    class jev model
 ```
 
 Terms used throughout:
@@ -41,20 +69,31 @@ A **session** is one `BrowserTask`, starting on one tab, kept by `src/mcp.ts` un
 
 ## 2. One step, end to end
 
-```text
-task loop                       Chrome tab (CDP)                    decision model
-    │ check stop, hosts, bot wall     │                                    │
-    │── observe() ───────────────────▶│ snapshot.js in page + each frame   │
-    │◀──────── PageState ─────────────│ (controls, text, guards, rects)    │
-    │── decision request (operation + speculative heads) ────────────────▶│
-    │◀─────────────────────────────── answers ────────────────────────────│
-    │── follow-ups in parallel (value, file, risk_<id>, target check) ───▶│
-    │◀────────────────────────────────────────────────────────────────────│
-    │ validate ids · thresholds · guards · hand-back rules                 │
-    │── fresh(page, action) ─────────▶│ compare guard and page key         │
-    │── act: resolve, hit-test, press, count, type ─▶│                     │
-    │── observe() (wait ≤ 1.5 s for a change) ─▶│                          │
-    │ history += step · hosts · post-action guards                         │
+```mermaid
+sequenceDiagram
+    autonumber
+    participant L as Task loop
+    participant C as Chrome tab (CDP)
+    participant M as Decision model
+
+    Note over L,C: before deciding: cancel · time budget · hosts · bot wall
+    L->>C: observe()
+    C-->>L: PageState: controls · text · guards · rects
+    L->>M: decision request (operation + speculative heads)
+    M-->>L: answers
+    opt the chosen operation needs more
+        L->>M: follow-ups in parallel: value · file · risk_<id> · target check
+        M-->>L: answers
+    end
+    Note over L,M: validate: only listed ids · confidence thresholds · guards · hand-back rules
+    alt hand back (done, needs_input, needs_confirmation, uncertain, blocked)
+        Note over L,C: stop and return one summary to the caller
+    else act
+        L->>C: fresh(page, action): compare guard and page key
+        L->>C: act: resolve · hit-test · press · count · type
+        L->>C: observe(), waiting up to 1.5 s for a change
+        Note over L,C: record step · re-check hosts · post-action guards
+    end
 ```
 
 ### 2.1 Observe

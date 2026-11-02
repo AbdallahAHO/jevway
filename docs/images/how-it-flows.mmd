@@ -1,0 +1,21 @@
+sequenceDiagram
+    autonumber
+    actor U as You
+    participant A as Your agent
+    box rgba(99,102,241,0.10) jevway
+        participant J as jevway<br/>MCP server · CLI
+    end
+    participant M as Jev<br/>TypeSafe API
+    participant C as Chrome tab
+
+    U->>A: "Find a stay in Lisbon and open the best-rated one"
+    A->>J: jevway_task(goal, values, done_when)
+    loop every step, about 300 ms
+        J->>C: read the page: listed controls + visible text
+        J->>M: one decision request
+        M-->>J: operation · listed element · value key · risk
+        J->>C: act with real input events
+    end
+    Note over J: done only after a separate<br/>check of done_when passes
+    J-->>A: one summary: status · url · page_text · steps
+    Note over A,C: chrome-devtools can inspect the same tab at any time
