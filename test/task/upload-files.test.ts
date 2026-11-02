@@ -179,6 +179,28 @@ describe('fetching URL uploads before the run', () => {
     );
   });
 
+  it.each(['https://127.0.0.1/cv.pdf', 'https://[::1]/cv.pdf', 'https://169.254.169.254/latest/meta-data'])(
+    'refuses %s, an address the connection would reach without a lookup',
+    async (url) => {
+      const { get, asked } = served({});
+      await expect(fetchUploadUrls({ cv: url }, { dir: folder(), get })).rejects.toThrow(`files.cv: "${url}" points at a private or local address`);
+      expect(asked).toEqual([]);
+    },
+  );
+
+  it('refuses a redirect to a private address or one carrying a user name and password', async () => {
+    const { get } = served({
+      'https://files.example/a': { status: 302, headers: { location: 'https://10.0.0.5/x' } },
+      'https://files.example/b': { status: 302, headers: { location: 'https://ada:pw@files.example/x' } },
+    });
+    await expect(fetchUploadUrls({ cv: 'https://files.example/a' }, { dir: folder(), get })).rejects.toThrow(
+      'files.cv: "https://files.example/a" redirected to https://10.0.0.5/x, a private or local address',
+    );
+    await expect(fetchUploadUrls({ cv: 'https://files.example/b' }, { dir: folder(), get })).rejects.toThrow(
+      'files.cv: "https://files.example/b" redirected to a URL with a user name or password',
+    );
+  });
+
   it('refuses an answer that is not a success, naming the status', async () => {
     const { get } = served({ 'https://files.example/cv.pdf': { status: 404 } });
     await expect(fetchUploadUrls({ cv: 'https://files.example/cv.pdf' }, { dir: folder(), get })).rejects.toThrow(
