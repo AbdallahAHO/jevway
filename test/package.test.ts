@@ -20,6 +20,11 @@ describe('the npm package', () => {
     expect(existsSync(new URL('../INSTALL-FOR-AGENTS.md', import.meta.url))).toBe(true);
   });
 
+  it('ships the standalone jevway-inbox skill and its script beside the jevway skill', () => {
+    expect(readFileSync(new URL('../skill/jevway-inbox/SKILL.md', import.meta.url), 'utf8')).toMatch(/^---\nname: jevway-inbox\n/);
+    expect(existsSync(new URL('../skill/jevway-inbox/scripts/inbox.mjs', import.meta.url))).toBe(true);
+  });
+
   it('points npm at the GitHub repository, its issues and its README', () => {
     expect(pkg.repository).toEqual({ type: 'git', url: 'git+https://github.com/AbdallahAHO/jevway.git' });
     expect(pkg.homepage).toBe('https://github.com/AbdallahAHO/jevway#readme');

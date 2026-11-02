@@ -12,6 +12,7 @@ const JOURNEY_TOOLS = [
   'jevway_journey_annotate',
   'jevway_journey_finish',
 ];
+const INBOX_TOOLS = ['jevway_inbox_create', 'jevway_inbox_wait'];
 
 const expectedHints = {
   jevway_task: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -22,6 +23,8 @@ const expectedHints = {
   jevway_journey_autopilot: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   jevway_journey_annotate: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   jevway_journey_finish: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  jevway_inbox_create: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  jevway_inbox_wait: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
 };
 /** Each tool's inputs, sorted: every field it accepts, required ones marked with `!`. Every earlier input is still here. */
 const expectedInputs = {
@@ -34,6 +37,8 @@ const expectedInputs = {
   jevway_journey_autopilot: 'flow intent journey! screens',
   jevway_journey_annotate: 'description insight journey! relabel screen!',
   jevway_journey_finish: 'journey! keep_tab',
+  jevway_inbox_create: 'provider',
+  jevway_inbox_wait: 'from inbox! subject timeout_seconds',
 };
 
 type ListedTool = {
@@ -68,7 +73,7 @@ describe('tools/list', () => {
   it("lists every tool in one fixed order, with hints telling which can change a site and which only touch jevway's own state", async () => {
     const client = await connect(fakeService());
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name)).toEqual([...TASK_TOOLS, ...JOURNEY_TOOLS]);
+    expect(tools.map((tool) => tool.name)).toEqual([...TASK_TOOLS, ...JOURNEY_TOOLS, ...INBOX_TOOLS]);
     expect(Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]))).toEqual(
       Object.fromEntries(Object.entries(expectedHints).map(([name, hints]) => [name, expect.objectContaining(hints)])),
     );
@@ -97,7 +102,7 @@ describe('tools/list', () => {
     }
   });
 
-  it(`stays under ${TOOL_LIST_TOKEN_CEILING} tokens for all 8 tools, output schemas included, and no description passes 4,096 characters`, async () => {
+  it(`stays under ${TOOL_LIST_TOKEN_CEILING} tokens for all 10 tools, output schemas included, and no description passes 4,096 characters`, async () => {
     const client = await connect(fakeService());
     const { tools } = await client.listTools();
     expect(tokensOf(tools)).toBeLessThanOrEqual(TOOL_LIST_TOKEN_CEILING);
@@ -119,8 +124,8 @@ describe('JEVWAY_TOOLS', () => {
   it('an unknown value serves every tool and says so on stderr', async () => {
     const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const client = await connect({ ...fakeService(), env: { JEVWAY_TOOLS: 'everything' } });
-    expect((await client.listTools()).tools).toHaveLength(8);
-    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/JEVWAY_TOOLS.*everything.*all \| task \| journeys/));
+    expect((await client.listTools()).tools).toHaveLength(10);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/JEVWAY_TOOLS.*everything.*all \| task \| journeys \| inbox/));
   });
 });
 
@@ -147,6 +152,7 @@ describe('server instructions', () => {
       'jevway_look',
       'untrusted',
       'jevway_journey_',
+      'jevway_inbox_',
     ]) {
       expect(instructions, words).toContain(words);
     }
@@ -155,6 +161,7 @@ describe('server instructions', () => {
   it('name only the tools the server serves', async () => {
     const task = (await connect({ ...fakeService(), env: { JEVWAY_TOOLS: 'task' } })).getInstructions()!;
     expect(task).not.toContain('jevway_journey_');
+    expect(task).not.toContain('jevway_inbox_');
     const journeys = (await connect({ ...fakeService(), env: { JEVWAY_TOOLS: 'journeys' } })).getInstructions()!;
     expect(journeys).toContain('jevway_journey_start');
     expect(journeys).not.toContain('jevway_task');

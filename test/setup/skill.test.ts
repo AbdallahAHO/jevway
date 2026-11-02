@@ -6,6 +6,7 @@ import { runSkill } from '../../src/setup/skill-command.ts';
 import { captureStdout } from './stdout.ts';
 
 const bundled = readFileSync(new URL('../../skill/jevway/SKILL.md', import.meta.url), 'utf8');
+const bundledInbox = readFileSync(new URL('../../skill/jevway-inbox/SKILL.md', import.meta.url), 'utf8');
 const skillsFolder = () => mkdtempSync(join(tmpdir(), 'jevway-skills-'));
 
 describe('jevway skill', () => {
@@ -15,12 +16,38 @@ describe('jevway skill', () => {
     expect(output).toBe(bundled);
   });
 
-  it('--install copies the skill folder into <dir>/jevway and says what it copied', async () => {
+  it('--name jevway-inbox prints the standalone inbox skill', async () => {
+    const { code, output } = await captureStdout(() => runSkill(['--name', 'jevway-inbox']));
+    expect(code).toBe(0);
+    expect(output).toBe(bundledInbox);
+    expect((await captureStdout(() => runSkill(['--name', 'nope']))).code).toBe(2);
+  });
+
+  it('--install copies both skill folders into <dir>/jevway and <dir>/jevway-inbox and says what it copied', async () => {
     const dir = skillsFolder();
     const { code, output } = await captureStdout(() => runSkill(['--install', dir]));
     expect(code).toBe(0);
-    expect(JSON.parse(output)).toEqual({ ok: true, status: 'installed', path: join(dir, 'jevway'), files: ['SKILL.md'] });
+    const jevway = { status: 'installed', path: join(dir, 'jevway'), files: ['SKILL.md'] };
+    expect(JSON.parse(output)).toEqual({
+      ok: true,
+      ...jevway,
+      skills: [
+        { name: 'jevway', ...jevway },
+        { name: 'jevway-inbox', status: 'installed', path: join(dir, 'jevway-inbox'), files: ['SKILL.md', join('scripts', 'inbox.mjs')] },
+      ],
+    });
     expect(readFileSync(join(dir, 'jevway', 'SKILL.md'), 'utf8')).toBe(bundled);
+    expect(readFileSync(join(dir, 'jevway-inbox', 'SKILL.md'), 'utf8')).toBe(bundledInbox);
+  });
+
+  it('refuses when only the inbox skill differs, copying nothing', async () => {
+    const dir = skillsFolder();
+    mkdirSync(join(dir, 'jevway-inbox'));
+    writeFileSync(join(dir, 'jevway-inbox', 'SKILL.md'), 'mine');
+    const { code, output } = await captureStdout(() => runSkill(['--install', dir]));
+    expect(code).toBe(1);
+    expect(JSON.parse(output)).toMatchObject({ ok: false, error: { code: 'skill_exists', message: expect.stringContaining(join(dir, 'jevway-inbox')) } });
+    expect(() => lstatSync(join(dir, 'jevway'))).toThrow();
   });
 
   it('creates <dir> when it does not exist yet', async () => {
