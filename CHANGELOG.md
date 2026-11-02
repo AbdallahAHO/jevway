@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/AbdallahAHO/jevway/compare/v0.4.0...v0.5.0) (2026-11-02)
+
+
+### Features
+
+* add jevway mcp, the MCP server on stdio from the main bin ([e845b78](https://github.com/AbdallahAHO/jevway/commit/e845b786a7ff5643aef1ebbd7847812e4821df15))
+
 ## [0.4.0](https://github.com/AbdallahAHO/jevway/compare/v0.3.0...v0.4.0) (2026-11-02)
 
 
