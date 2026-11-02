@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/AbdallahAHO/jevway/compare/v0.3.0...v0.4.0) (2026-11-02)
+
+
+### Features
+
+* read and type verification codes split into boxes ([166a8ff](https://github.com/AbdallahAHO/jevway/commit/166a8ff9e0cf386fd82f6f612e650989f48a603c))
+
+
+### Bug Fixes
+
+* mask split code boxes only in the document they were typed in ([d2afc1c](https://github.com/AbdallahAHO/jevway/commit/d2afc1c601e1508e5e588499c8097f5c53692802))
+
 ## [0.3.0](https://github.com/AbdallahAHO/jevway/compare/v0.2.0...v0.3.0) (2026-11-02)
 
 
