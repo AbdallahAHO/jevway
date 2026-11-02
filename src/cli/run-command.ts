@@ -88,13 +88,21 @@ export const cliNext = (next: string, session: string | undefined) => {
 const withRecordDir = (argv: string[]) =>
   argv.flatMap((arg, i) => (arg === '--record' && argv[i + 1] !== undefined && !argv[i + 1].startsWith('-') ? ['--record-dir'] : [arg]));
 
+const TOTP_HINT = 'Pass the base32 secret behind the QR code or its otpauth://totp/ URI by key, e.g. --totp \'{"otp":"JBSWY3DPEHPK3PXP"}\'';
+
 /** `--totp` as JSON, each secret checked here so a bad one is a usage error (exit 2) that never repeats it. */
 const totpFlag = (raw: string | undefined) => {
-  const totp = jsonFlag('totp', raw, TEXT_BY_KEY, '{"otp":"JBSWY3DPEHPK3PXP"}');
+  let totp: Record<string, string> | undefined;
+  try {
+    totp = jsonFlag('totp', raw, TEXT_BY_KEY, '{"otp":"JBSWY3DPEHPK3PXP"}');
+  } catch {
+    // A JSON parse error quotes the input, and the input is the secret.
+    throw usageError('invalid_value', '--totp must be a JSON object of key to secret', TOTP_HINT);
+  }
   try {
     checkTotpSecrets(totp);
   } catch (error) {
-    throw usageError('invalid_value', `--totp: ${(error as Error).message}`, 'Pass the base32 secret behind the QR code or its otpauth://totp/ URI, e.g. --totp \'{"otp":"JBSWY3DPEHPK3PXP"}\'');
+    throw usageError('invalid_value', `--totp: ${(error as Error).message}`, TOTP_HINT);
   }
   return totp;
 };

@@ -92,6 +92,10 @@ describe('usage errors', () => {
     expect(code).toBe(2);
     expect(json.error).toMatchObject({ code: 'invalid_value', message: expect.stringMatching(/^--totp: totp\.otp: /) });
     expect(out + err).not.toContain('PRIVATEPART');
+    // A secret passed without its JSON wrapper is not quoted back by the parse error either.
+    const bare = await cli(['run', ...GOAL, '--totp', 'JBSWY3DPEHPK3PXPPRIVATEPART']);
+    expect(bare.json.error).toMatchObject({ code: 'invalid_value', message: '--totp must be a JSON object of key to secret' });
+    expect(bare.out + bare.err).not.toContain('PRIVATEPART');
     expect(runner.start).toHaveBeenCalledTimes(1);
   });
 
