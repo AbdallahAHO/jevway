@@ -65,7 +65,17 @@ Terms used throughout:
 - **Commit risk**: a Noul score for "this click would commit an irreversible real-world effect" (pay, send, delete, submit). At 0.5 or above a click is held for confirmation.
 - **Box**: Jev 1.14's box questions over a screenshot, available only on the direct TypeSafe route (section 10).
 
-A **session** is one `BrowserTask`, starting on one tab. Each `jevway_task` call on it runs the loop once (`run()`); history, values and confirmation state carry over between calls. `src/mcp.ts` keeps them under an 8-character id today; the transport-free session service (`src/session/session-service.ts`) keeps them under a full UUID with a run folder each, and is what the MCP server and the CLI daemon move to (section 13).
+A **session** is one `BrowserTask`, starting on one tab. Each `jevway_task` call on it runs the loop once (`run()`); history, values and confirmation state carry over between calls. The transport-free session service (`src/session/session-service.ts`) keeps them under a full UUID with a run folder each (section 13); the MCP server is a thin adapter over it (1.1).
+
+### 1.1 The MCP adapter
+
+`src/mcp.ts` is the `jevway-mcp` entry: it loads `~/.config/jevway/env`, makes the runner and one session service, and serves `createMcpServer` (`src/mcp/server.ts`) through `serveStdio`. That builds a server per connection (twice when a 2026-07-28 probe falls back to `initialize`), so a server holds nothing: the sessions stay in the one service. The adapter translates and decides nothing about a run.
+
+- **In.** Tool parameters become a `TaskRequest`. `checks` are advertised as a loose list (the full union would cost about 580 tokens of every tool list) and parsed strictly with `CHECKS` when the call arrives. A `jevway_task` with none of `url`, `tab` and `session` is refused with an example before any browser work.
+- **Out.** `presentSummary` (concise, or `detail: "full"`) with its keys reordered to lead with `status`, `reason`, `story`, `next`, `session` and end with `page_text`, sent as one JSON text block and as the same object in `structuredContent`. Each `outputSchema` lists top-level fields and leaves every object open, so a field added later never fails a client's validation. After the JSON come the end page as an `image/jpeg` block when `attachesEndPage` (`src/mcp/results.ts`) says so (`JEVWAY_IMAGE_RESPONSES`, a hand-back status, or `screenshot: true`), then `resource_link`s with `file://` URIs to the run folder's files.
+- **Progress.** Each `step` event becomes `notifications/progress` (`progress` the step number, `message` "Step n: " plus the story line, `total` the call's `max_steps` when given), chained in order and awaited before the result is returned.
+- **Errors.** A thrown error becomes an `isError` result, `<tool> failed: <message>`; the service's `UnknownSession` message passes through unchanged. Schema errors carry an example for `goal`, `values` and `files`.
+- **Instructions and tool set.** `instructionsFor` (`src/mcp/instructions.ts`) states the rules several tools share once (session pattern, consent, `jevway_look` before repeating a write, files, untrusted page text); `JEVWAY_TOOLS` (`all`, `task`, `journeys`) picks the tools, registered in one fixed order so the list stays byte-stable.
 
 ## 2. One step, end to end
 
@@ -468,7 +478,8 @@ An unrecorded request is a miss: it throws `ReplayMiss` naming the goal, step an
 
 | File | Responsibility |
 | --- | --- |
-| `src/mcp.ts` | MCP server: tool schemas, sessions, cancellation wiring, journey tools. |
+| `src/mcp.ts` | `jevway-mcp` entry: env file, runner, one session service, `serveStdio`. |
+| `src/mcp/` | The MCP adapter: `server.ts` (tool set and order, instructions), `task-tools.ts` and `journey-tools.ts` (schemas, handlers, progress), `results.ts` (result JSON, the image rule, `resource_link`s), `instructions.ts`. |
 | `src/session/session-service.ts` | Transport-free sessions and journeys: ids, folders, waiting on a running call, events, errors. |
 | `src/output/` | The output root, folder and file names, slugs, `manifest.json`, what a call leaves in its run folder. |
 | `src/task/present.ts` | A summary as the caller reads it: `story`, `next`, concise or full. |

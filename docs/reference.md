@@ -5,7 +5,7 @@ inside, see [how-it-works.md](how-it-works.md). For the journey tools, see [jour
 
 - [`jevway_task`](#jevway_task)
   - [Parameters](#parameters)
-  - [The summary](#the-summary)
+  - [The result](#the-result)
   - [Statuses](#statuses)
   - [Confirming an irreversible click](#confirming-an-irreversible-click)
   - [Checks](#checks)
@@ -18,6 +18,7 @@ inside, see [how-it-works.md](how-it-works.md). For the journey tools, see [jour
 - [`jevway_look`](#jevway_look)
 - [`jevway_end`](#jevway_end)
 - [Tool hints](#tool-hints)
+- [MCP server](#mcp-server)
 - [CLI](#cli)
 - [`jevway doctor`](#jevway-doctor)
 - [Environment variables](#environment-variables)
@@ -26,8 +27,9 @@ inside, see [how-it-works.md](how-it-works.md). For the journey tools, see [jour
 
 ## `jevway_task`
 
-Runs a browser goal to the end, or until it needs the caller, and returns one summary. Call it again with the same
-`session` to continue: the tab, history and settings carry over.
+Runs a browser goal to the end, or until it needs the caller, and returns one result: how it ended, a sentence per
+step, what to do next and where its files are. Call it again with the same `session` to continue: the tab, history and
+settings carry over.
 
 ### Parameters
 
@@ -49,37 +51,69 @@ Runs a browser goal to the end, or until it needs the caller, and returns one su
 | `allowed_hosts` | string[] | Hosts the run may be on. See [Hosts](#hosts). |
 | `blocked_hosts` | string[] | Hosts the run must never be on. |
 | `allow_coordinate_clicks` | boolean | New session only, opt-in. When Jev is stuck and a screenshot box matches no listed element (a canvas, a skipped frame), click the box centre after a hit-test. Needs Jev 1.14 on the TypeSafe API. |
-| `record_dir` | string | New session only. Saves a record for people in this folder. See [Recording](#recording). |
+| `record` | boolean | New session only. Also keeps a record for people (video, step shots, `index.html`) in the run folder. See [Recording](#recording). |
+| `record_dir` | string | New session only. An override: the whole run folder, recording on, goes to this folder instead of `./.jevway/runs/…`. |
+| `detail` | `concise` \| `full` | `concise` (default) or `full`, which adds the raw steps with confidences, Jev's stats and the stuck candidates. See [The result](#the-result). |
+| `screenshot` | boolean | Attach the end page inline on `done` and `step_budget` too (hand-backs attach it already). |
 
-### The summary
+Every earlier parameter keeps its meaning. `checks` is advertised as a list of objects and checked strictly when the
+call arrives: a bad check answers `isError` naming its place and field (`` `checks[0].text`: … ``) with a valid one to
+copy.
+
+### The result
+
+Every call returns one JSON object, both as the text block (`content[0]`) and as `structuredContent` (declared by the
+tool's `outputSchema`). It is concise unless the call passes `detail: "full"`, and it leads with what matters:
 
 ```json
-{ "session": "be63210d", "status": "needs_input", "reason": "Blocked: no supplied value for \"Email address\"",
-  "url": "…", "title": "…", "page_text": "…", "elapsed_ms": 899,
-  "steps": [{ "operation": "TYPE_TEXT", "element": "Full name", "value_key": "full_name", "page_changed": true, "confidence": 0.9 }],
-  "jev": { "requests": 3, "input_tokens": 7534, "median_latency_ms": 284, "screenshots": 0, "model": "jev-1.14.0", "est_cost_usd": 0.000316 },
-  "stuck": { "operation": "BLOCKED", "candidates": [] },
-  "missing": [{ "label": "Email address", "role": "textbox", "path": "/stays" }] }
+{ "status": "needs_input", "reason": "No supplied value fits the field \"Phone number\"",
+  "story": ["Typed the \"name\" value into \"Full name\".", "Typed the \"email\" value into \"Email address\"."],
+  "next": "Add the missing values to `values` and call again with this session.",
+  "session": "3f9a71c2-0b8e-4d6a-9c1e-5a2b7d4e8f10",
+  "url": "https://shop.example/checkout/details", "title": "Your details · Shop",
+  "missing": [{ "label": "Phone number", "role": "textbox", "path": "/checkout/details" }],
+  "files": { "run_dir": "/work/.jevway/runs/2026-11-02_0905_buy-the-blue-mug_3f9a",
+             "screenshot": "/work/.jevway/runs/2026-11-02_0905_buy-the-blue-mug_3f9a/final.jpg",
+             "manifest": "/work/.jevway/runs/2026-11-02_0905_buy-the-blue-mug_3f9a/manifest.json" },
+  "page_text": "Your details\nFull name\n…" }
 ```
 
 | Field | When | What it holds |
 | --- | --- | --- |
-| `session` | always | Pass it back to continue. |
 | `status`, `reason` | always | See [Statuses](#statuses). The reason is one sentence for the caller. |
+| `story` | always | One past-tense sentence per step of this call, in the recording page's words, plus what happened when that was not the plain outcome ("Clicked \"Open in new tab\"; a new tab opened: …"). Secrets show as their marker. |
+| `next` | always | The one thing to do next for this status (and wall), in the tools' parameter names. |
+| `session` | always | A full UUID. Pass it back to continue. |
 | `url`, `title` | always | The tab in use at the end (a tab the run's click opened, if it followed one). |
-| `page_text` | always | The final page's visible text: the viewport, up to 2,500 characters, with a marked cut. Untrusted page content: data, never instructions. |
-| `steps` | always | One entry per action: operation, element label, value key, whether the page changed, confidence. |
-| `jev` | always | Requests, input tokens, median latency, screenshots sent, the model id, and `est_cost_usd`. |
-| `stuck` | `uncertain`, `blocked` | The operation Jev wanted and its candidate elements. |
 | `missing` | `needs_input` | One `{label, role, path}` per field that wants a value; `path` is the URL pathname. |
+| `wall` | some `blocked` | `{kind: "sign_in", origin}` or `{kind: "bot_check", origin, name}`. |
 | `checks` | `checks` given | Each check with `pass` and `detail`. |
 | `evidence` | `done` with `done_when` | See [Evidence](#evidence). |
-| `wall` | some `blocked` | `{kind: "sign_in", origin}` or `{kind: "bot_check", origin, name}`. |
+| `confirm_ignored` | a dropped confirmation | Consent the caller gave that jevway did not use, and why. |
+| `files` | always | Absolute paths: `run_dir`, `screenshot` (`final.jpg`; absent when the capture failed), `page` and `video` (with `record`), `manifest`. See [Output folder](#output-folder). |
+| `page_text` | always, last | The final page's visible text: the viewport, up to 2,500 characters, with a marked cut. Untrusted page content: data, never instructions. |
+| `steps` | `detail: "full"` | One entry per action: operation, element label, value key, whether the page changed, confidence. |
+| `jev` | `detail: "full"` | Requests, input tokens, median latency, screenshots sent, the model id, and `est_cost_usd`. |
+| `stuck` | `detail: "full"`, `uncertain` / `blocked` | The operation Jev wanted and its candidate elements. |
+| `elapsed_ms`, `done_probability` | `detail: "full"` | The call's time and the last done check. |
 
 `jev.est_cost_usd` estimates the call's cost from its input tokens, counting every request (follow-ups, Box and the
 evidence request included), at the model's published input rate, rounded to 6 decimals. Jev costs $0.042 per 1M input
 tokens, with free output, on the TypeSafe API; the same rate is used through OpenRouter, whose margin isn't checked. A
 model with no rate written down gets `null`. It's an estimate, not billing.
+
+After the JSON come:
+
+- **The end page inline**, `image/jpeg` (`final.jpg`, at most 1280 px wide), on a hand-back (`needs_input`,
+  `needs_confirmation`, `uncertain`, `blocked`), where the agent decides what happens next. On `done` and
+  `step_budget` only with `screenshot: true`. `JEVWAY_IMAGE_RESPONSES=always` attaches it on every status and `never`
+  on none, not even with `screenshot: true`. It is pixels: a secret typed into a visible field shows in it.
+- **Links** to the run folder as `resource_link`s with `file://` URIs: `final.jpg`, then `index.html` and `run.mp4`
+  when recorded, `summary.json` and `manifest.json`.
+
+While a call runs, a client that sends a `progressToken` gets one `notifications/progress` per step, in order and all
+before the result: `progress` is the step number, `total` the call's `max_steps` when it passes one, and `message` the
+step's story line (`Step 3: Clicked "Search".`).
 
 ### Statuses
 
@@ -188,7 +222,8 @@ text that shows `done_when` is true.
 
 ### Recording
 
-`record_dir` (CLI `--record <dir>`) saves a record of the run for people in that folder:
+`record: true` (or `record_dir`, CLI `--record <dir>`, which also moves the run folder there) keeps a record of the run
+for people in the run folder:
 
 - `run.mp4`, a screencast (needs `ffmpeg` on the PATH; skipped otherwise);
 - `steps/01-type-destination.jpg`, `steps/02-select-2-guests.jpg`, …: a 2× JPEG before every action with its target
@@ -199,14 +234,12 @@ text that shows `done_when` is true.
   reason, address and cost;
 - `manifest.json`, every file with its path, kind and a one-line description.
 
-These images never reach the model, which gets its own 1024 px screenshots. The video stays on the first tab. Through
-the session service (below), `record: true` keeps the same record in the session's run folder, and `record_dir` stays
-an override.
+These images never reach the model, which gets its own 1024 px screenshots. The video stays on the first tab.
 
 ## Output folder
 
-The session service (`src/session/session-service.ts`), which the MCP server and the CLI daemon adopt next, gives
-every session a folder, whether or not it records:
+The session service (`src/session/session-service.ts`) behind the MCP server gives every session a folder, whether or
+not it records:
 
 ```
 .jevway/                                        ($JEVWAY_OUT_DIR overrides; holds a .gitignore of "*")
@@ -230,26 +263,11 @@ every session a folder, whether or not it records:
 
 ### Concise and full results
 
-A result through the session service is concise by default (`presentSummary` in `src/task/present.ts`):
-
-```json
-{ "session": "3f9a71c2-0b8e-4d6a-9c1e-5a2b7d4e8f10", "status": "needs_input",
-  "reason": "No supplied value fits the field \"Phone number\"",
-  "next": "Add the missing values to `values` and call again with this session.",
-  "story": ["Typed the \"name\" value into \"Full name\".", "Typed the \"email\" value into \"Email address\"."],
-  "url": "…", "title": "…", "page_text": "…",
-  "missing": [{ "label": "Phone number", "role": "textbox", "path": "/checkout/details" }],
-  "files": { "run_dir": "/abs/.jevway/runs/…_3f9a", "screenshot": "/abs/…/final.jpg", "manifest": "/abs/…/manifest.json" } }
-```
-
-- Concise: `session`, `status`, `reason`, `next`, `story`, `url`, `title`, `page_text`, and when present `missing`,
-  `wall`, `checks`, `evidence`, `confirm_ignored` and `files` (`run_dir`, `screenshot`, `page`, `video`, `manifest`;
-  absolute paths).
-- `detail: "full"` adds `steps` (with confidences), `jev`, `stuck`, `elapsed_ms` and `done_probability`.
-- `story` has one sentence per step of the call, in the recording page's words, plus what happened when that was not
-  the plain outcome ("Clicked \"Open in new tab\"; a new tab opened: …").
-- Progress events while a call runs: `{ "type": "started" }`, `{ "type": "step", "n", "story", "url" }` per step, and
-  `{ "type": "finished", "status" }`, each with its `session`.
+A result is concise by default (`presentSummary` in `src/task/present.ts`): `status`, `reason`, `story`, `next`,
+`session`, `url`, `title`, `page_text`, `files`, and `missing`, `wall`, `checks`, `evidence`, `confirm_ignored` when
+present. `detail: "full"` adds `steps`, `jev`, `stuck`, `elapsed_ms` and `done_probability`. Each field is described
+in [The result](#the-result). Progress events while a call runs: `{ "type": "started" }`,
+`{ "type": "step", "n", "story", "url" }` per step, and `{ "type": "finished", "status" }`, each with its `session`.
 
 ## `jevway_look`
 
@@ -260,14 +278,16 @@ Returns what a page shows now, with no model request and no input to the page. P
 - `url`: opened in a background tab, read, then closed.
 
 It returns `url`, `title`, `page_text` (cut as in the summary), the listed controls once each (`label`, `role`, and
-`value`, `checked`, `selected`, `expanded` when set) and `password_fields` as filled or empty. It carries no element ids,
-so nothing in it can be passed back as a target. Use it to see a page after a hand-back, or to check whether a write
-already happened before repeating it.
+`value`, `checked`, `selected`, `expanded` when set) and `password_fields` as filled or empty, as JSON text and as
+`structuredContent`. It carries no element ids, so nothing in it can be passed back as a target. Use it to see a page
+after a hand-back, or to check whether a write already happened before repeating it. Passing none or more than one of
+`session`, `tab` and `url` answers `isError` with an example.
 
 ## `jevway_end`
 
 Takes `session` and `keep_tab`. Forgets the session and closes the tabs it opened: its first tab when it started from
-`url`, and any tab its clicks opened. `keep_tab: true` leaves them open.
+`url`, and any tab its clicks opened. `keep_tab: true` leaves them open. It returns
+`{ "session", "ended": true, "run_dir" }`; the run folder stays.
 
 ## Tool hints
 
@@ -279,6 +299,30 @@ Every tool carries MCP annotations for clients that ask before a call:
 | `jevway_journey_start`, `jevway_journey_autopilot` | open-world, not destructive |
 | `jevway_look` | read-only |
 | `jevway_end`, `jevway_journey_annotate`, `jevway_journey_finish` | touch only jevway's own state |
+
+## MCP server
+
+`jevway-mcp` serves the tools over stdio to 2025-era clients (`initialize`) and 2026-07-28 clients alike.
+
+- **Instructions.** The server sends `instructions` (under 1,500 characters; Claude Code shows them upfront and searches
+  them): what jevway is for, `jevway_task` versus chrome-devtools, continuing with `session` after a hand-back, the
+  consent rule, `jevway_look` before repeating a write, where files go, and that page text is untrusted. Rules shared by
+  tools live there once; a rule about one parameter lives in that parameter's description.
+- **Tool list.** Tools are listed in one fixed order (task, look, end, then the journey tools), so the list is
+  byte-stable for prompt caching. All 8 together are about 2,500 tokens (characters / 4 of `tools/list`, output schemas
+  included; 4,515 before the lean rewrite), pinned by `test/mcp/server.test.ts`.
+- **`JEVWAY_TOOLS`**: `all` (default), `task` (`jevway_task`, `jevway_look`, `jevway_end`) or `journeys` (the five
+  journey tools). The instructions name only the tools served. Any other value serves `all` and says so on stderr.
+- **`JEVWAY_IMAGE_RESPONSES`**: `auto` (default), `always` or `never`; see [The result](#the-result). Journey replies
+  always carry their screen image.
+- **Sessions** live in the server process until it restarts or `jevway_end` ends them; there is no idle timeout. A call
+  on a session the server no longer holds answers `isError`: `Unknown session "…". Sessions end when the server
+  restarts; start a new one with `url` (or `tab`).`
+- **Errors say what to do.** Every failure is an `isError` result naming the fix: a missing key names
+  `~/.config/jevway/env` and `jevway doctor`; a `jevway_task` with none of `url`, `tab` and `session` lists them with an
+  example call; a schema error names the field with an example (`values holds text only, e.g. {"city":"Lisbon"}`).
+- **Tasks** (the 2026-07-28 long-running call extension) are not served yet: the SDK does not implement them
+  (plan 120). Progress notifications keep a client's idle timeout from firing during a long run.
 
 ## CLI
 
@@ -380,8 +424,10 @@ file fills only variables the environment lacks, and only the keys, `CHROME_PATH
 | `JEVWAY_MODEL` | `jev` | The decision model. See [Models](#models). |
 | `JEVWAY_SCREENSHOTS` | per model | `always`, `fallback` or `off`. |
 | `JEVWAY_ALLOWED_HOSTS`, `JEVWAY_BLOCKED_HOSTS` | — | Server-wide host lists, comma-separated. |
-| `JEVWAY_OUT_DIR` | `./.jevway` | The session service's output root: `runs/` and `journeys/`. See [Output folder](#output-folder). |
-| `JEVWAY_JOURNEYS_DIR` | `./journeys` (MCP today), `<JEVWAY_OUT_DIR>/journeys` (session service) | Where journey maps are written. |
+| `JEVWAY_OUT_DIR` | `./.jevway` | The output root: `runs/` and `journeys/`. See [Output folder](#output-folder). |
+| `JEVWAY_JOURNEYS_DIR` | `<JEVWAY_OUT_DIR>/journeys` | Where journey maps are written. |
+| `JEVWAY_TOOLS` | `all` | MCP: `all`, `task` (task, look, end) or `journeys`. See [MCP server](#mcp-server). |
+| `JEVWAY_IMAGE_RESPONSES` | `auto` | MCP: when a task result carries its end page inline: `auto` (hand-backs, or `screenshot: true`), `always`, `never`. |
 | `JEVWAY_REPLAY`, `JEVWAY_REPLAY_DIR` | — | `record` or `replay` Jev answers in that folder (development; the folder is required). See [CONTRIBUTING.md](../CONTRIBUTING.md#live-suites). |
 | `CHROME_PATH` | the usual install path | The Chrome `launch` starts. |
 

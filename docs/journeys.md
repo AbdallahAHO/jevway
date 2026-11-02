@@ -8,9 +8,17 @@ The output is a folder you can open and share:
 
 - `index.html`, a viewer with every screen, the flows between them, and the QA findings;
 - `journey.json`, the same map as data;
-- `screens/*.png`, one screenshot per screen.
+- `screens/s01-home.png`, `screens/s02-results.png`, …: one screenshot per screen, named by its id and type;
+- `manifest.json`, every file with its path, kind and a one-line description.
 
-It goes to `out_dir`, or `$JEVWAY_JOURNEYS_DIR/<host>/<timestamp>` (default `./journeys/…`).
+It goes to `./.jevway/journeys/<YYYY-MM-DD_HHMM>_<host>_<id4>/` in the server's working directory (local start time,
+the start page's host, the first 4 characters of the journey id), for example
+`.jevway/journeys/2026-11-02_0910_stays.example_8c21/`. `$JEVWAY_OUT_DIR` replaces `./.jevway`,
+`$JEVWAY_JOURNEYS_DIR` replaces `./.jevway/journeys`, and `out_dir` is the exact folder. Journey ids are full UUIDs; a
+journey the server no longer holds (it restarted, or the journey finished) answers `Unknown journey "…"` with how to
+start a new one.
+
+`JEVWAY_TOOLS=journeys` makes the MCP server list only these five tools (and `task` hides them).
 
 ## The loop
 
@@ -44,8 +52,10 @@ flowchart LR
     class out output
 ```
 
-Every reply to `start`, `step` and `autopilot` carries a JSON report and a light JPEG of the screen, so a multimodal agent
-sees what Jev saw. The same Chrome is open to chrome-devtools, for anything the report doesn't show.
+Every reply to `start`, `step` and `autopilot` carries the report as JSON (`{ "journey": "<id>", … }`, also as
+`structuredContent`) and a light JPEG of the screen, so a multimodal agent sees what Jev saw. The image is always
+attached, whatever `JEVWAY_IMAGE_RESPONSES` says: the screen is what a journey is for. The same Chrome is open to
+chrome-devtools, for anything the report doesn't show.
 
 ## `jevway_journey_start`
 
@@ -58,7 +68,7 @@ Opens a URL on an emulated device and records the first screen.
 | `intent` | Focus on one journey ("find and open a stay in Lisbon"). Leave it out to explore the core journeys. |
 | `values` | Text autopilot may type: search queries, made-up names. Use made-up data only. |
 | `stay_within` | A URL prefix autopilot must stay under, such as one project in a multi-project app. Default: the same origin. |
-| `out_dir` | Where to write the map. |
+| `out_dir` | The exact folder for the map (default above). |
 
 The server's `JEVWAY_ALLOWED_HOSTS` and `JEVWAY_BLOCKED_HOSTS` hold for journeys: a start page outside them is never
 opened, a step that lands outside them is refused (take `back`), and autopilot backs out of such a page.
@@ -125,7 +135,9 @@ Adds a `description` and an `insight` to any screen by id. With `relabel: {from_
 ## `jevway_journey_finish`
 
 Writes the final `journey.json` and `index.html`, closes the tab (`keep_tab: true` leaves it), and returns the viewer's
-path, the screen and step counts, the flows, the QA findings by severity, and the screens still missing a description.
+path (`viewer`), `journey_json`, `manifest`, the screen and step counts, the flows, the QA findings by severity, and the
+screens still missing a description. The reply also links `index.html`, `journey.json` and `manifest.json` as
+`resource_link`s (`file://` URIs).
 
 ## A typical session
 
