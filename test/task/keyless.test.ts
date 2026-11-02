@@ -132,6 +132,7 @@ describe('the real jevway-mcp process, without a key', () => {
         clientInfo: { name: 'raw-2025-06-18', version: '0.0.0' },
       });
       expect(initialized.result).toMatchObject({ protocolVersion: '2025-06-18', serverInfo: { name: 'jevway' } });
+      expect(initialized.result.instructions).toMatch(/jevway_task/);
       send({ method: 'notifications/initialized' });
 
       const listed = await request(2, 'tools/list', {});
@@ -150,6 +151,7 @@ describe('the real jevway-mcp process, without a key', () => {
     await modern.connect(new StdioClientTransport({ command: process.execPath, args: [serverPath], env: keylessEnv(), stderr: 'ignore' }));
     try {
       expect(modern.getNegotiatedProtocolVersion()).toBe('2026-07-28');
+      expect(modern.getInstructions()).toMatch(/jevway_task/);
       expect((await modern.listTools()).tools.map((tool) => tool.name).sort()).toEqual(toolNames);
       const called: any = await modern.callTool({ name: 'jevway_task', arguments: { goal: 'Open', url: 'http://fixture/' } });
       expect(called.isError).toBe(true);
