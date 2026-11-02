@@ -3,7 +3,7 @@
   "name": "io.github.AbdallahAHO/jevway",
   "title": "jevway",
   "description": "Hand a browser goal to TypeSafe Jev in your Chrome or a throwaway one; get one checked summary.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "websiteUrl": "https://github.com/AbdallahAHO/jevway#readme",
   "repository": {
     "url": "https://github.com/AbdallahAHO/jevway",
@@ -13,7 +13,7 @@
     {
       "registryType": "npm",
       "identifier": "jevway",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
