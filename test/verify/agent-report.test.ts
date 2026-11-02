@@ -283,6 +283,8 @@ describe('a chore view', () => {
     expect(view).toContain('<video src="triage/run-1/run.mp4"');
     expect(view.indexOf('<video')).toBeLessThan(view.indexOf('<li class="call'));
     expect(viewOf(html, 'triage')).not.toContain('<video');
+    // Captions tell the step as the summary's story does, like the jobs report and the run page.
+    expect(view).toContain('Clicked &quot;Labels&quot;.');
   });
 
   it('escapes prompts, answers and arguments, and keeps the inline scripts parseable', () => {

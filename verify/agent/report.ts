@@ -3,7 +3,21 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RecordedStep } from '../../src/recording/recording.ts';
-import { embeddedJson, escapeHtml as escape, fact, FONT_STYLESHEET, GENERATOR_META, indexLabel, playerMarkup, plural, statusWord, type Viewport } from '../../src/recording/recording-page.ts';
+import type { TaskSummary } from '../../src/task/run-task.ts';
+import {
+  embeddedJson,
+  escapeHtml as escape,
+  fact,
+  FONT_STYLESHEET,
+  GENERATOR_META,
+  indexLabel,
+  playerMarkup,
+  plural,
+  sentencesOf,
+  statusWord,
+  storyOfRecording,
+  type Viewport,
+} from '../../src/recording/recording-page.ts';
 import { describeConfirmTarget, type BrowserCall, type ConfirmTarget } from './confirms.ts';
 import { figure, startedAt, wilson } from '../jobs/report.ts';
 import { ARROW, BACK_ARROW, HEAD_SCRIPT, SCRIPT, STYLE } from '../jobs/report-page.ts';
@@ -79,7 +93,7 @@ export interface AgentRunRecord {
   /** Every tool call, from the run's `stream.jsonl`; absent for a folder that kept none. */
   transcript?: ToolCall[];
   /** A browser recording in the run folder (`summary.json`), when the run made one. */
-  recording?: { video: string | null; steps: RecordedStep[]; viewport?: Viewport };
+  recording?: { video: string | null; steps: RecordedStep[]; viewport?: Viewport; summaries?: TaskSummary[] };
 }
 
 // --- numbers as the suite logs them (whole seconds, a thousandth of a dollar)
@@ -271,7 +285,16 @@ const runPanel = (row: ChoreRun, runs: ChoreRun[], featured: ChoreRun, record: A
   const bar = `<div class="player-bar grid4">${runSwitcher(runs, row)}<span class="meta clock c4 end"></span></div>`;
   const recording = record.recording;
   const top = recording?.steps.length
-    ? playerMarkup({ dir: row.dir, video: recording.video, steps: recording.steps, label: `run ${row.run}`, featured: row === featured, viewport: recording.viewport, bar })
+    ? playerMarkup({
+        dir: row.dir,
+        video: recording.video,
+        steps: recording.steps,
+        label: `run ${row.run}`,
+        featured: row === featured,
+        viewport: recording.viewport,
+        bar,
+        sentences: sentencesOf(storyOfRecording(recording.steps, recording.summaries ?? [])),
+      })
     : bar.replace('class="player-bar grid4"', 'class="player-bar bar-only grid4"');
   const headline = row.verdict === 'skipped' ? 'Skipped' : `${row.verdict === 'pass' ? 'Passed' : row.verdict === 'error' ? 'Error' : 'Failed'}, ${plural((record.transcript ?? row.calls).length, 'tool call')} in ${plural(row.turns, 'turn')}`;
   return `<div class="run player${row === featured ? ' current' : ''}" data-run="${row.run}">
