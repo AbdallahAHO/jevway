@@ -187,6 +187,13 @@ for automation, with throwaway data; never on a third-party production account.
 | 111 | Recorded Jev answers replay offline | P1 | M | — | DONE (`edfbcda`): `JEVWAY_REPLAY=record|replay`, `pnpm verify:replay`; first real recording 2026-11-01 replays redteam 0 misses, verify 11/12, gotchas 26/30, capabilities 33/36 (timing-dependent fixtures miss); the doctor always uses the real API |
 | 112 | The agent report and run pages in the report layout | P3 | M | 106 | DONE (`0c81c60`): agent report with every tool call, run `index.html` video first, overview shots link to `#job-rN-sM`, phone frames |
 | 113 | jevway installs in one line | P1 | M | 108 | DONE (`aea81c0`): keyless server start, `~/.config/jevway/env`, `jevway doctor`, plugin manifest, `INSTALL-FOR-AGENTS.md`; publish is the user's step |
+| 114 | jevway runs on MCP SDK v2 | P1 | M | — | DONE (`1f95370`): `@modelcontextprotocol/server` 2.4, serves 2025-era (`initialize`) and 2026-07-28 clients; tools unchanged; live verify 12/12 |
+| 115 | One session service, the `./.jevway/` output layout, concise summaries | P1 | L | — | DONE (`ec37247`): `createSessionService` shared by MCP and the CLI daemon; run folders with `final.jpg`, `calls/`, `manifest.json`; `story` and `next`; concise vs full ≈ 25% fewer tokens |
+| 116 | An agent-first MCP server | P1 | L | 114, 115 | DONE (`9a4bcd5`): `outputSchema` + `structuredContent`, `resource_link`s, end page inline on hand-backs, progress per step, server instructions; tool list 4,515 → 2,490 tokens; `JEVWAY_TOOLS`, `JEVWAY_IMAGE_RESPONSES`; live verify 12/12 |
+| 117 | An agent-first CLI with a session daemon | P1 | L | 115 | DONE (`1e3809e`): one JSON document on stdout, NDJSON events on stderr, exit 0/1/2, did-you-mean, `outcome_unknown`; auto-started `jevway serve`; `run`/`look`/`journey`/`sessions`/`end`/`stop`; live Wikipedia session end to end |
+| 118 | Setup for people and agents | P1 | M | — | DONE (`34c0e19`): `jevway setup` wizard (hidden key, browser test, client registration as a confirmed diff), `setup --client <name> --print`, `doctor --json`, `jevway skill` |
+| 119 | Readable run and journey pages | P2 | M | 115 | DONE (`13a7319`): goal and outcome first, steps as story sentences linked to their shot files, offline, light/dark, 390 px, embedded JSON for agents |
+| 120 | MCP tasks once the SDK ships them | P3 | M | 114 | PLANNED, blocked on SDK issue #2189: progress notifications cover long runs until then |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
 they run in parallel. After merging, the gates are re-confirmed on the merged commit.

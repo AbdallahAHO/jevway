@@ -2,6 +2,25 @@
 
 Newest first. Each entry: what changed, why, and the measured effect. Numbers come from runs, not estimates.
 
+## 2026-11-02 — Round 13: agent-first MCP and CLI (plans 114–120)
+
+- **SDK v2** (114): `@modelcontextprotocol/server` 2.4 with `serveStdio`; 2025-era and 2026-07-28 clients both list and
+  call the tools. Tasks are not in the SDK yet (issue #2189): progress per step instead, plan 120 holds the switch.
+- **One core, two adapters** (115–117): `src/session/` owns sessions and journeys; `src/mcp/` and the CLI daemon
+  (`src/daemon/`) adapt it. Results are concise by default (`status, reason, story, next, session, …, page_text`), with
+  `files` pointing into `./.jevway/runs/<time>_<goal>_<id>/` and the end page inline on hand-backs (MCP).
+- **MCP** tool list 4,515 → 2,490 tokens with output schemas; server instructions; `resource_link`s. **CLI**: JSON on
+  stdout only, NDJSON on stderr, exit 0/1/2, did-you-mean, `--version`, help starting with examples, sessions through an
+  auto-started daemon (1 h idle).
+- **Setup** (118): `jevway setup` wizard, `setup --client <name> --print`, `doctor --json`, `jevway skill`.
+  **Pages** (119): run page and journey viewer rebuilt for reading, with the summary embedded as JSON.
+- **Integration-only fixes**: one result order shared by both adapters; verify readers accept concise results; help
+  for doctor/setup/skill starts with examples; a daemon socket path over macOS's 104-byte limit falls back to a short
+  temp path (found live); a new goal on a session drops the old `done_when` (found live: a met condition ended the
+  new goal with 0 steps).
+- Tests 687 → 936, all offline. Live: `pnpm verify` 12/12 on the combined branch, and a CLI session end to end
+  (run, continue, look, sessions, end, stop). `verify:agent` not re-run this round.
+
 ## 2026-11-01 — Round 12: jevway, replay, publish prep (plans 107–113)
 
 - **Renamed to jevway** (108, `ca9ed18`): package `jevway` 0.1.0, commands `jevway`/`jevway-mcp`, MCP tools
