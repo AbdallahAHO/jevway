@@ -351,6 +351,11 @@ export class BrowserTask {
     };
   }
 
+  /** Reads the session's tab with no model call and no input, its secret values already masked: what `jevway_look` shows. */
+  look(): Promise<PageState> {
+    return this.#observe();
+  }
+
   /** The tab the session is on now: a tab its clicks opened, once followed, or the one it started on. */
   get tab() {
     return this.#tab;

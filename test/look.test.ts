@@ -3,6 +3,7 @@ import * as chrome from '../src/browser/chrome.ts';
 import { Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
 import * as model from '../src/jev/model.ts';
 import { lookAt } from '../src/task/look.ts';
+import { BrowserTask } from '../src/task/run-task.ts';
 import { createRunner } from '../src/task/start-task.ts';
 
 const actions: PageAction[] = [
@@ -92,5 +93,16 @@ describe('a look through the runner', () => {
     vi.spyOn(Tab, 'find').mockResolvedValue(tab as unknown as Tab);
     await createRunner('launch-headless').look({ tab: 'fixture/stays' });
     expect(tab).toMatchObject({ observed: 1, closed: 0 });
+  });
+});
+
+describe('a look at a session', () => {
+  it('masks the values the session marked secret, as jevway_task does', async () => {
+    const token = 'tok_Zq81x';
+    const tab = { observe: async () => page({ title: `Token ${token}`, text: `Saved token ${token} for Ada`, actions: [{ id: 'e1', kind: 'click', node: 1, role: 'button', label: `Copy ${token}` }] }) };
+    const task = new BrowserTask(tab as unknown as Tab, vi.fn(), { goal: 'Save it', values: { token }, secretKeys: ['token'] });
+    const look = JSON.stringify(lookAt(await task.look()));
+    expect(look).not.toContain(token);
+    expect(look).toContain('Saved token [secret:token] for Ada');
   });
 });
