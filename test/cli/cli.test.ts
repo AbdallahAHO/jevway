@@ -84,6 +84,17 @@ describe('usage errors', () => {
     expect((await cli(['run', ...GOAL, '--browser', 'firefox'])).json.error).toMatchObject({ code: 'invalid_value' });
   });
 
+  it('passes --totp through, and refuses a bad authenticator secret as a usage error naming the key, never the secret', async () => {
+    const { cli, runner, started } = setup();
+    await cli(['run', ...GOAL, '--totp', '{"otp":"JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"}']);
+    expect(started[0].totp).toEqual({ otp: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP' });
+    const { code, json, out, err } = await cli(['run', ...GOAL, '--totp', '{"otp":"JBSW1Y3DP-PRIVATEPART"}']);
+    expect(code).toBe(2);
+    expect(json.error).toMatchObject({ code: 'invalid_value', message: expect.stringMatching(/^--totp: totp\.otp: /) });
+    expect(out + err).not.toContain('PRIVATEPART');
+    expect(runner.start).toHaveBeenCalledTimes(1);
+  });
+
   it('reports a missing key as a usage error before any browser starts', async () => {
     const { cli, runner } = setup();
     runner.requireKey.mockImplementation(() => {

@@ -26,7 +26,7 @@ const expectedHints = {
 /** Each tool's inputs, sorted: every field it accepts, required ones marked with `!`. Every earlier input is still here. */
 const expectedInputs = {
   jevway_task:
-    'allow_coordinate_clicks allowed_hosts blocked_hosts checks confirm_irreversible confirm_target detail done_when files goal! max_seconds max_steps record record_dir screenshot secret_keys session tab url values',
+    'allow_coordinate_clicks allowed_hosts blocked_hosts checks confirm_irreversible confirm_target detail done_when files goal! max_seconds max_steps record record_dir screenshot secret_keys session tab totp url values',
   jevway_look: 'session tab url',
   jevway_end: 'keep_tab session!',
   jevway_journey_start: 'device intent out_dir stay_within url! values',

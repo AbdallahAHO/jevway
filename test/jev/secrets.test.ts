@@ -42,6 +42,14 @@ describe('scrubbing secret values', () => {
     });
   });
 
+  it('also replaces secrets that are not supplied values, each under the key it stands for (an authenticator\'s codes)', () => {
+    const scrub = scrubberFor({ city: 'Lisbon' }, [], [['otp', 'GEZDGNBVGY3TQOJQ'], ['otp', '287082'], ['otp', '081804']]);
+    expect(scrub('Code 287082 accepted (was 081804), key gezdgnbvgy3tqojq, in Lisbon')).toBe(
+      'Code [secret:otp] accepted (was [secret:otp]), key [secret:otp], in Lisbon',
+    );
+    expect(scrubberFor({ token: 'k3y' }, ['token'], [['otp', '287082']])('k3y 287082')).toBe('[secret:token] [secret:otp]');
+  });
+
   it('is the identity when nothing is marked, or a marked key has no value', () => {
     const value = { text: 'k3y' };
     expect(scrubberFor({ token: 'k3y' }, [])(value)).toBe(value);

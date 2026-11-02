@@ -213,6 +213,8 @@ describe('continuing and ending a session', () => {
     const next = (await task({ session: first.session, values: { email: 'ada@example.com' } })).structuredContent;
     expect(next).toMatchObject({ session: first.session, status: 'done' });
     expect(updates.at(-1)).toMatchObject({ values: { email: 'ada@example.com' } });
+    await task({ session: first.session, totp: { otp: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP' } });
+    expect(updates.at(-1)).toMatchObject({ totp: { otp: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP' } });
 
     const ended: any = await client.callTool({ name: 'jevway_end', arguments: { session: first.session } });
     expect(ended.structuredContent).toEqual({ session: first.session, ended: true, run_dir: first.files.run_dir });
@@ -280,6 +282,15 @@ describe('errors that say what to do', () => {
     expect(result.isError).toBe(true);
     expect(textOf(result)).toMatch(/`url`.*`tab`.*`session`/s);
     expect(textOf(result)).toContain('{"goal":');
+    expect(runner.start).not.toHaveBeenCalled();
+  });
+
+  it('a bad authenticator secret names its key, never the secret, before any browser work', async () => {
+    const { task, runner } = await setUp();
+    const result = await task({ url: 'http://fixture/stays', totp: { otp: 'JBSW1Y3DP-PRIVATEPART' } });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/totp\.otp: /);
+    expect(textOf(result)).not.toContain('PRIVATEPART');
     expect(runner.start).not.toHaveBeenCalled();
   });
 
