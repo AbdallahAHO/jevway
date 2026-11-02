@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.0](https://github.com/AbdallahAHO/jevway/compare/v0.2.0...v0.3.0) (2026-11-02)
+
+
+### Features
+
+* add desktop notifications for a person to act ([915e452](https://github.com/AbdallahAHO/jevway/commit/915e45206780abdb33b1ab3e1e3e07a5247160a8))
+* add jevway inbox through the daemon or an env file ([d05e5a6](https://github.com/AbdallahAHO/jevway/commit/d05e5a61bf0c44a6aec720ea40f203628f03127c))
+* add the disposable inbox client ([a2572cf](https://github.com/AbdallahAHO/jevway/commit/a2572cf9c215c869175b5419cfa03c9009b4bd7e))
+* add the jevway_inbox_create and jevway_inbox_wait tools ([d96213e](https://github.com/AbdallahAHO/jevway/commit/d96213e2591752f49c3ddb628988e6ff500e32bd))
+* bundle the jevway-inbox skill and install it with jevway's ([0231a53](https://github.com/AbdallahAHO/jevway/commit/0231a53d100c2d147d9b94adb37fc918b7830b76))
+* carry a ready-made ask_user question on hand-backs ([066985f](https://github.com/AbdallahAHO/jevway/commit/066985f5290bb856a9c44d05983adfe6ccbc2600))
+* downloads, https and frame uploads, drop zones and look pdfs ([70b5e2a](https://github.com/AbdallahAHO/jevway/commit/70b5e2ad2908dc64512e961e7a002b0ce0973515))
+* type authenticator codes computed at typing time ([158eba6](https://github.com/AbdallahAHO/jevway/commit/158eba6e3a04bc43bcf27d3ef1f744df7f66f5c4))
+* wait for a person at a bot check, sign-in or sso page ([645a96e](https://github.com/AbdallahAHO/jevway/commit/645a96e9e6c6f0112617d0fa43459bfaf851b747))
+
+
+### Bug Fixes
+
+* ask to rerun with a session when a one-shot run hits a wall ([0399e86](https://github.com/AbdallahAHO/jevway/commit/0399e86562bd901549dfb53197e98d5481936c66))
+* check ip literal url uploads and refuse redirects with credentials ([754e877](https://github.com/AbdallahAHO/jevway/commit/754e877a3e4c9688333bb88a42e4e4260adcc48a))
+* keep a malformed --totp out of its usage error ([e6b29e4](https://github.com/AbdallahAHO/jevway/commit/e6b29e45c1b0936e2078a0d88d776a254183a8e9))
+* word wall questions for headless browsers and finished waits ([859822b](https://github.com/AbdallahAHO/jevway/commit/859822b2ab714c26c00b34af7d986a51808bbf88))
+
 ## [0.2.0](https://github.com/AbdallahAHO/jevway/compare/v0.1.2...v0.2.0) (2026-11-02)
 
 
