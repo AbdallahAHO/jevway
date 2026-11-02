@@ -70,12 +70,12 @@ const formatFinding = ({ level, area, message, fix }: Finding) =>
 const readEnvText = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : '');
 
 /**
- * Why `key` cannot be an API key (too short, spaces, quotes, `#` or `=`), or undefined when its shape is plausible.
+ * Why `key` cannot be an API key (too short, spaces, quotes or `#`), or undefined when its shape is plausible.
  * The message never repeats the key.
  */
 export const keyShapeProblem = (key: string) => {
   if (key.length < 16) return 'That is too short for an API key. Paste the whole key.';
-  if (/[^\x21-\x7e]|["'`#=\\]/.test(key)) return 'An API key has no spaces, quotes, # or =. Paste just the key.';
+  if (/[^\x21-\x7e]|["'`#\\]/.test(key)) return 'An API key has no spaces, quotes or #. Paste just the key.';
   return undefined;
 };
 

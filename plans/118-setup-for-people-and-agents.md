@@ -90,7 +90,7 @@ README.md, `src/mcp.ts`, live suites, new dependencies.
    the result is always 600, including a file that was open before.
 9. **The key.** The route question (TypeSafe recommended, or OpenRouter) picks `TYPESAFE_API_KEY` or
    `OPENROUTER_API_KEY`. Input is hidden (readline writing to a muted stream, history off). Loose shape check: 16 or
-   more printable characters with no spaces, quotes, `#` or `=`; asked again up to 3 times. An OpenRouter key not
+   more printable characters with no spaces, quotes or `#` (an `=` is fine: `parseEnv` splits on the first one); asked again up to 3 times. An OpenRouter key not
    starting `sk-or-` gets a confirm. An existing key (environment or file) is kept unless the person says replace.
    If the same variable is set in the real environment, setup says the environment wins over the file. After writing,
    `process.env` gets the value so the closing doctor sees it. `doctor --live` is offered, default no. The key never
