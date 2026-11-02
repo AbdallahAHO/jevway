@@ -6,7 +6,7 @@ export type FolderKind = 'run' | 'journey';
 export interface ManifestFile {
   /** Relative to the folder, `/`-separated. */
   path: string;
-  kind: 'page' | 'summary' | 'video' | 'screenshot' | 'step' | 'screen' | 'journey' | 'manifest' | 'file';
+  kind: 'page' | 'summary' | 'video' | 'screenshot' | 'step' | 'screen' | 'journey' | 'manifest' | 'download' | 'upload' | 'pdf' | 'file';
   description: string;
 }
 
@@ -73,6 +73,9 @@ export const describeFile = (path: string, kind: FolderKind, notes: Map<string, 
   if (path === 'final.jpg') return line('screenshot', 'The page as the latest call ended (viewport, JPEG)');
   if (call) return line('screenshot', `The page as call ${Number(call[1])} ended: ${call[2].replace(/-/g, '_')}`);
   if (path.startsWith('steps/')) return line('step', notes.get(path) ?? 'A recorded step, before its action');
+  if (path.startsWith('downloads/')) return line('download', `Downloaded by a step of the run: ${path.slice('downloads/'.length)}`);
+  if (path.startsWith('uploads/')) return line('upload', `Fetched from a URL the caller gave in files, then uploaded: ${path.slice('uploads/'.length)}`);
+  if (path.startsWith('looks/') && path.endsWith('.pdf')) return line('pdf', `The page as a PDF, from a look: ${path}`);
   if (path.startsWith('screens/')) return line('screen', notes.get(path) ?? 'A journey screen');
   return line('file', 'Not described');
 };

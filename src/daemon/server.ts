@@ -176,8 +176,8 @@ export const startDaemon = async ({ socket, version, fingerprint, idleMs, runner
       writeSessionFiles();
       return presentSummary(result, { detail });
     },
-    async look({ session }) {
-      return { session, ...(await holderOf(session, 'session').service.look({ session })) };
+    async look({ session, pdf }) {
+      return { session, ...(await holderOf(session, 'session').service.look({ session, pdf: pdf === true })) };
     },
     async end({ session, keepTab }) {
       const holder = holderOf(session, 'session');

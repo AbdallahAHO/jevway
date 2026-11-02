@@ -1,5 +1,6 @@
 import { connectChrome, type BrowserSource, type ChromeHandle } from '../browser/chrome.ts';
-import { Tab } from '../browser/tab.ts';
+import { dropStagedDownloads, useDownloads } from '../browser/downloads.ts';
+import { Tab, type PageState } from '../browser/tab.ts';
 import type { Ask } from '../jev/decide.ts';
 import { createAsk, profileOptions, resolveModel } from '../jev/model.ts';
 import { replayMode } from '../jev/replay.ts';
@@ -47,7 +48,12 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
     return (client ??= createAsk(profile));
   };
   let chrome: Promise<ChromeHandle> | undefined;
-  const browser = () => (chrome ??= connectChrome(source));
+  // Downloads are set up once per connection: staged in jevway's own browser, Chrome's own behaviour in the person's.
+  const browser = () =>
+    (chrome ??= connectChrome(source).then(async (handle) => {
+      await useDownloads(handle.cdp, source).catch(() => undefined);
+      return handle;
+    }));
   let shown: Promise<boolean> | undefined;
 
   return {
@@ -75,14 +81,18 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
       task.update({ confirmIrreversible, confirmTarget });
       return task;
     },
-    /** Reads a page with no model call and no input: an open tab by URL part, or a URL in a background tab closed again. */
-    async look({ url, tab }: { url?: string; tab?: string }) {
+    /**
+     * Reads a page with no model call and no input: an open tab by URL part, or a URL in a background tab closed again.
+     * With `pdf`, the page printed as a PDF comes with it.
+     */
+    async look({ url, tab, pdf = false }: { url?: string; tab?: string; pdf?: boolean }): Promise<LookedPage> {
       if (!url && !tab) throw new Error('Pass `url` to open a page or `tab` to read an open one.');
       if (url) refuseOutside(url, hostsFromEnv());
       const { cdp } = await browser();
       const page = url ? await Tab.open(cdp, url) : await Tab.find(cdp, tab!);
       try {
-        return await page.observe();
+        const state = await page.observe();
+        return pdf ? { ...state, pdf: await page.pdf() } : state;
       } finally {
         if (url) await page.close();
       }
@@ -105,12 +115,19 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
       });
     },
     async close() {
-      if (chrome) await (await chrome).close();
+      if (chrome) {
+        const handle = await chrome;
+        await handle.close();
+        dropStagedDownloads(handle.cdp);
+      }
       chrome = undefined;
       shown = undefined;
     },
   };
 };
+
+/** A page as a look read it, with the page as a PDF when the look asked for one. */
+export type LookedPage = PageState & { pdf?: Buffer };
 
 /** A connected browser and model client that starts tasks, looks at pages and starts journeys: what a session service drives. */
 export type Runner = ReturnType<typeof createRunner>;

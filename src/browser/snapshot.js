@@ -424,10 +424,12 @@
       }
       return null;
     };
+    const anchors = [];
     for (const input of fileInputs) {
       if (input.matches(':disabled') || input.closest('[aria-disabled="true"],[inert]')) continue;
       const anchor = standInFor(input);
       if (!anchor || outOfView(anchor.getBoundingClientRect())) continue;
+      anchors.push(anchor);
       const r = cache.clickRect(anchor),
         own = (anchor === input ? name(input) : name(input) || name(anchor)).replace(/\s+/g, ' ').trim();
       actions.push({
@@ -436,6 +438,57 @@
         kind: 'upload',
         label: cap(own || input.getAttribute('accept') || 'file', 180) + ' (file field)',
         value: [...(input.files || [])].map((file) => file.name).join(', '),
+        rect: { x: r.x, y: r.y, w: r.width, h: r.height },
+      });
+    }
+    // jevway: a drop zone with no file input in it is listed only on clear markers: an ondrop attribute, a drop-zone
+    // name in its class, id or a data- attribute, or a short text asking for a file to be dropped ("Drag and drop",
+    // "Drop your CV here"; its nearest box of 40×40 or more). The innermost zone wins; one holding or inside a file field's stand-in
+    // is that field already. The file is dropped onto it.
+    const DROP_NAME = /drop-?zone|drop-?area|file-?drop|drop-?target/i;
+    const DROP_TEXT =
+      /\bdrag\s*(?:and|&|'?n'?)\s*drop\b|\bdrop\s+(?:your\s+|a\s+|an\s+|the\s+)?(?:files?|cv|resume|résumé|images?|photos?|documents?|attachments?)\b/i;
+    const named = (e) =>
+      e.hasAttribute('ondrop') ||
+      DROP_NAME.test(typeof e.className === 'string' ? e.className : '') ||
+      DROP_NAME.test(e.id) ||
+      [...e.attributes].some((a) => a.name.startsWith('data-') && DROP_NAME.test(a.name));
+    const big = (e) => {
+      const r = e.getBoundingClientRect();
+      return r.width >= 40 && r.height >= 40;
+    };
+    const zones = new Set(
+      [...document.querySelectorAll('[ondrop],[class*="drop" i],[id*="drop" i]')].filter(named),
+    );
+    const texts = document.createTreeWalker(document.body ?? document.documentElement, NodeFilter.SHOW_TEXT, {
+      acceptNode: (t) => (t.data.length <= 200 && DROP_TEXT.test(t.data) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP),
+    });
+    for (let t = texts.nextNode(), seen = 0; t && seen < 20; t = texts.nextNode(), seen++) {
+      let box = t.parentElement;
+      for (let up = 0; box && up < 4 && !big(box); up++) box = box.parentElement;
+      if (box && big(box)) zones.add(box);
+    }
+    const listed = [...zones].filter(
+      (zone) =>
+        zone !== document.body &&
+        zone !== document.documentElement &&
+        visible(zone) &&
+        big(zone) &&
+        !outOfView(zone.getBoundingClientRect()) &&
+        !zone.querySelector('input[type=file]') &&
+        !anchors.some((anchor) => anchor.contains(zone) || zone.contains(anchor)),
+    );
+    for (const zone of listed) {
+      if (listed.some((other) => other !== zone && zone.contains(other))) continue;
+      const r = cache.clickRect(zone),
+        text = (zone.innerText || '').replace(/\s+/g, ' ').trim();
+      actions.push({
+        node: identity(zone),
+        role: 'file',
+        kind: 'upload',
+        drop: true,
+        label: cap(name(zone).replace(/\s+/g, ' ').trim() || text || 'drop zone', 120) + ' (drop zone)',
+        value: '',
         rect: { x: r.x, y: r.y, w: r.width, h: r.height },
       });
     }

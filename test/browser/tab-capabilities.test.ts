@@ -209,7 +209,7 @@ describe('an upload', () => {
     emit('Target.attachedToTarget', { sessionId: 'S-F2', targetInfo: { targetId: 'F2', type: 'iframe', parentFrameId: 'T1' }, waitingForDebugger: true }, 'S-T1');
     await new Promise((resolve) => setTimeout(resolve, 20));
     const intercepting = calls.filter((call) => call.method === 'Page.setInterceptFileChooserDialog' && call.params.enabled).map((call) => call.sessionId);
-    expect(intercepting.sort()).toEqual(['S-F1', 'S-F2', 'S-T1']);
+    expect([...new Set(intercepting)].sort()).toEqual(['S-F1', 'S-F2', 'S-T1']);
   });
 });
 

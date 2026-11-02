@@ -8,7 +8,7 @@ export type { RunFiles };
 export type Detail = 'concise' | 'full';
 
 // What the run appends to a step's element, in parentheses: a tab switch, a dialog, a scroll that moved nothing.
-const NOTE = / \((?=new tab opened: |the tab closed; |nothing moved: |the page then )/;
+const NOTE = / \((?=new tab opened: |the tab closed; |nothing moved: |the page then |downloaded |download of )/;
 
 const splitNotes = (element: string) => {
   const [label, ...notes] = element.split(NOTE);
@@ -18,6 +18,9 @@ const splitNotes = (element: string) => {
 const outcomeOf = (note: string) => {
   if (note.startsWith('new tab opened: ')) return `a ${note}`;
   if (note.startsWith('nothing moved: ')) return 'nothing moved';
+  // 'downloaded invoice.pdf, 84 KB' → 'downloaded invoice.pdf (84 KB)'
+  const downloaded = /^(downloaded .+), (\d[\d.]* (?:bytes|KB|MB))$/.exec(note);
+  if (downloaded) return `${downloaded[1]} (${downloaded[2]})`;
   return note;
 };
 

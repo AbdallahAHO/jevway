@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { extname, join, resolve } from 'node:path';
 
 const SLUG_CHARS = 40;
 const unchanged = (text: string) => text;
@@ -52,6 +52,43 @@ export const runFolderName = ({ at, goal, id, scrub }: { at: Date; goal: string;
 /** `<stamp>_<host>_<first 4 of the journey id>`; a port's colon becomes a hyphen. */
 export const journeyFolderName = ({ at, host, id }: { at: Date; host: string; id: string }) =>
   `${folderStamp(at)}_${host.toLowerCase().replace(/[^a-z0-9.-]+/g, '-')}_${id.slice(0, 4)}`;
+
+/** `<stamp>_<host>_<first 4 of the look's id>`: a look's own folder under `looks/`, named like a journey's. */
+export const lookFolderName = journeyFolderName;
+
+const FILE_NAME_CHARS = 120;
+
+/**
+ * A name from outside (a site's suggested download name, a URL path) as one plain file name: no folders, no leading dots,
+ * no control or reserved characters, at most 120 characters with its extension kept; `fallback` when nothing is left.
+ *
+ * @example
+ * safeFileName('../../.ssh/config', 'cv') // 'config'
+ */
+export const safeFileName = (name: string, fallback: string) => {
+  const plain = (name.split(/[/\\]/).pop() ?? '')
+    .replace(/[\u0000-\u001f\u007f<>:"|?*]/g, '_')
+    .replace(/^[.\s]+/, '')
+    .trim();
+  if (!plain) return fallback;
+  if (plain.length <= FILE_NAME_CHARS) return plain;
+  const extension = extname(plain).slice(0, 16);
+  return plain.slice(0, FILE_NAME_CHARS - extension.length) + extension;
+};
+
+/**
+ * A path in `dir` for `name` that no file holds yet: `cv.pdf`, then `cv-2.pdf`, `cv-3.pdf`.
+ *
+ * @example
+ * uniqueFileName('/run/downloads', 'invoice.pdf') // '/run/downloads/invoice-2.pdf' when invoice.pdf is taken
+ */
+export const uniqueFileName = (dir: string, name: string) => {
+  const extension = extname(name);
+  const base = name.slice(0, name.length - extension.length);
+  let path = join(dir, name);
+  for (let n = 2; existsSync(path); n++) path = join(dir, `${base}-${n}${extension}`);
+  return path;
+};
 
 /** A recorded step's shot, relative to its folder: `steps/01-type-destination.jpg`. */
 export const stepFileName = (n: number, slug: string) => `steps/${pad(n)}-${slug || 'step'}.jpg`;

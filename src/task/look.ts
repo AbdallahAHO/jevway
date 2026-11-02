@@ -13,6 +13,8 @@ export interface PageLook {
   elements_not_listed?: number;
   /** Whether each visible password field is filled; never its value. */
   password_fields?: { name: string; filled: boolean }[];
+  /** The page saved as a PDF (absolute path), when the look asked for one. */
+  pdf?: string;
 }
 
 /**

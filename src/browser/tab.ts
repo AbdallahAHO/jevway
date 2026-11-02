@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { CdpError, type CdpConnection, type CdpListener } from './cdp.ts';
 import { DEVICES, type Device } from './devices.ts';
+import { TabDownloads, type Download } from './downloads.ts';
 import { Frames, idBaseOf, mergeFrames, whenAborted, type FrameTarget } from './frames.ts';
 import { messageNames } from './words.ts';
 
@@ -55,6 +56,8 @@ export interface PageAction {
   rect?: { x: number; y: number; w: number; h: number };
   /** The frame (protocol frame id) holding the element; absent in the main document. */
   frame?: string;
+  /** An upload target that is a drop zone with no file input: the file is dropped onto it. */
+  drop?: boolean;
 }
 
 export interface PageState {
@@ -125,6 +128,9 @@ export class Tab {
   #device: Device | undefined;
   /** Page tabs this tab opened (target=_blank, window.open) that the run has not taken yet, oldest first. */
   #opened: string[] = [];
+  /** Every page tab this tab opened, taken or not: a download one of them starts is this tab's. */
+  #openedEver = new Set<string>();
+  #downloads: TabDownloads;
   #closed = false;
   #unsubscribe: (() => void)[] = [];
   /** The running call's stop signal: the waits after an input end early on it (see `stopSignal`). */
@@ -139,6 +145,7 @@ export class Tab {
     this.targetId = targetId;
     this.sessionId = sessionId;
     this.#frames = new Frames(cdp, sessionId, INPUT_COUNTER);
+    this.#downloads = new TabDownloads(cdp, (frameId) => frameId === targetId || this.#openedEver.has(frameId) || this.#frames.holds(frameId));
   }
 
   /**
@@ -307,11 +314,15 @@ export class Tab {
     tab.#unsubscribe.push(
       cdp.onEvent((method, params, sessionId) => {
         const info = params?.targetInfo;
-        if (method === 'Target.targetCreated' && info?.type === 'page' && info.openerId === targetId) tab.#opened.push(info.targetId);
+        if (method === 'Target.targetCreated' && info?.type === 'page' && info.openerId === targetId) {
+          tab.#opened.push(info.targetId);
+          tab.#openedEver.add(info.targetId);
+        }
         if (method === 'Target.targetDestroyed' && params?.targetId === targetId) tab.#closed = true;
         if (method === 'Target.detachedFromTarget' && params?.sessionId === tab.sessionId && !sessionId) tab.#closed = true;
       }),
     );
+    tab.#unsubscribe.push(tab.#downloads.watch());
     await cdp.send('Target.setDiscoverTargets', { discover: true }).catch(() => undefined);
     return tab;
   }
@@ -455,27 +466,62 @@ export class Tab {
     // Chrome: the picker is intercepted (and left unanswered); UPLOAD sets the file on the field instead.
     if (files && !this.#files) void this.#call('Page.setInterceptFileChooserDialog', { enabled: true }).catch(() => undefined);
     this.#files = files;
+    this.#frames.files = files;
   }
 
   /**
-   * Sets a declared file on an observed file input (hidden ones too), after the same element-level freshness check
-   * as a click. The path comes from the caller's `files`, never from the model or `values`.
+   * Sets a declared file on an observed file input (hidden ones too, in the page or in a frame), or drops it onto an
+   * observed drop zone, after the same element-level freshness check as a click. The path comes from the caller's
+   * `files`, never from the model or `values`.
    *
    * @example
    * await tab.upload(page.actions.find((a) => a.kind === 'upload')!, page, '/Users/ada/me.png');
    */
   async upload(action: PageAction, page: PageState, path: string) {
-    // The file is set through the page's own session; a frame's node lives in another context, so it is refused by name.
-    if (action.node !== undefined && idBaseOf(action.node)) {
-      throw new TargetUnreachable(`"${action.label}" is inside a frame, and jevway uploads only to file fields in the page itself`);
-    }
     if (!(await this.fresh(page, action))) throw new StalePage('Page changed since this decision');
-    const { result } = await this.#call('Runtime.evaluate', {
-      expression: `(() => { const e = window.__jevFast?.nodes.get(${Number(action.node)}); return e?.isConnected && e.matches('input[type=file]:not(:disabled)') ? e : null; })()`,
-    });
+    if (action.drop) return this.#drop(action, path);
+    // A frame's node lives in the frame's own world, and its file is set through the session that owns the frame.
+    const frame = this.#frameOf(action.node);
+    const expression = `(() => { const e = window.__jevFast?.nodes.get(${Number(action.node)}); return e?.isConnected && e.matches('input[type=file]:not(:disabled)') ? e : null; })()`;
+    const { result } = await (frame ? this.#frames.evaluate(frame, expression, { returnByValue: false }) : this.#call('Runtime.evaluate', { expression })).catch(
+      (error) => {
+        throw error instanceof CdpError && !TIMED_OUT.test(error.message) ? new StalePage(error.message) : error;
+      },
+    );
     if (!result?.objectId) throw new TargetUnreachable('The file field is gone or disabled');
-    await this.#call('DOM.setFileInputFiles', { files: [path], objectId: result.objectId });
+    await this.cdp.send('DOM.setFileInputFiles', { files: [path], objectId: result.objectId }, frame?.sessionId ?? this.sessionId);
     this.#afterInput = action;
+  }
+
+  // A drop zone with no file input: a trusted drag of the file onto its visible centre, checked to have reached the page.
+  async #drop(action: PageAction, path: string) {
+    const frame = this.#frameOf(action.node);
+    const resolved = await this.#evaluateFor(frame, `(${RESOLVE_TARGET})(${JSON.stringify(action)})`);
+    if (!resolved || resolved.covered) throw new TargetUnreachable('Target changed or is covered', Boolean(resolved?.byPopup), resolved?.coverNodes ?? []);
+    const target = frame ? await this.#frames.toViewport(frame, resolved) : resolved;
+    if ('covered' in target) throw new TargetUnreachable('Target changed or is covered', false, target.coverNodes);
+    await this.#evaluateFor(frame, WATCH_DROP);
+    const data = { items: [], files: [path], dragOperationsMask: DRAG_COPY };
+    for (const type of ['dragEnter', 'dragOver', 'drop']) await this.#call('Input.dispatchDragEvent', { type, x: target.x, y: target.y, data });
+    if (!(await this.#evaluateFor(frame, 'window.__jevDropped===true'))) throw new TargetUnreachable('The drop zone did not take the file');
+    this.#afterInput = action;
+  }
+
+  /**
+   * The downloads this tab (its page, its frames, a tab it opened) started since the last call, after waiting up to
+   * `waitMs` for those still running; the run's stop signal ends the wait early.
+   *
+   * @example
+   * await tab.downloadsAfterInput(); // [{ name: 'invoice-1042.pdf', state: 'completed', bytes: 86016, filePath, staged: true, … }]
+   */
+  downloadsAfterInput({ waitMs = DOWNLOAD_WAIT_MS }: { waitMs?: number } = {}): Promise<Download[]> {
+    return this.#downloads.settle({ waitMs, signal: this.#stop });
+  }
+
+  /** The page as a PDF (its print styles, backgrounds included); headless and headed Chrome both print. */
+  async pdf(): Promise<Buffer> {
+    const { data } = await this.#call('Page.printToPDF', { printBackground: true });
+    return Buffer.from(data, 'base64');
   }
 
   async observe(): Promise<PageState> {
@@ -925,6 +971,13 @@ const FIELD_LIKE =
   '[contenteditable="true"],[role="combobox"],[role="textbox"],[role="searchbox"],[role="spinbutton"]';
 
 // Resolves the observed node, rejects hidden/disabled/covered targets, and applies native selects in-page.
+// How long a step waits for the downloads it started to finish.
+const DOWNLOAD_WAIT_MS = 30_000;
+// Input.dispatchDragEvent's operation mask for a copy, as a file dragged from the desktop offers.
+const DRAG_COPY = 1;
+// Notes a drop reaching the document (in the target's world): a page that refuses the drag never gets one.
+const WATCH_DROP = `(() => { window.__jevDropped = false; window.addEventListener('drop', () => { window.__jevDropped = true; }, { capture: true, once: true }); return true; })()`;
+
 const RESOLVE_TARGET = `action => {
   const e=window.__jevFast?.nodes.get(action.node);
   if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||

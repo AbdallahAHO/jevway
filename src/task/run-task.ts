@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { findBotWall, type BotWall } from '../browser/bot-wall.ts';
 import { PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, type PageAction, type PageState, type Tab } from '../browser/tab.ts';
 import { showsTarget } from '../browser/words.ts';
@@ -12,8 +14,9 @@ import { deepLink, quoteSpans } from './evidence.ts';
 import { writeCall, type RunFiles } from '../output/run-folder.ts';
 import { Recording } from '../recording/recording.ts';
 import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
-import { checkUploadFiles, fileNames } from './upload-files.ts';
+import { checkUploadFiles, fetchUploadUrls, fileNames } from './upload-files.ts';
 import { checkTotpSecrets, totpMasks, typingCode, type TotpSecret } from './totp.ts';
+import { downloadNote, keepDownload, sizeWords, type KeptDownload } from './downloads.ts';
 import { isTransientModelError } from '../jev/retry.ts';
 import type { Notify } from '../notify/desktop.ts';
 import { notificationText, passedText, waitingText, type PersonWall } from '../notify/person-messages.ts';
@@ -29,7 +32,8 @@ export interface TaskOptions {
    */
   secretKeys?: string[];
   /**
-   * Files the caller declares for upload, by key: absolute paths (checked before the run). Kept apart from `values`:
+   * Files the caller declares for upload, by key: absolute paths (checked before the run), or `https` URLs fetched into the
+   * run folder's `uploads/` when the call starts. Kept apart from `values`:
    * Jev picks a key for a file field and sees the file's name, never its path; nothing else is ever uploaded.
    */
   files?: Record<string, string>;
@@ -368,6 +372,11 @@ export class BrowserTask {
   #onWait: WaitListener | undefined;
   /** This call's stop signal (caller cancel or time budget); set while a call runs. */
   #limit: RunLimit | undefined;
+  /** URL files this session fetched, by URL: a later call reuses the file. */
+  #fetchedUploads = new Map<string, string>();
+  /** Downloads already reported, by guid, and what this call's steps downloaded, for the page text Jev reads. */
+  #downloadsSeen = new Set<string>();
+  #downloadedThisCall: string[] = [];
 
   constructor(tab: Tab, ask: Ask, { recordDir, output, totp, person, ...options }: TaskOptions) {
     this.#tab = tab;
@@ -420,9 +429,10 @@ export class BrowserTask {
     };
   }
 
-  /** Reads the session's tab with no model call and no input, its secret values already masked: what `jevway_look` shows. */
-  look(): Promise<PageState> {
-    return this.#observe();
+  /** Reads the session's tab with no model call and no input, its secret values already masked: what `jevway_look` shows. With `pdf`, the page as a PDF too. */
+  async look({ pdf = false }: { pdf?: boolean } = {}): Promise<PageState & { pdf?: Buffer }> {
+    const page = await this.#observe();
+    return pdf ? { ...page, pdf: await this.#tab.pdf() } : page;
   }
 
   /** The tab the session is on now: a tab its clicks opened, once followed, or the one it started on. */
@@ -532,6 +542,10 @@ export class BrowserTask {
    * waits for a person at a wall. A listener that throws is ignored.
    */
   async run({ signal, onStep, onWait }: { signal?: AbortSignal; onStep?: StepListener; onWait?: WaitListener } = {}): Promise<TaskSummary> {
+    // URL files are fetched before the run reads a page; a refused one fails the call naming its key.
+    const uploads = this.#output ? join(this.#output.dir, 'uploads') : join(tmpdir(), `jevway-uploads-${process.pid}`);
+    this.#options.files = await fetchUploadUrls(this.#options.files, { dir: uploads, hosts: this.#options.hosts, known: this.#fetchedUploads, signal });
+    this.#downloadedThisCall = [];
     this.#onStep = onStep;
     this.#onWait = onWait;
     this.#stepsTold = 0;
@@ -1204,6 +1218,7 @@ export class BrowserTask {
         if (decision.operation === 'CLICK' && decision.via !== 'disclosure' && action.expanded === 'false' && page.actions.some((a) => a.node === action.node && a.expanded === 'true')) {
           this.#openedByRun.add(action.node!);
         }
+        await this.#reportDownloads(firstStep);
         const repeatedDialog = this.#reportDialogs(
           firstStep,
           decision.operation === 'CLICK' ? { action, path: pathBefore, unsaved: unsavedBefore } : undefined,
@@ -1363,6 +1378,32 @@ export class BrowserTask {
     return repeated;
   }
 
+  // jevway: the downloads the last action started, once finished (30 s at most), kept in the run folder and noted on its step.
+  async #reportDownloads(firstStep: number) {
+    const notes: string[] = [];
+    for (const tab of this.#tabs) {
+      for (const download of await tab.downloadsAfterInput()) {
+        // A tab this one opened reports its own downloads, which its opener claimed too.
+        if (this.#downloadsSeen.has(download.guid)) continue;
+        this.#downloadsSeen.add(download.guid);
+        const named = { ...download, name: this.#scrub(download.name) };
+        let kept: KeptDownload;
+        try {
+          kept = keepDownload(named, this.#output?.dir);
+        } catch {
+          kept = { name: named.name, bytes: named.bytes, state: named.state, ...(named.filePath && { path: named.filePath }) };
+        }
+        notes.push(downloadNote(kept));
+        if (kept.state === 'completed') this.#downloadedThisCall.push(`${kept.name} (${sizeWords(kept.bytes)})`);
+      }
+    }
+    const last = this.#history.length - 1;
+    if (notes.length && last >= firstStep) {
+      const entry = this.#history[last];
+      this.#history[last] = { ...entry, element: `${entry.element} ${notes.map((note) => `(${note})`).join(' ')}` };
+    }
+  }
+
   // What the run left unsaved on the page a click was made on: the last field typed there, else the control last ticked.
   #unsavedOn(path: string, ticked?: { label: string }) {
     const typed = this.#typedFields.filter((field) => field.path === path).at(-1);
@@ -1495,10 +1536,15 @@ export class BrowserTask {
   // jevway: what the page said after the last submit is the first line of the text Jev reads. The done check judges the current
   // page's text only, so a "saved" message that scrolled away (or sits above the viewport) is no evidence unless the text carries it.
   // It stays while the run is on the path where the message appeared; the caller's page_text is never changed.
+  // A download shows nothing on the page, so what this call downloaded leads the text too.
   #withSaid(page: PageState): PageState {
     if (this.#said && this.#said.path !== pathOf(page.url)) this.#said = undefined;
-    if (!this.#said) return page;
-    return { ...page, text: `[Page message after "${this.#said.label}"] ${this.#said.text}\n${page.text}` };
+    const lines = [
+      ...(this.#downloadedThisCall.length ? [`[Downloaded this call] ${this.#downloadedThisCall.join(', ')}`] : []),
+      ...(this.#said ? [`[Page message after "${this.#said.label}"] ${this.#said.text}`] : []),
+    ];
+    if (!lines.length) return page;
+    return { ...page, text: `${lines.join('\n')}\n${page.text}` };
   }
 
   // The lines the page now shows that this run never saw on its path. The previous message of a submit doesn't count as seen, so a repeated one is quoted again.

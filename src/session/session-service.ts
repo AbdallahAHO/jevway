@@ -4,7 +4,7 @@ import type { DeviceName } from '../browser/devices.ts';
 import { scrubberFor } from '../jev/secrets.ts';
 import type { JourneySession, StepInput } from '../journeys/journey-session.ts';
 import { ensureOutRoot, journeyFolderName, outRoot, runFolderName } from '../output/layout.ts';
-import type { RunFiles } from '../output/run-folder.ts';
+import { writeLookPdf, writeRunPdf, type RunFiles } from '../output/run-folder.ts';
 import { lookAt, type PageLook } from '../task/look.ts';
 import { storyLine } from '../task/present.ts';
 import { checkTotpSecrets, totpMasks } from '../task/totp.ts';
@@ -240,11 +240,20 @@ export const createSessionService = (runner: Pick<Runner, 'start' | 'look' | 'st
       }
     },
 
-    /** Reads a page with no model call and no input: a session's tab (its secret values masked), an open tab by URL part, or a URL opened and closed again. */
-    async look({ session, tab, url }: { session?: string; tab?: string; url?: string }): Promise<PageLook> {
+    /**
+     * Reads a page with no model call and no input: a session's tab (its secret values masked), an open tab by URL part, or
+     * a URL opened and closed again. With `pdf`, the page is saved as a PDF too: in the session's run folder
+     * (`looks/NN-<title>.pdf`), else in a look folder of its own (`<root>/looks/<stamp>_<host>_<id4>/page.pdf`).
+     */
+    async look({ session, tab, url, pdf }: { session?: string; tab?: string; url?: string; pdf?: boolean }): Promise<PageLook> {
       if ([session, tab, url].filter(Boolean).length !== 1) throw new Error('Pass exactly one of session, tab or url.');
-      if (session) return lookAt(await findTask(session).task.look());
-      return lookAt(await runner.look({ url, tab }));
+      if (session) {
+        const entry = findTask(session);
+        const looked = await entry.task.look({ pdf });
+        return { ...lookAt(looked), ...(looked.pdf && { pdf: writeRunPdf({ dir: entry.runDir, pdf: looked.pdf, title: looked.title }) }) };
+      }
+      const looked = await runner.look({ url, tab, pdf });
+      return { ...lookAt(looked), ...(looked.pdf && { pdf: writeLookPdf({ root, pdf: looked.pdf, url: looked.url, at: now(), id: newId() }) }) };
     },
 
     /** Forgets a session and closes the tabs it opened (its first tab only when it started from `url`), unless `keepTab`. */

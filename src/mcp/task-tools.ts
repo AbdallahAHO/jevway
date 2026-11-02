@@ -44,7 +44,7 @@ const TASK_INPUT = z.object({
   files: z
     .record(z.string(), z.string({ error: 'files maps keys to absolute paths, e.g. {"cv":"/Users/ada/cv.pdf"}' }))
     .optional()
-    .describe('Files the user asked to upload: key → absolute path.'),
+    .describe('Files the user asked to upload: key → absolute path or https URL.'),
   totp: z
     .record(z.string(), z.string())
     .optional()
@@ -209,17 +209,18 @@ export const taskTools = (service: SessionService, { images }: { images: ImageRe
           session: z.string().optional(),
           tab: z.string().optional(),
           url: z.string().optional(),
+          pdf: z.boolean().optional().describe('Also save the page as a PDF; returns its path.'),
         }),
         outputSchema: LOOK_OUTPUT,
       },
-      async ({ session, tab, url }) => {
+      async ({ session, tab, url, pdf }) => {
         try {
           if ([session, tab, url].filter(Boolean).length !== 1) {
             throw new Error(
               'Pass exactly one of `session`, `tab` or `url`, e.g. {"url":"https://example.com/pricing"} or {"session":"<id from jevway_task>"}.',
             );
           }
-          return jsonResult(await service.look({ session, tab, url }));
+          return jsonResult(await service.look({ session, tab, url, pdf }));
         } catch (error) {
           return errorResult('jevway_look', error);
         }

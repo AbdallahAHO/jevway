@@ -199,6 +199,7 @@ export class Frames {
   #sessionId: string;
   #counter: string;
   #touch = false;
+  #files = false;
   #mainFrameId = '';
   #viewport = { w: 0, h: 0 };
   /** Out-of-process frames attached so far, by target id (= frame id). */
@@ -231,6 +232,20 @@ export class Frames {
   set touch(enabled: boolean) {
     this.#touch = enabled;
     for (const { sessionId } of this.#children.values()) void this.#emulateTouch(sessionId);
+  }
+
+  /**
+   * The caller declared files: frame reads list file inputs and drop zones, and out-of-process frames keep native file
+   * pickers closed too (the page's own session does that for same-process frames).
+   */
+  set files(enabled: boolean) {
+    if (enabled && !this.#files) for (const { sessionId } of this.#children.values()) void this.#interceptFileChooser(sessionId);
+    this.#files = enabled;
+  }
+
+  /** Whether a protocol frame id is this tab's: its page, a frame read on it, or an out-of-process frame attached to it. */
+  holds(frameId: string) {
+    return Boolean(frameId) && (frameId === this.#mainFrameId || this.#known.has(frameId) || this.#children.has(frameId));
   }
 
   /** The frame holding an element id: undefined for the main frame and for a frame no longer on the page. */
@@ -302,7 +317,7 @@ export class Frames {
     const view = { x: region.x - offset.x, y: region.y - offset.y, w: region.w, h: region.h };
     const response = await this.evaluate(
       frame,
-      `window.__jevIdBase=${frame.base};window.__jevView=${JSON.stringify(view)};window.__jevWanted=${JSON.stringify(wanted)};${script}`,
+      `window.__jevIdBase=${frame.base};window.__jevView=${JSON.stringify(view)};window.__jevWanted=${JSON.stringify(wanted)};window.__jevFiles=${this.#files};${script}`,
       { timeout: FRAME_READ_MS },
     );
     const state = response.exceptionDetails ? null : response.result?.value;
@@ -495,6 +510,7 @@ export class Frames {
       await this.#send('Page.addScriptToEvaluateOnNewDocument', { source: this.#counter, worldName: WORLD }, sessionId);
       await this.#send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId).catch(() => undefined);
       await this.#emulateTouch(sessionId);
+      if (this.#files) await this.#interceptFileChooser(sessionId);
       await this.#autoAttach(sessionId);
     } catch {
       // A frame that went away while being set up; nothing to read.
@@ -506,6 +522,10 @@ export class Frames {
   #emulateTouch(sessionId: string) {
     const enabled = this.#touch;
     return this.#send('Emulation.setTouchEmulationEnabled', { enabled, maxTouchPoints: enabled ? 5 : 1 }, sessionId).catch(() => undefined);
+  }
+
+  #interceptFileChooser(sessionId: string) {
+    return this.#send('Page.setInterceptFileChooserDialog', { enabled: true }, sessionId).catch(() => undefined);
   }
 
   #autoAttach(sessionId: string) {
