@@ -126,7 +126,10 @@ export const jsonFlag = <T>(name: string, raw: string | undefined, schema: z.Zod
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    throw usageError('invalid_value', `--${name}: ${(error as Error).message}`, hint);
+    const { message } = error as Error;
+    // V8's "Unexpected token" message quotes a slice of the input, and a value can be a secret.
+    if (message.endsWith('is not valid JSON')) throw usageError('invalid_value', `--${name} is not valid JSON: check its quotes and braces`, hint);
+    throw usageError('invalid_value', `--${name}: ${message}`, hint);
   }
   const result = schema.safeParse(parsed);
   if (!result.success) {

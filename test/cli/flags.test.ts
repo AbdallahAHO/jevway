@@ -74,6 +74,15 @@ describe('flag values', () => {
     expect(failure(() => jsonFlag('values', '{"city":4}', values, '{"city":"Lisbon"}')).message).toMatch(/^--values: /);
   });
 
+  it('never quotes the input back in a JSON error, since values can be secrets', () => {
+    const values = z.record(z.string(), z.string());
+    const unquoted = failure(() => jsonFlag('values', '{"password":hunter2-PRIVATEPART}', values, '{"city":"Lisbon"}'));
+    expect(unquoted).toMatchObject({ code: 'invalid_value', message: '--values is not valid JSON: check its quotes and braces' });
+    expect(JSON.stringify(unquoted)).not.toMatch(/hunter|PRIVATE/);
+    const unclosed = failure(() => jsonFlag('values', '{"password":"hunter2-PRIVATEPART"', values, '{"city":"Lisbon"}'));
+    expect(unclosed.message).toMatch(/^--values: Expected ',' or '}' after property value in JSON at position \d+/);
+  });
+
   it('reads whole numbers within bounds', () => {
     expect(intFlag('max-steps', '12', { min: 1, max: 100 })).toBe(12);
     expect(intFlag('max-steps', undefined, { min: 1, max: 100 })).toBeUndefined();
