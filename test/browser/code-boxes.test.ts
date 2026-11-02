@@ -137,7 +137,7 @@ describe('fields that are not a split code stay as they are', () => {
 
   it('boxes laid out right to left, or of very different widths', () => {
     unchanged(page(boxes(6).map((action) => ({ ...action, rect: { ...action.rect!, x: 600 - action.rect!.x } }))));
-    unchanged(page(boxes(6).map((action, i) => (i < 2 ? { ...action, rect: { ...action.rect!, w: 20 } } : action))));
+    unchanged(page(boxes(6).map((action, i) => (Math.floor(i / 2) % 2 ? action : { ...action, rect: { ...action.rect!, w: 20 } }))));
   });
 
   it('boxes shown only on hover', () => {

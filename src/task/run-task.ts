@@ -1,6 +1,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { findBotWall, type BotWall } from '../browser/bot-wall.ts';
+import { codeCharacters } from '../browser/code-boxes.ts';
 import { PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, type PageAction, type PageState, type Tab } from '../browser/tab.ts';
 import { showsTarget } from '../browser/words.ts';
 import { buildActionSpace } from '../jev/action-space.ts';
@@ -8,7 +9,7 @@ import { centerOf, contains } from '../jev/box.ts';
 import { decide, evidenceRequest, foldedFavourite, overflowFolds, readEvidence, type Ask, type Candidate, type Decision, type StepRecord } from '../jev/decide.ts';
 import { estimateCostUsd, type ImageTransport, type ScreenshotMode } from '../jev/model.ts';
 import { ANY_HOST, narrowHosts, outsideHosts, type HostRules } from './hosts.ts';
-import { scrubberFor } from '../jev/secrets.ts';
+import { scrubberFor, secretMarker } from '../jev/secrets.ts';
 import { describeFailure, runChecks, type Check, type CheckResult } from './checks.ts';
 import { deepLink, quoteSpans } from './evidence.ts';
 import { writeCall, type RunFiles } from '../output/run-folder.ts';
@@ -342,6 +343,10 @@ export class BrowserTask {
   #toggled = new Map<string, { label: string; checked: string; noted: boolean; clickedAfter?: string }>();
   /** Nodes of fields the model chose with no supplied value to type: each is refused once before the caller is asked. */
   #refusedForValue = new Set<number>();
+  /** First-box nodes of split-code groups a value of the wrong length was chosen for: each is fed back once before the caller is asked. */
+  #codeLengthNoted = new Set<number>();
+  /** Boxes of a split code a secret was typed into, with the secret's key: their values read as its marker from then on. */
+  #secretBoxes = new Map<number, string>();
   /** The caller's authenticator secrets by key: only `decide` (as a marker) and the typing see them. */
   #totp = new Map<string, TotpSecret>();
   /** Secrets that are not supplied values, by key: each authenticator secret as given and as base32, every code typed. Kept for the session. */
@@ -420,12 +425,17 @@ export class BrowserTask {
       title: scrub(page.title),
       text: scrub(page.text),
       ...(page.passwordFields && { passwordFields: page.passwordFields.map((field) => ({ ...field, name: scrub(field.name) })) }),
-      actions: page.actions.map((action) => ({
-        ...action,
-        label: scrub(action.label),
-        ...(action.value !== undefined && action.kind !== 'select' && { value: scrub(action.value) }),
-        ...(action.current_value !== undefined && { current_value: scrub(action.current_value) }),
-      })),
+      actions: page.actions.map((action) => {
+        // A box of a split secret code may hold part of it, which no value match finds: it shows the key's marker.
+        const boxKey = [action.node, ...(action.boxes ?? [])].map((node) => this.#secretBoxes.get(node!)).find(Boolean);
+        return {
+          ...action,
+          label: scrub(action.label),
+          ...(action.value !== undefined && action.kind !== 'select' && { value: scrub(action.value) }),
+          ...(action.current_value !== undefined && { current_value: scrub(action.current_value) }),
+          ...(boxKey && action.value && { value: secretMarker(boxKey) }),
+        };
+      }),
     };
   }
 
@@ -1046,7 +1056,34 @@ export class BrowserTask {
 
         const action = decision.action!;
         const text = decision.valueKey ? await this.#textFor(decision.valueKey, values) : undefined;
+        // A CLICK_AT carries no action.
+        if (action?.boxes && decision.valueKey && text !== undefined) {
+          const characters = codeCharacters(text, action.boxes.length);
+          if (!characters) {
+            // A value that doesn't fit the boxes is a wrong turn first, and only the second time a question for the caller.
+            record(false);
+            const [count, boxes] = [[...text].length, action.boxes.length];
+            if (this.#codeLengthNoted.has(action.node!)) {
+              return stop('needs_input', `"${action.label}" has ${boxes} boxes but the "${decision.valueKey}" value has ${count} characters; supply it as ${boxes} characters`, decision);
+            }
+            this.#codeLengthNoted.add(action.node!);
+            this.#history.push({
+              operation: decision.operation,
+              element: action.label,
+              not_executed: `the "${decision.valueKey}" value has ${count} characters but this field has ${boxes} boxes; type nothing here — choose another value or step, or BLOCKED if the goal needs a value you were not given`,
+              confidence: round(decision.confidence),
+            });
+            page = await this.#observe();
+            continue;
+          }
+          // Masked before it is typed, so the page read right after typing already shows the marker.
+          if (this.#options.secretKeys.includes(decision.valueKey)) {
+            for (const node of action.boxes) this.#secretBoxes.set(node, decision.valueKey);
+            if (characters.join('') !== text) this.#moreSecrets.push([decision.valueKey, characters.join('')]);
+          }
+        }
         let element: string;
+        let kept: boolean | undefined;
         // jevway: the dialog a confirmed click opens is the same action asking again; any other dialog still gets the answer that changes nothing.
         if (isRiskyClick(decision) && this.#confirmedCommit) this.#tab.armConfirm([this.#confirmTarget ?? '', bareLabel(decision.action?.label ?? '')]);
         try {
@@ -1082,6 +1119,7 @@ export class BrowserTask {
               action.kind === 'upload'
                 ? await this.#tab.upload(action, page, this.#options.files[decision.fileKey!])
                 : await this.#tab.act(action, page, text, forced ? { evenIfChanged: true } : undefined);
+            kept = outcome?.kept;
             // A scroll that moved nothing says so, or Jev keeps asking for it.
             element = outcome?.scrolled === 0 ? `${action.label} (nothing moved: there is no more to scroll this way)` : action.label;
           }
@@ -1197,7 +1235,8 @@ export class BrowserTask {
         this.#history.push({
           ...ran,
           // A field that is gone (navigated, submitted) can't say; one still on the page must show what was typed.
-          ...(field && { value_kept: field.value === this.#scrub(text) }),
+          // Split code boxes report what they hold right after typing; any other field, on the page read after it.
+          ...(kept !== undefined ? { value_kept: kept } : field && { value_kept: field.value === this.#scrub(text) }),
           page_changed: page.fingerprint !== before,
           confidence,
         });

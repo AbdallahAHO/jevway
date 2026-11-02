@@ -1,5 +1,6 @@
 import { centerOf, contains, type Rect } from '../jev/box.ts';
 import { CdpError, type CdpConnection } from './cdp.ts';
+import { groupCodeBoxes } from './code-boxes.ts';
 import type { PageAction, PageState } from './tab.ts';
 
 // jevway: every frame is read with the same reader (snapshot.js), each in an isolated world of its own, so ids, guards and
@@ -322,7 +323,7 @@ export class Frames {
     );
     const state = response.exceptionDetails ? null : response.result?.value;
     if (!state) return null;
-    const placed = placeFrameActions(state.actions, { w: state.w, h: state.h }, placement, frame.id);
+    const placed = placeFrameActions(groupCodeBoxes(state.actions), { w: state.w, h: state.h }, placement, frame.id);
     // On-screen controls must be on top in every document around the frame: a banner or sheet over the frame hides them.
     const shown = placed.filter((action) => contains(placement.region, centerOf(action.rect!)));
     const onTop = await this.#hits(levels, shown.map((action) => centerOf(action.rect!)));

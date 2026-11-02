@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { CdpError, type CdpConnection, type CdpListener } from './cdp.ts';
+import { codeCharacters, groupCodeBoxes, type CodeBoxFacts } from './code-boxes.ts';
 import { DEVICES, type Device } from './devices.ts';
 import { TabDownloads, type Download } from './downloads.ts';
 import { Frames, idBaseOf, mergeFrames, whenAborted, type FrameTarget } from './frames.ts';
@@ -58,6 +59,10 @@ export interface PageAction {
   frame?: string;
   /** An upload target that is a drop zone with no file input: the file is dropped onto it. */
   drop?: boolean;
+  /** A code split into one-character boxes (see `groupCodeBoxes`): every box's node, first to last; `node` is the first. */
+  boxes?: number[];
+  /** The reader's facts about a short input; `groupCodeBoxes` removes them before anything else reads the page. */
+  box?: CodeBoxFacts;
 }
 
 export interface PageState {
@@ -534,7 +539,7 @@ export class Tab {
       try {
         const main = await this.#evaluate(`window.__jevWanted=${JSON.stringify(this.#wanted)};window.__jevFiles=${this.#files};${READ_STATE}`);
         if (main) {
-          const state = await this.#withFrames(main);
+          const state = await this.#withFrames({ ...main, actions: groupCodeBoxes(main.actions) });
           const named = placeholders ? { ...state, text: `Loading: ${placeholders} placeholder blocks on screen\n${state.text}` } : state;
           return { ...named, fingerprint: fingerprint(named) };
         }
@@ -605,13 +610,17 @@ export class Tab {
     return isDeepStrictEqual([main, current], [page.page_key, [observed.page_key, page.guards[String(action.node)]]]);
   }
 
-  /** Runs one observed action. A scroll resolves to how far it moved the page (see `#scroll`). */
+  /**
+   * Runs one observed action. A scroll resolves to how far it moved the page (see `#scroll`); typing into a split code's
+   * boxes, to whether they ended up holding the code (`kept`, absent when they can't be read).
+   */
   async act(
     action: PageAction,
     page: PageState,
     text?: string,
     { evenIfChanged = false }: { evenIfChanged?: boolean } = {},
-  ): Promise<{ scrolled?: number } | void> {
+  ): Promise<{ scrolled?: number; kept?: boolean } | void> {
+    if (action.kind === 'fill' && action.boxes) return this.#typeBoxes(action, page, text ?? '');
     // Only a page-level action may skip the check, and only when the loop asks: Enter still needs its field focused (#pressEnter).
     const skipCheck = evenIfChanged && PAGE_LEVEL_KINDS.includes(action.kind);
     if (!skipCheck && !(await this.fresh(page, action))) throw new StalePage('Page changed since this decision');
@@ -623,6 +632,36 @@ export class Tab {
     else await this.#input(action, text);
     this.#afterInput = action;
     return outcome;
+  }
+
+  // jevway: a code split into one-character boxes is typed box by box through `act`, so every box gets the freshness
+  // check, the hit test, the delivered-press check and real key events. Typing changes the page, so each box after the
+  // first is checked against a fresh read, which also lets the page's own move to the next box settle. A box that
+  // already holds its character (the page moved or spread it) is left alone, so nothing is typed twice.
+  async #typeBoxes(group: PageAction, page: PageState, text: string): Promise<{ kept?: boolean }> {
+    const boxes = group.boxes!;
+    const characters = codeCharacters(text, boxes.length);
+    if (!characters) throw new Error(`The code has ${[...text].length} characters but "${group.label}" has ${boxes.length} boxes`);
+    if (!(await this.fresh(page, group))) throw new StalePage('Page changed since this decision');
+    let current = page;
+    for (const [i, node] of boxes.entries()) {
+      if (i) current = await this.observe();
+      const listed = current.actions.find((action) => action.kind === 'fill' && action.node === group.node && isDeepStrictEqual(action.boxes, boxes));
+      if (!listed) throw new StalePage('The code boxes changed while typing');
+      const [held] = await this.#boxValues(group, [node]);
+      if (held === characters[i]) continue;
+      await this.act({ ...listed, node, boxes: undefined, label: `${listed.label}, box ${i + 1}` }, current, characters[i]);
+    }
+    const values = await this.#boxValues(group, boxes).catch(() => undefined);
+    return values ? { kept: values.join('') === characters.join('') } : {};
+  }
+
+  // What each box holds now, read in the group's frame; null for a box that is gone.
+  async #boxValues(group: PageAction, nodes: number[]): Promise<(string | null)[]> {
+    const read = `(function jevBoxValues(ids) {
+      return ids.map((id) => { const e = window.__jevFast?.nodes.get(id); return e?.isConnected ? String(e.value ?? '') : null; });
+    })(${JSON.stringify(nodes)})`;
+    return (await this.#evaluateFor(this.#frameOf(group.node), read)) ?? [];
   }
 
   // jevway: the wheel goes where the reader found the pane that scrolls (or the fixed point on a page whose document

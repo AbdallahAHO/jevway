@@ -332,6 +332,34 @@
       if (['auto', 'scroll'].includes(getComputedStyle(p).overflowX) && p.scrollWidth > p.clientWidth) return row;
     return null;
   };
+  // jevway: a short text input may be one box of a code split into one-character boxes. The tab groups them from these
+  // facts (code-boxes.ts); only the group's name is read here, where the page is: an aria name or legend around the
+  // boxes, else a short line right before them. Container and form keys are unique within this read.
+  const containerKeys = new Map();
+  const keyOf = (n) => (n ? containerKeys.get(n) ?? containerKeys.set(n, containerKeys.size + 1).get(n) : 0);
+  const codeGroupName = (e) => {
+    for (let p = e.parentElement, up = 0; p && up < 3 && p !== document.body && p.tagName !== 'FORM'; p = p.parentElement, up++) {
+      const legend = p.tagName === 'FIELDSET' ? p.querySelector('legend') : null;
+      const own = p.getAttribute('aria-label') || (p.hasAttribute('aria-labelledby') ? name(p) : '') || legend?.innerText || '';
+      if (own.trim()) return cap(own.replace(/\s+/g, ' ').trim(), 80);
+    }
+    for (let p = e, up = 0; p && up < 3 && p !== document.body; p = p.parentElement, up++) {
+      const before = p.previousElementSibling;
+      if (!before || before.matches(interactive) || before.querySelector(interactive) || !visible(before)) continue;
+      const line = before.innerText.replace(/\s+/g, ' ').trim();
+      if (line) return line.length <= 80 ? line : '';
+    }
+    return '';
+  };
+  const codeBoxFacts = (e) => {
+    if (e.tagName !== 'INPUT') return null;
+    const max = e.maxLength;
+    if (!(max >= 1 && max <= 4) && !(max < 0 && e.getBoundingClientRect().width <= 64)) return null;
+    const parent = e.parentElement;
+    const within = [keyOf(parent), keyOf(parent?.parentElement)];
+    const facts = { max, mode: e.inputMode || '', otp: e.autocomplete === 'one-time-code', type: e.type, form: keyOf(e.form), within };
+    return { box: { ...facts, name: codeGroupName(e) } };
+  };
   for (const e of candidates) {
     const shown = eligible(e);
     const hover = !shown && revealedByHover(e);
@@ -402,7 +430,7 @@
           (rname === 'combobox' && (['INPUT', 'TEXTAREA'].includes(e.tagName) || e.isContentEditable)));
       const value =
         'value' in e ? String(e.value) : e.isContentEditable || rname === 'combobox' ? e.innerText.trim() : '';
-      actions.push({ ...base, kind: editable ? 'fill' : 'click', value });
+      actions.push({ ...base, kind: editable ? 'fill' : 'click', value, ...(editable && !hover && codeBoxFacts(e)) });
       if (editable) actions.push({ ...base, kind: 'click', value, label: 'Open ' + base.label });
     }
   }

@@ -9,7 +9,11 @@ const CODE = '739214';
  * protocol connection: a press focuses the box it lands on, a typed key sets the focused box (when `keeps` allows), and
  * `autoAdvance` moves the focus on as pages' scripts do. Every key typed is recorded with the box it went into.
  */
-const codePage = ({ autoAdvance = false, keeps = (_box: number, _char: string) => true, prefilled = {} as Record<number, string> } = {}) => {
+const codePage = ({
+  autoAdvance = false,
+  keeps = (_box: number, _char: string): boolean => true,
+  prefilled = {} as Record<number, string>,
+} = {}) => {
   const nodes = [11, 12, 13, 14, 15, 16];
   const values = nodes.map((_, i) => prefilled[i] ?? '');
   let focused = -1;
