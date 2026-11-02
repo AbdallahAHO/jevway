@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Enter your PIN</title>
+<style>
+  body { margin: 16px; font: 16px system-ui, sans-serif; }
+  fieldset { border: 0; padding: 0; }
+  fieldset input { width: 44px; height: 52px; text-align: center; font-size: 24px; margin-right: 8px; }
+</style>
+</head>
+<body>
+<form id="pin">
+  <fieldset>
+    <legend>Card PIN</legend>
+    <input type="tel" maxlength="1"><input type="tel" maxlength="1"><input type="tel" maxlength="1"><input type="tel" maxlength="1">
+  </fieldset>
+  <button type="submit">Unlock</button>
+</form>
+<script>
+  window.__fixture = {};
+  document.getElementById('pin').addEventListener('submit', (event) => {
+    event.preventDefault();
+    window.__fixture.submitted = [...document.querySelectorAll('fieldset input')].map((box) => box.value).join('');
+  });
+</script>
+</body>
+</html>

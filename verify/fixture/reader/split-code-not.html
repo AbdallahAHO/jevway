@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fields that are not a code</title>
+<style>
+  body { margin: 16px; font: 16px system-ui, sans-serif; }
+  .row input { margin-right: 6px; }
+  .row input.two { width: 36px; } .row input.three { width: 48px; } .row input.four { width: 60px; }
+  .pin input { width: 40px; height: 44px; margin-right: 6px; }
+</style>
+</head>
+<body>
+<form>
+  <p class="row">Date of birth <input class="two" maxlength="2" inputmode="numeric" aria-label="Day"><input class="two" maxlength="2" inputmode="numeric" aria-label="Month"><input class="four" maxlength="4" inputmode="numeric" aria-label="Year"></p>
+  <p class="row">Phone <input class="three" maxlength="3" inputmode="tel" aria-label="Area code"><input class="three" maxlength="3" inputmode="tel" aria-label="Exchange"><input class="four" maxlength="4" inputmode="tel" aria-label="Line number"></p>
+  <p><label>Middle initial <input maxlength="1" style="width: 32px"></label></p>
+  <p class="pin">Card PIN <input type="password" maxlength="1" aria-label="PIN digit 1"><input type="password" maxlength="1" aria-label="PIN digit 2"><input type="password" maxlength="1" aria-label="PIN digit 3"><input type="password" maxlength="1" aria-label="PIN digit 4"></p>
+</form>
+</body>
+</html>

@@ -1273,6 +1273,79 @@ const checks: Check[] = [
       assert.ok(page.text.startsWith('Password field "Password": filled'), `the password line is not first: ${page.text}`);
     },
   },
+  {
+    name: 'a code split into six boxes that move the focus on is one target, typed one character per box',
+    file: 'split-code.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const fields = page.actions.filter((action) => action.kind === 'fill');
+      assert.equal(fields.length, 1, `expected one field, listed ${labelsOf(page.actions)}`);
+      const [code] = fields;
+      assert.equal(code.label, 'Verification code (6 boxes)');
+      assert.equal(code.boxes?.length, 6);
+      assert.ok(!page.actions.some((action) => /Digit/.test(action.label)), `a single box is listed: ${labelsOf(page.actions)}`);
+      assert.ok(!JSON.stringify(page.actions).includes('"box"'), 'the reader facts leaked into the actions');
+      assert.deepEqual(await tab.act(code, page, '739214'), { kept: true });
+      assert.equal(await tab.evaluate(`[...document.querySelectorAll('.otp input')].map((box) => box.value).join(',')`), '7,3,9,2,1,4');
+      const next = await tab.observe();
+      assert.equal(next.actions.find((action) => action.node === code.node && action.kind === 'fill')?.value, '739214', 'the group does not read as the joined code');
+      await tab.act(find(next.actions, 'button', /^Verify$/)!, next);
+      assert.equal((await fixtureState(tab)).submitted, '739214');
+    },
+  },
+  {
+    name: 'six wrapped boxes with no maxlength are named by the line before them and take a code given with a space',
+    file: 'split-code-plain.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const code = page.actions.find((action) => action.kind === 'fill' && action.boxes);
+      assert.ok(code, `no group listed: ${labelsOf(page.actions)}`);
+      assert.equal(code.label, 'Enter the code we emailed you (6 boxes)');
+      assert.ok(find(page.actions, 'textbox', /^Name$/), `the name field is lost: ${labelsOf(page.actions)}`);
+      assert.deepEqual(await tab.act(code, page, '482 913'), { kept: true });
+      const next = await tab.observe();
+      await tab.act(find(next.actions, 'button', /^Confirm$/)!, next);
+      assert.equal((await fixtureState(tab)).submitted, '482913');
+    },
+  },
+  {
+    name: 'four PIN boxes in a fieldset are one target named by its legend',
+    file: 'split-code-pin.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const code = page.actions.find((action) => action.kind === 'fill');
+      assert.equal(code?.label, 'Card PIN (4 boxes)', `listed ${labelsOf(page.actions)}`);
+      await tab.act(code!, page, '4821');
+      const next = await tab.observe();
+      await tab.act(find(next.actions, 'button', /^Unlock$/)!, next);
+      assert.equal((await fixtureState(tab)).submitted, '4821');
+    },
+  },
+  {
+    name: 'a split date, a split phone number, a middle initial and password PIN boxes are not a code',
+    file: 'split-code-not.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      assert.ok(!page.actions.some((action) => action.boxes), `a group is listed: ${labelsOf(page.actions)}`);
+      const fields = page.actions.filter((action) => action.kind === 'fill').map((action) => action.label);
+      assert.deepEqual(fields, ['Day', 'Month', 'Year', 'Area code', 'Exchange', 'Line number', 'Middle initial']);
+      assert.equal(page.passwordFields?.length, 4);
+    },
+  },
+  {
+    name: 'a code split into boxes inside an iframe is one target in its frame, typed there',
+    file: 'split-code-frame.html',
+    run: async (tab) => {
+      const page = await tab.observe();
+      const code = page.actions.find((action) => action.kind === 'fill' && action.boxes);
+      assert.ok(code?.frame, `no group in the frame: ${labelsOf(page.actions)}`);
+      assert.equal(code.label, 'Verification code (6 boxes)');
+      assert.ok(insideBox(code.rect!, await frameBox(tab)), `rect ${JSON.stringify(code.rect)} is not inside the frame`);
+      assert.deepEqual(await tab.act(code, page, '105263'), { kept: true });
+      const typed = await tab.evaluate(`[...document.querySelector('iframe').contentDocument.querySelectorAll('.otp input')].map((box) => box.value).join('')`);
+      assert.equal(typed, '105263');
+    },
+  },
 ];
 
 // Serve every page in verify/fixture/reader/ at /<file name> on a random local port, and again on a second port. Frame

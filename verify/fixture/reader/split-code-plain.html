@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Confirm your sign-up</title>
+<style>
+  body { margin: 16px; font: 16px system-ui, sans-serif; }
+  .code span { display: inline-block; margin-right: 6px; }
+  .code input { width: 36px; height: 44px; text-align: center; font-size: 20px; }
+</style>
+</head>
+<body>
+<h1>Confirm your sign-up</h1>
+<form id="confirm">
+  <label>Enter the code we emailed you</label>
+  <div class="code">
+    <span><input inputmode="numeric"></span><span><input inputmode="numeric"></span><span><input inputmode="numeric"></span><span><input inputmode="numeric"></span><span><input inputmode="numeric"></span><span><input inputmode="numeric"></span>
+  </div>
+  <p><label>Name <input name="name" style="width: 240px"></label></p>
+  <button type="submit">Confirm</button>
+</form>
+<script>
+  window.__fixture = {};
+  document.getElementById('confirm').addEventListener('submit', (event) => {
+    event.preventDefault();
+    window.__fixture.submitted = [...document.querySelectorAll('.code input')].map((box) => box.value).join('');
+  });
+</script>
+</body>
+</html>

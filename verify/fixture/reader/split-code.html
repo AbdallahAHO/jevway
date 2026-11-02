@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Verify your email</title>
+<style>
+  body { margin: 16px; font: 16px system-ui, sans-serif; }
+  .otp { display: flex; gap: 8px; margin: 12px 0; }
+  .otp input { width: 40px; height: 48px; text-align: center; font-size: 22px; }
+</style>
+</head>
+<body>
+<h1>Check your email</h1>
+<p>Step 2 of 3</p>
+<form id="verify">
+  <div class="otp" role="group" aria-label="Verification code">
+    <input maxlength="1" inputmode="numeric" autocomplete="one-time-code" aria-label="Digit 1 of 6">
+    <input maxlength="1" inputmode="numeric" aria-label="Digit 2 of 6">
+    <input maxlength="1" inputmode="numeric" aria-label="Digit 3 of 6">
+    <input maxlength="1" inputmode="numeric" aria-label="Digit 4 of 6">
+    <input maxlength="1" inputmode="numeric" aria-label="Digit 5 of 6">
+    <input maxlength="1" inputmode="numeric" aria-label="Digit 6 of 6">
+  </div>
+  <button type="submit">Verify</button>
+</form>
+<script>
+  window.__fixture = {};
+  const boxes = [...document.querySelectorAll('.otp input')];
+  // Like most code widgets: a typed digit moves the focus on, and a pasted code is spread over the boxes.
+  boxes.forEach((box, i) => {
+    box.addEventListener('input', () => {
+      const typed = box.value.replace(/\D/g, '');
+      if (typed.length > 1) {
+        [...typed].slice(0, boxes.length - i).forEach((digit, j) => (boxes[i + j].value = digit));
+        boxes[Math.min(i + typed.length, boxes.length) - 1].focus();
+        return;
+      }
+      box.value = typed;
+      if (typed && boxes[i + 1]) boxes[i + 1].focus();
+    });
+  });
+  document.getElementById('verify').addEventListener('submit', (event) => {
+    event.preventDefault();
+    window.__fixture.submitted = boxes.map((box) => box.value).join('');
+  });
+</script>
+</body>
+</html>
