@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { renderAgentReport, transcriptOf, type AgentRunRecord, type ChoreRun, type Totals } from '../../verify/agent/report.ts';
@@ -291,5 +292,18 @@ describe('a chore view', () => {
     const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(([, source]) => source);
     expect(scripts.length).toBeGreaterThanOrEqual(2);
     for (const source of scripts) expect(() => new vm.Script(source)).not.toThrow();
+  });
+});
+
+describe('for agents and offline readers', () => {
+  const { version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string };
+
+  it('names the generator and embeds the suite as JSON: every chore and how each run was judged', () => {
+    expect(html).toContain(`<meta name="generator" content="jevway ${version}">`);
+    const data = JSON.parse(/<script type="application\/json" id="jevway-summary">([\s\S]*?)<\/script>/.exec(html)![1]);
+    expect(data).toMatchObject({ kind: 'agent-report', model: 'sonnet', passed: TOTALS.passed, ran: TOTALS.ran });
+    expect(data.chores.map((c: { id: string }) => c.id)).toEqual([...new Set(ROWS.map((r) => r.chore))]);
+    expect(data.chores[0].runs[0]).toEqual({ run: ROWS[0].run, verdict: ROWS[0].verdict, dir: ROWS[0].dir });
+    expect(html).not.toContain('preconnect');
   });
 });

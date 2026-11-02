@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import vm from 'node:vm';
@@ -566,6 +566,42 @@ describe('re-rendering a saved results.json', () => {
       const page = renderFolder(runDir);
       expect(page.file).toBe(join(runDir, 'index.html'));
       expect(page.html.indexOf('<video src="run.mp4"')).toBeLessThan(page.html.indexOf('<dl'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('for agents and offline readers', () => {
+  const { version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string };
+  const embedded = (page: string) => JSON.parse(/<script type="application\/json" id="jevway-summary">([\s\S]*?)<\/script>/.exec(page)![1]);
+
+  it('names the generator and embeds the suite as JSON: every job and how each run ended', () => {
+    expect(html).toContain(`<meta name="generator" content="jevway ${version}">`);
+    const data = embedded(html);
+    expect(data).toMatchObject({ kind: 'jobs-report', title: 'Forgejo: 9 write jobs with jevway', model: 'jev (jev-1.14.0)', passed: PASSED, runs: ALL_RUNS.length });
+    expect(data.jobs.map((j: { id: string }) => j.id)).toEqual(RESULTS.map((r) => r.job.id));
+    expect(data.jobs[0].runs[0]).toEqual({ run: 1, passed: RESULTS[0].runs[0].passed, status: RESULTS[0].runs[0].summaries.at(-1)?.status ?? null, dir: RESULTS[0].runs[0].dir });
+    expect(JSON.stringify(data)).not.toContain(SECRET);
+  });
+
+  it('loads the web font without blocking the first paint', () => {
+    expect(html).not.toContain('preconnect');
+    expect(html).toMatch(/<link rel="stylesheet" href="https:\/\/api\.fontshare\.com[^"]*" media="print" onload="this\.media='all'">/);
+  });
+
+  it('describes each step shot in its alt text as the story tells it', () => {
+    for (const [, alt] of html.matchAll(/<img [^>]*alt="([^"]*)"/g)) expect(alt.trim()).not.toBe('');
+  });
+
+  it('writes the manifest of a run folder it rebuilds', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jevway-rerender-run-'));
+    try {
+      writeFileSync(join(dir, 'summary.json'), JSON.stringify({ summaries: [summary('done', 'Verified.', 1)], video: null, steps: writeSteps }));
+      const { file, html: page } = renderFolder(dir);
+      writeFileSync(file, page);
+      expect(existsSync(join(dir, 'manifest.json'))).toBe(true);
+      expect(page).toContain('href="manifest.json"');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
