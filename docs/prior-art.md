@@ -35,9 +35,20 @@ and no irreversible-click gate. A request for a Jev-driven `run "<goal>"` (verce
 as not planned. Their direction is cheaper steps for the calling agent instead: `snapshot --delta`, refs that survive
 DOM changes and `screenshot --if-changed` (v0.38).
 
+## Status
+
+As of 0.1.2 (2026-11-02). Plan numbers refer to [plans/README.md](../plans/README.md).
+
+| State | Ideas |
+| --- | --- |
+| Landed | [S1](#s1) (plan 088), [S2](#s2) (089), [S3](#s3) (090), [S4](#s4) and [K3](#k3) (091), [S5](#s5) (092), [K7](#k7) (093), [V1](#v1) (094), [C1](#c1) (095), [C2](#c2) (096), [C3](#c3) (097), [C4](#c4) (098), [K1](#k1) (099), [K2](#k2) (100), [K6](#k6) (101), [J2](#j2) (103), [J3](#j3) (105, recorded in traces only), [K5](#k5) (107), [V3](#v3) (111), [D1](#d1) to [D4](#d4) (113; published to npm as `jevway`), [D5](#d5) (the skill's "Before calling again") |
+| Rejected after measuring | [J1](#j1) (102: no measured gain), [J4](#j4) (104: no gain, 1.5–6.7% more input tokens) |
+| Open | [V2](#v2), [S6](#s6), [S7](#s7), [S8](#s8), [J5](#j5), [K4](#k4), [D6](#d6), [L1](#l1), [L2](#l2) |
+
 ## How to read the entries
 
-- **Today**: what jevway does now, with the file that shows it.
+- **Today**: what jevway did when the entries were written (commit `4c7f34d`), with the file that showed it. Many
+  have landed since: see [Status](#status).
 - **Jev request**: *changes* means the idea alters what Jev is asked, so Jev's verified baseline moves; it needs the
   full gate re-run, and the held-back Vikunja jobs stay frozen. *no* means the request is untouched.
 - **Value / effort**: value is high, med or low; effort is in working time, before verify runs.
@@ -63,8 +74,8 @@ DOM changes and `screenshot --if-changed` (v0.38).
 - **Seen in**: jkudish/jev-browser `src/navigate.ts:593-614`, `:1074-1076`, `src/index.ts:237`; forvela
   `src/loop.js:50`, `:226-240`, `src/browser.js:94-110`; nexibeo `extension/lib/agent.js:47-50`; fastbrowse
   `README.md:374-383`.
-- **Today**: the `jevway_task` handler takes no `extra`, so the SDK's `signal` is ignored (`src/mcp.ts:74`); the loop is
-  bounded by `max_steps` only (`src/task/run-task.ts:350`). A client that times out leaves the run clicking.
+- **Today**: the `jevway_task` handler takes no `extra`, so the SDK's `signal` is ignored (`src/mcp.ts`); the loop is
+  bounded by `max_steps` only (`src/task/run-task.ts`). A client that times out leaves the run clicking.
 - **Invariants**: never abort an input in flight (the `InputNotDelivered` rule); a timeout is its own status or reason,
   not the "protocol call timed out → browser error" path. The SDK may sleep up to 60 s on a `Retry-After`; cap it by the
   time left (jkudish caps it at 5 s).
@@ -78,7 +89,7 @@ DOM changes and `screenshot --if-changed` (v0.38).
 - **Seen in**: jiawei686 `jev_ultrafast_mcp/safety.py:32-46`; wy-coliney `skills/jev-browser-use/bridge.mjs:42-48`;
   nexibeo `extension/background.js:64`, `:72`; MaciejWiatr `server/browser_tools.py:56-65`; wingman
   `src/core/policy.ts`. fastbrowse blocks at the network layer with `Fetch` (`docs/design.md:207-219`).
-- **Today**: journeys have `stay_within` (`src/mcp.ts:170`); `jevway_task` has nothing. In `auto` mode the run is in
+- **Today**: journeys have `stay_within` (`src/mcp.ts`); `jevway_task` has nothing. In `auto` mode the run is in
   the user's signed-in Chrome.
 - **Notes**: jiawei686 checks only explicit navigations, so a click that leaves the domain gets through; check after
   every step. `Fetch`-level blocking is a later step.
@@ -91,7 +102,7 @@ DOM changes and `screenshot --if-changed` (v0.38).
   then allows only that control.
 - **Seen in**: wingman `README.md:214` (a single-use token bound to URL, element fingerprint and verb),
   `src/core/tokens.ts`.
-- **Today**: `#confirmedCommit` is a boolean (`src/task/run-task.ts:245-253`) armed for whichever risky click the next
+- **Today**: `#confirmedCommit` is a boolean (`src/task/run-task.ts`) armed for whichever risky click the next
   call picks (`:1067`); `confirm_target` words must be on the page, but the element itself is not pinned.
 - **Invariants**: tightens the consent rule; a different risky control on the confirmed call hands back
   `needs_confirmation` again.
@@ -105,7 +116,7 @@ DOM changes and `screenshot --if-changed` (v0.38).
 - **Seen in**: Ying-Kai-Liao `src/page-model.mjs:112-115`, `src/session.mjs:287-295`, `:681-682` (redacts by key name:
   token, otp, card, cvv, pin); forvela `src/contracts.js:1-41`, `src/decision.js:29-34`; wingman
   `src/core/withhold.ts` (withholds every value).
-- **Today**: `supplied_values` goes to Jev raw (`src/jev/decide.ts:266`), and the value question lists `key: value`
+- **Today**: `supplied_values` goes to Jev raw (`src/jev/decide.ts`), and the value question lists `key: value`
   (`:300`). Only password fields are protected.
 - **Invariants**: extends "password fields are never listed" to an API token typed into an ordinary field. Keep it
   opt-in: withholding every value, as wingman does, would break the `value_for_` heads Jev's baseline was verified on.
@@ -120,7 +131,7 @@ DOM changes and `screenshot --if-changed` (v0.38).
 - **Seen in**: jkudish/jev-browser `src/lib.ts:474-524`, `src/navigate.ts:762-821`, `:1147-1157`; MaciejWiatr
   `server/browser_tools.py:446-451`; wingman `src/core/page-scripts.ts:406-460` (with decoy fixtures). fastbrowse asks
   Jev instead (`crates/fastbrowse-agent/src/policy.rs:755-771`).
-- **Today**: only the harness detects walls (`verify/real-world.ts:106`), and its whole-body regex misread Hacker News
+- **Today**: only the harness detects walls (`verify/real-world.ts`), and its whole-body regex misread Hacker News
   comments as a wall (plans/LOG.md, 2026-10-18). The run spends its steps before stopping.
 - **Invariants**: none if reported as a `blocked` reason; keep the status set, which every suite matches on. Leave
   sign-in pages out (see [J2](#j2)): a hard login stop would break `verify:signup`.
@@ -161,7 +172,7 @@ These close items in README "Limits". Build [V1](#v1) first so each has an accep
 - **Idea**: aim the wheel at the largest visible scrollable area, or at the scroll box around a target; report a scroll
   that moved nothing.
 - **Seen in**: Ying-Kai-Liao `src/session.mjs:54-85`, `:586-614`.
-- **Today**: the wheel always goes to the centre column, lower half (`src/browser/tab.ts:398-405`): the "nested
+- **Today**: the wheel always goes to the centre column, lower half (`src/browser/tab.ts`): the "nested
   scrolling" gap. forvela's LinkedIn scroll script exists for the same reason.
 - **Invariants**: the point comes from DOM rects, never from the model.
 - **Jev request**: no. **Value**: high. **Effort**: ½ day.
@@ -173,7 +184,7 @@ These close items in README "Limits". Build [V1](#v1) first so each has an accep
   history; fall back if it closes.
 - **Seen in**: Ying-Kai-Liao `src/session.mjs:167-170`, `:182`; jkudish/jev-browser `src/navigate.ts:741-746`,
   `:1081-1086`.
-- **Today**: popup tabs are unsupported (`src/mcp.ts:36`).
+- **Today**: popup tabs are unsupported (`src/mcp.ts`).
 - **Notes**: in raw CDP, `Target.setDiscoverTargets` plus `targetCreated` filtered by `openerId` = our tab (in `auto`
   mode never follow the user's own tabs). The new tab needs the input-delivery counter and dialog handling installed
   before its scripts run; the confirmation state carries over; `jevway_end` and `keep_tab` need a rule for the
@@ -214,7 +225,7 @@ Vikunja.
   changed (value, checked, sorted), elements that only moved, URL change, and new text by a word-level diff.
 - **Seen in**: Ying-Kai-Liao `src/page-model.mjs:32-83`, fed in at `src/session.mjs:692`; its notes credit it with
   fixing add-item and drag done scores.
-- **Today**: history carries `page_changed` and `value_kept` only (`src/task/run-task.ts:633-639`); new text is shown
+- **Today**: history carries `page_changed` and `value_kept` only (`src/task/run-task.ts`); new text is shown
   only after risky or saving clicks, as `[Page message after …]`.
 - **Value**: high. **Effort**: 1 day plus verify runs.
 
@@ -246,7 +257,7 @@ Vikunja.
 - **Idea**: give `DONE_CHECK`, `COMMIT_RISK` and `ELEMENT_COMMIT_RISK` explicit `true`/`false` descriptions, as
   TypeSafe's guidance suggests. The installed SDK supports them.
 - **Seen in**: fastbrowse `docs/jev.md:14`, `:132-133`.
-- **Today**: `noul()` gets instructions only (`src/jev/decide.ts:252-257`).
+- **Today**: `noul()` gets instructions only (`src/jev/decide.ts`).
 - **Value**: med. **Effort**: 1 h plus verify runs (it touches the 0.3 and commit-risk baseline).
 
 <a id="j5"></a>
@@ -255,7 +266,7 @@ Vikunja.
 - **Idea**: the chosen option must be within 0.01 of the top probability; the sum tolerance scales with the number of
   non-zero options; failures get typed codes (`rate_limited`, `unavailable`, `invalid_distribution`).
 - **Seen in**: jkudish/jev-agent-tools `src/provider.ts:71-97`, `:158-163`.
-- **Today**: a fixed 0.02 sum tolerance and no check that the choice is the maximum (`src/jev/decide.ts:487-497`).
+- **Today**: a fixed 0.02 sum tolerance and no check that the choice is the maximum (`src/jev/decide.ts`).
 - **Notes**: count "Invalid TypeSafe answer" in existing traces before changing anything.
 - **Jev request**: no (validation only). **Value**: low. **Effort**: 1 h.
 
@@ -310,7 +321,7 @@ Vikunja.
   against page time.
 - **Seen in**: jkudish/jev-browser `src/navigate.ts:127-136`; jkudish/jev-agent-tools
   `src/transports/typesafe.ts:102-113`; jiawei686 `jev_ultrafast_mcp/server.py:617-620`.
-- **Today**: `jev` reports requests, input tokens, median latency and screenshots (`src/task/run-task.ts:56`).
+- **Today**: `jev` reports requests, input tokens, median latency and screenshots (`src/task/run-task.ts`).
 - **Jev request**: no. **Value**: low-med. **Effort**: 1–2 h.
 
 <a id="k6"></a>
@@ -319,7 +330,7 @@ Vikunja.
 - **Idea**: `jevway_look(session)` returns `page_text`, the listed elements and the URL, for checking a page or
   diagnosing a hand-back.
 - **Seen in**: jiawei686 `jev_ultrafast_mcp/server.py:246`, `:264`.
-- **Today**: `tab.observe()` exists (`src/browser/tab.ts:105`), but page text only comes back at the end of a
+- **Today**: `tab.observe()` exists (`src/browser/tab.ts`), but page text only comes back at the end of a
   `jevway_task`, and `verify:agent` gives the agent no way to look again.
 - **Invariants**: password fields stay filled/empty only. **Jev request**: no. **Value**: med. **Effort**: 2–3 h.
 
@@ -350,7 +361,7 @@ Vikunja.
   report cold and warm prompt-cache runs apart, cost with cache writes priced at the read rate, and Jev's spend added to
   the agent's. Hash the run config and refuse a baseline from a different one.
 - **Seen in**: wingman `README.md:9-17`, `:277-287`, `bench/run.ts:870-875`, `bench/CLAUDE.md`.
-- **Today**: `verify/agent.ts:453` records `total_cost_usd` only.
+- **Today**: `verify/agent.ts` records `total_cost_usd` only.
 - **Value**: high (the number that says whether jevway pays off). **Effort**: 1 day.
 
 <a id="v3"></a>
@@ -430,7 +441,7 @@ Vikunja.
 - **Idea**: staged runs: already done → replay a recorded run with no model calls → explore with Jev and record. Replay
   refuses weak or near-tied matches.
 - **Seen in**: jiawei686 `jev_ultrafast_mcp/macros.py:173-248` (tie margin at `:242`), `scripts/checkin.py:150-200`.
-- **Today**: journeys replay by exact label but take the first match (`src/journeys/journey-session.ts:459-472`); the tie
+- **Today**: journeys replay by exact label but take the first match (`src/journeys/journey-session.ts`); the tie
   refusal is worth taking there on its own.
 - **Conditions**: resolve each step on a fresh observation (jiawei686 resolves all steps up front, which breaks
   multi-page replays); store value keys, never values; a replayed risky click either asks the per-element risk question

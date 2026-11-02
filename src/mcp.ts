@@ -38,7 +38,7 @@ server.registerTool(
     // Drives any site, and can submit, pay or delete once the caller confirms.
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     description: `Hand a whole browser goal (navigate, search, fill forms, set filters, open a result) to TypeSafe Jev.
-Jev picks each click/type/select in ~200ms per step and returns ONE short summary, instead of you deciding every step.
+Jev picks each click/type/select in ~300ms per step and returns ONE short summary, instead of you deciding every step.
 Use it to REACH a page state. Use chrome-devtools tools to INSPECT it afterwards (same Chrome, the tab stays open; select it by url).
 
 - Start \`url\` on the page where the change is made (e.g. /owner/repo/milestones/new), not a parent page: Jev follows the links it sees, and a same-named global link can win. After a hand-back on the wrong page, fix \`url\`.

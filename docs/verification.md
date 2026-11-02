@@ -1,4 +1,56 @@
-# Verification (2026-09-17)
+# Verification
+
+How jevway is tested against real pages, and what the tests found. Every pass is judged against ground truth the run
+can't fake (the fixture's own state, the app's API, the URL), never by the status jevway returns alone.
+
+- [Latest results](#latest-results)
+- [Suites](#suites)
+- [Run history](#run-history)
+
+## Latest results
+
+The release gates and their history live in [plans/README.md](../plans/README.md). The latest measurement of each:
+
+| Gate | Suite | Target | Latest | Measured |
+| --- | --- | --- | --- | --- |
+| G1 page reader | `pnpm verify:reader` | 100%, no key | 58/58 in 22 s | 2026-10-16 (`1ddc592`) |
+| G3 hard page patterns | `pnpm verify:gotchas` (normal) | ≥ 95% | 30/30 | 2026-11-01 |
+| G4 under stress | `pnpm verify:gotchas` (slow, churn) | ≥ 90%, 0 crashes | 30/30 and 30/30 | 2026-10-16 (`1ddc592`) |
+| G5 bait and injection | `pnpm verify:redteam` | 0 violations | 0 violations | 2026-11-01 |
+| G6 a real app, repeated | `pnpm verify:langfuse` ×10 | ≥ 95% | 160/160 | 2026-10-16 (`1ddc592`) |
+| G7 a second app | `pnpm verify:grafana` | ≥ 80% | 24/24 | 2026-10-16 (`1ddc592`) |
+| R1 writes in a real app | `pnpm verify:forgejo` | ≥ 90%, nothing destructive unconfirmed | 30/33 | 2026-10-16 (`1ddc592`) |
+| R2 sign-up through email | `pnpm verify:signup` | ≥ 90% | 15/15 | 2026-10-16 (`1ddc592`) |
+| R3 checkout to the gate | `pnpm verify:checkout` | ≥ 90%, Finish never clicked unconfirmed | 18/18 | 2026-10-16 (`1ddc592`) |
+| R4 a real agent drives it | `pnpm verify:agent` | ≥ 80%, 0 unconfirmed deletions | 26/26 | 2026-10-16 (`1ddc592`) |
+| R5 phones | Langfuse and Grafana on an iPhone 15 layout | ≥ 80% / ≥ 90% | 47/48 and 23/24 | 2026-10-16 (`1ddc592`) |
+| R6 an app nothing was tuned on | `pnpm verify:vikunja` | ≥ 80% on the first ×3 | **not met:** 21/33 | 2026-11-01 |
+| R7 live public sites | `pnpm verify:real` | ≥ 90% of runs with no bot wall | **not met:** 17/21 | 2026-11-01 |
+
+On 2026-11-01, before the 0.1.0 release, `pnpm verify` passed 12/12 and `pnpm verify:capabilities` 36/36.
+
+## Suites
+
+Each live suite drives real Chrome with real Jev requests, so it needs a key in `.env` and spends credits; none runs in
+CI. Results go to `verify/out/` (gitignored).
+
+- `pnpm verify`: live, headless Chrome + real Jev; needs `TYPESAFE_API_KEY` (costs credits, about 30 s). `JEVWAY_MODEL=<profile>` runs it on another model via `OPENROUTER_API_KEY` (also Jev without `TYPESAFE_API_KEY`); `JEVWAY_VERIFY_MIN_CONFIDENCE` overrides the threshold for experiments
+- `pnpm verify:langfuse`: sixteen read-only jobs (an AI engineer's flows) in Langfuse's demo project from its home page, 3 runs each, recorded (video + described steps) into one `report.html`. Needs a Chrome signed in to cloud.langfuse.com on a debugging port (`JEVWAY_LANGFUSE_BROWSER`, default `http://127.0.0.1:9333`); `JEVWAY_LANGFUSE_RUNS`, `JEVWAY_LANGFUSE_ONLY` narrow it. A pass needs the page check **and** status `done`
+- `pnpm verify:real`: live public sites (Wikipedia, MDN, GitHub, Hacker News, npm, Booking.com, Airbnb, Google Flights), a fresh headless Chrome per run, 5 runs each; `JEVWAY_REAL_RUNS`, `JEVWAY_REAL_ONLY` narrow it. Bot walls are reported apart from failures, judged on the final page by the run's own detector (`src/browser/bot-wall.ts`)
+- `pnpm verify:checkout`: six shopper flows on SauceDemo (public practice shop; the harness starts each shopper run signed in (SauceDemo's session cookie, its published test account) and signs in on the login page only for `locked-out`, since jevway never lists password fields), a fresh headless Chrome per suite, 3 runs each, recorded into one `report.html`. `place-order` must end `needs_confirmation` on the overview, never on `/checkout-complete.html`; `missing-zip` and `locked-out` expect a hand-back. `JEVWAY_CHECKOUT_RUNS`, `JEVWAY_CHECKOUT_ONLY` narrow it
+- `pnpm verify:capabilities`: twelve local tasks in a fresh headless Chrome, 3 runs each: one per README "Limits" gap (a list in a nested scroll pane, infinite scroll in a pane, a link that opens a new tab, an upload through a hidden file input, a same-origin and a cross-origin iframe form), four that must be handed back (a disabled field, a missing option, a 404, a sign-in wall with no values) and two guards (signing in must not stop for confirmation; "Place order" must). The report leads with the false-done count (`done` while `window.__fixture` says otherwise), then guard violations; a task marked `gap` is reported as a known gap until its plan lands. `JEVWAY_CAPABILITIES_RUNS`, `JEVWAY_CAPABILITIES_ONLY` narrow it; `node verify/capabilities.ts --self-check` checks every judge without a model
+- `pnpm apps:forgejo:up` then `pnpm verify:forgejo`: eleven write jobs (labelled issue, comment, milestone, branch protection, plus two destructive jobs and one invalid name that must be handed back) on a throwaway Forgejo + Mailpit in Docker (compose project `jevway-forgejo`, ports 3311/8325/1325). Each run starts from a reseeded demo and is judged by Forgejo's API. Needs Docker and `TYPESAFE_API_KEY`; `JEVWAY_FORGEJO_RUNS`, `JEVWAY_FORGEJO_ONLY` narrow it; `JEVWAY_FORGEJO_CHECKS=1` passes the caller's `checks` on the five jobs whose ground truth shows on their final page (judging unchanged); `pnpm apps:forgejo:down` removes the stack and its data
+- `pnpm verify:signup`: five sign-up jobs on the same Forgejo + Mailpit (sign up and activate through the emailed link, plus a full-name step; a malformed email, a taken username and a password handed over must be handed back). The harness types password fields (jevway never lists them) and reads the mail; accounts are named `signup-…`. Judged by Forgejo's admin API. `JEVWAY_SIGNUP_RUNS`, `JEVWAY_SIGNUP_ONLY` narrow it
+- `pnpm apps:vikunja:up` then `pnpm verify:vikunja`: eleven jobs (a task, due date, label, done mark, priority, comment, move and a new project; an overdue task to open; a project deletion and a missing project that must be handed back) on a throwaway Vikunja in Docker (compose project `jevway-vikunja`, port 3312), signed in as grace, each run from a reseeded demo and judged by Vikunja's API. The held-back app: the job list was frozen before its first run and no rule was tuned on it, so never change a job after a run. `JEVWAY_VIKUNJA_RUNS`, `JEVWAY_VIKUNJA_ONLY` narrow it; `node verify/vikunja.ts --self-check` runs the checks without a model; `pnpm apps:vikunja:down` removes the stack and its data
+- `pnpm verify:agent`: Claude Code headless (`claude -p`, `JEVWAY_AGENT_MODEL`, default `sonnet`) is the calling agent, with only jevway's `jevway_task`, `jevway_end` and the read-only `jevway_look` over MCP, on eight chores (six on the Forgejo stack above, two read-only in the Langfuse demo through the Chrome on 9333) judged by the app's state, the recorded calls and the final answer. Three of them probe the consent rule (`confirm_irreversible` only for the action and target the request names): a named deletion, a look at the danger zone, a vague "tidy up"; an unnamed repository deleted stops the suite. Each confirm call is reported as honoured, not used (taken, but the call handed back a different control, which spends the confirmation without a click) or ignored (a flag is taken only on a session's first call or right after a `needs_confirmation`), with its `confirm_target`, whether the prompt contains it and whether jevway matched it; only honoured calls are judged. Spends Claude usage (a run stops at $2, the suite at `JEVWAY_AGENT_BUDGET_USD`, default 15); `JEVWAY_AGENT_RUNS` (default 1), `JEVWAY_AGENT_ONLY` narrow it. Hand-backs are reported per run. `report.html` lists each chore's runs, and per run every tool call in order (task, look, end, refused ones) with its arguments, confirm flag, target and verdict, and returned status, then the final answer and the judgement
+- `pnpm report:render <verify/out/folder>`: rebuilds a jobs suite's `report.html` (forgejo, signup, checkout, langfuse, grafana, vikunja) from its `results.json` and run folders, offline. The page opens on an overview (the pass rate with its 95% CI, every job as a row with its featured run's step shots, each shot linking to `#<job>-r<run>-s<step>`); a job's view (`#<job id>`) starts with that run's screencast (framed in the recording's own aspect, a phone one capped in height and centred), its steps on a timeline and a strip kept in sync, every run switchable, then the run's facts. Facts an older `results.json` lacks (model, screenshots) show as unknown. Given an agent folder it rebuilds `verify:agent`'s page (each chore's transcript of tool calls from its runs' `stream.jsonl`); given a run folder (`summary.json`), that run's `index.html`
+- `pnpm verify:replay <dir>`: replays recorded Jev answers through `pnpm verify`, `verify:gotchas`, `verify:redteam` and `verify:capabilities`, offline: no key is passed, nothing reaches a model. Record first with `pnpm verify:replay --record <dir>` (live, spends credits; refuses a folder that already holds recordings). It sets `JEVWAY_REPLAY` (`record` saves each answer next to its request, `replay` answers only from the recordings; unset is live) and `JEVWAY_REPLAY_DIR=<dir>/<suite>` (default `verify/out/replay/default`); both work on any suite or the MCP server directly (a replaying MCP server needs no key); `jevway doctor` never replays, and `--live` always reaches the real API. Recordings are one JSONL file per process (`src/jev/replay.ts`): a header with the profile and route (a replay resolves the same route with no key), then `{ key, model, request, answer }` lines; the key is the sha256 of the model id and the request with keys sorted, images left out and local fixture ports normalised. A request recorded twice replays its answers in order. A request never recorded is a miss: the run gets a `ReplayMiss` naming the goal, step and kind with a diff against the nearest recorded request, and a `replay miss:` line goes to stderr; a suite fails on a non-zero exit **or** any miss, since a suite can count a missed run as a safe hand-back. Gotchas replay the `normal` profile unless `JEVWAY_GOTCHAS_PROFILES` is set (`churn` and `slow` change pages with timing, so they miss by design), and `pnpm verify`'s live Wikipedia scenario misses too. `JEVWAY_REPLAY_ONLY` narrows the suites; latencies in replayed summaries are replay latencies. `node verify/replay.ts --self-check` records a scripted run (no model) on the stays fixture in headless Chrome and replays it on a fresh Chrome and port, expecting no miss and the same steps and fixture state. Forgejo, signup and checkout pages need CSRF tokens and times normalised before they can replay
+
+## Run history
+
+Dated logs, oldest first. A later section can supersede an earlier one; numbers are as measured at the time.
+
+### First live run (2026-09-17)
 
 Setup: headless Chrome 152 on macOS (arm64), model `jev-latest` (answered by jev-1.13.0), and `pnpm verify` run three times in a row after the fixes below. Every pass is checked against independent ground truth: the fixture's `window.__fixture` state, read over a separate CDP session, or the page's real URL. Jev's own DONE never counts as proof.
 
@@ -15,23 +67,23 @@ Result: **18/18 passed.** Median Jev latency per request was 256–564 ms (typic
 
 Extra check: the built CLI (`dist/cli.js`) on an unseen goal, Wikipedia → Rosetta Stone, finished `done` in 3.3 s (7 requests, done check 0.97).
 
-## Found by the first live run and fixed
+### Found by the first live run and fixed
 
 1. **Missing value surfaced as `blocked`.** Jev typed the name, then chose BLOCKED for the email. The speculative value heads already showed that no supplied value fit "Email address", so BLOCKED with such fields now returns `needs_input` naming them.
 2. **Premature DONE while results were loading.** Jev chose DONE on "Searching…", and the `done_when` check correctly scored it 0.08. A rejected DONE now waits 300 ms and re-decides, up to 3 times, instead of returning `uncertain`.
 3. Optional MCP/CLI arguments passed as `undefined` erased defaults, so `max_steps` became undefined.
 
-## Not covered yet
+### Not covered yet
 
 - The `auto` browser mode against a real, logged-in Chrome. It needs the user to approve remote debugging.
 - Only one real public site (Wikipedia). There are no heavy SPA sites like Google Flights, and no captcha or consent walls.
 - Thresholds are based on this small sample, not on a benchmark.
 
-## Decision models on OpenRouter (2026-10-11)
+### Decision models on OpenRouter (2026-10-11)
 
 Setup: headless Chrome on macOS (arm64). Every model is reached through OpenRouter's `/api/v1/systemone` with the same TypeSafe SDK; images go in as `image_url` parts at the front of a `state` array. Each cell is **one run**. Every row checks the same ground truth as above.
 
-### Probe (one Airbnb screenshot with a cookie wall)
+#### Probe (one Airbnb screenshot with a cookie wall)
 
 | `JEVWAY_MODEL` | OpenRouter id | Image | One-option choice | Notes |
 | --- | --- | --- | --- | --- |
@@ -44,7 +96,7 @@ Setup: headless Chrome on macOS (arm64). Every model is reached through OpenRout
 
 Images cost 360–1,000 input tokens. Requests cost $0.000006–$0.0001 each.
 
-### What the non-Jev models needed
+#### What the non-Jev models needed
 
 1. **No one-option choices.** A lone target is now picked directly instead of asked about. Jev passed 6/6 with this change on `typesafe/jev-1.13` via OpenRouter. Direct `jev-latest` (the September baseline) was not re-run.
 2. **Per-element commit risk.** The page-level `commit_risk` head asks about "the click that best advances the goal". Clef-omni scored the real "Confirm and pay" 0.065 on it, and the journey autopilot paid. Every model except Jev now gets one follow-up request that asks about each click candidate by name: the chosen click in `jevway_task`, the top 12 ranked taps in the autopilot. An unscored or malformed answer counts as risky.
@@ -52,7 +104,7 @@ Images cost 360–1,000 input tokens. Requests cost $0.000006–$0.0001 each.
 4. **Flat rules for Clef-omni.** On the fixture's autocomplete step, `NEXT_ACTION` gives SELECT 0.58 / CLICK 0.29, while the 3-line `NEXT_ACTION_COMPACT` gives CLICK 0.62.
 5. **No boxes on covered elements.** Elements under a popover get no box.
 
-### `pnpm verify` (6 scenarios), each profile's settings
+#### `pnpm verify` (6 scenarios), each profile's settings
 
 | Model | Screenshots off | `always` | Median request |
 | --- | --- | --- | --- |
@@ -69,7 +121,7 @@ Failure modes behind those numbers:
 - **`clef-flash`:** flags "Book now" as irreversible (0.66–0.74). With `always` it stalls as `blocked`.
 - **`gpt-6-luna`:** the API refuses its `select_target` and `click_target` questions with HTTP 502 ("OpenAI refused to answer question …") on most pages, and SDK retries don't recover.
 
-### `pnpm verify:journeys` (8 scenarios)
+#### `pnpm verify:journeys` (8 scenarios)
 
 | Model | Result | Intent autopilot stops before paying |
 | --- | --- | --- |
@@ -79,17 +131,17 @@ Failure modes behind those numbers:
 
 Before per-element risk, `clef-omni` with screenshots off paid in this scenario.
 
-### Still open
+#### Still open
 
 - **Fallback traces.** In `fallback`, only the screenshot-backed decision is recorded in the trace, while `jev.requests` counts both. `fallback` hasn't been measured beyond Clef-omni, where it couldn't trigger well.
-- **Errors end the session.** A non-`StalePage` error from `tab.act` ("Dropdown execution was not confirmed"), or an API refusal, ends the run instead of handing back `blocked`.
+- **Errors end the session.** (Fixed since: the loop now ends `blocked` with "Browser error: …" or "Model error: …".) A non-`StalePage` error from `tab.act` ("Dropdown execution was not confirmed"), or an API refusal, ends the run instead of handing back `blocked`.
 - **Jev's autopilot gate.** Jev keeps the page-level commit-risk head, so its autopilot still checks only the top-ranked tap. Jev passed the journeys run 8/8, but a lower-ranked irreversible tap isn't scored.
 - **Screenshots go out twice.** The per-element risk follow-up reuses the decision's `state`, so in `always` mode each click step sends the screenshot twice. That's why `pplx-decider` used 65k tokens on the fixture with `always` and 34k with screenshots off.
 - **One run per cell.** Settings other than Jev's are tuned on these runs and should be re-checked on real sites.
 
-## Jev 1.14 with images (2026-10-15)
+### Jev 1.14 with images (2026-10-15)
 
-Jev 1.14 is served on OpenRouter as `typesafe/jev-1.14-20261014`. The `jev` profile now uses it on OpenRouter; with `TYPESAFE_API_KEY` set, `jev` stays text-only on `jev-latest`. These runs used a separate `jev-1.14` profile with identical settings, before it replaced 1.13 in `jev`.
+Jev 1.14 is served on OpenRouter as `typesafe/jev-1.14-20261014`. The `jev` profile now uses it on OpenRouter; with `TYPESAFE_API_KEY` set, `jev` stays text-only on `jev-latest` (superseded the same day: the next section moves the direct route to `jev-1.14.0` with images and Box). These runs used a separate `jev-1.14` profile with identical settings, before it replaced 1.13 in `jev`.
 
 **Image input.** TypeSafe's native image format (an `assets` map with the `TypeSafe-Danger-Zone-Images` header) does not survive OpenRouter: the map is dropped. Requests the docs say must fail (an unreferenced asset, invalid base64) returned 200, and token counts matched with and without the image. OpenRouter's own `image_url` parts at the front of a `state` array do work. On "what color is the Accept all button?" Jev 1.14 put P(black) at 1.0, using about 1,000 tokens per image, with or without the header. The direct TypeSafe route would need the `assets` format and SDK 0.7.0, which isn't wired up.
 
@@ -102,7 +154,7 @@ Jev 1.14 is served on OpenRouter as `typesafe/jev-1.14-20261014`. The `jev` prof
 
 The `always` misses were all the same case. Jev reached Casa Flora correctly, but with the screenshot attached its `done_when` check scored 0.35–0.46, against the 0.5 bar. Text-only, that check passes. This matches TypeSafe's note that multimodal is weaker than text, and it is why `fallback` is the default. Screenshots also picked up visual journey patterns (`bottom_navigation`) that the text-only run missed.
 
-## Jev 1.14 on the TypeSafe API: assets, Box, and real sites (2026-10-15)
+### Jev 1.14 on the TypeSafe API: assets, Box, and real sites (2026-10-15)
 
 Setup: `jev-1.14.0` on the TypeSafe API with SDK 0.7.0. Screenshots go in as an `assets` image under `state.screenshot`, with `TypeSafe-Danger-Zone-Images: true`. Headless Chrome on macOS (arm64).
 
@@ -127,7 +179,7 @@ Through OpenRouter, the same Jev model had answered the colour question at chanc
 
 **`pnpm verify:journeys`, direct route:** 8/8 with screenshots off and 8/8 with `always`. Primary-action boxes land on the expected controls ("Confirm and pay" 0.83 on checkout, "Where to?" on home). There were no `control_not_in_dom` findings, as expected: the fixture has no canvas controls.
 
-### Real sites (`pnpm verify:real`, 5 runs each)
+#### Real sites (`pnpm verify:real`, 5 runs each)
 
 A fresh headless Chrome per run, with ground truth from the final URL. Bot walls don't count.
 
@@ -171,14 +223,14 @@ On real sites Box is a safety net, not a measured success gain. Its clear win is
 - A target counts as covered below 0.1 visibility *and* below 0.1 box overlap. Dense calendar grids scored 0.15–0.3 visibility while plainly visible.
 - `done_when` evidence ends the task at ≥ 0.9.
 
-### Still open
+#### Still open
 
 - **Booking.com is 0/5 in every mode.** It is A/B-tested between "Search in your own words" and "Enter destination", its calendar opens below the fold of a 780 px viewport, and it served a `chal_t=` challenge on 2 of 15 runs. Runs either stall at low confidence or hit the step budget.
 - **npm** blocks headless Chrome with Cloudflare. In visible (non-headless) Chrome the search reached `/package/zod`, but the challenge was served there too.
 - **Navigation errors end a run.** Google Flights' one failure was "Page did not settle within 1s" while opening the tab.
 - **Each cell is 5 runs on one machine and one network.** Sites change their layouts.
 
-## Langfuse in a signed-in browser, and wide table rows (2026-10-15)
+### Langfuse in a signed-in browser, and wide table rows (2026-10-15)
 
 Task: open the most recent trace in Langfuse's public demo project (`cloud.langfuse.com`, signed in) and show its input, output and observation tree. It's read-only.
 
