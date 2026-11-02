@@ -19,6 +19,8 @@ import {
   type ScreenJudgments,
   type VisitedScreen,
 } from './screen-judgments.ts';
+import { screenFileName } from '../output/layout.ts';
+import { writeManifest } from '../output/manifest.ts';
 import { outsideHosts, type HostRules } from '../task/hosts.ts';
 
 const EXPLORE_GOAL = `Explore this site the way a first-time mobile visitor would, one screen at a time.
@@ -75,7 +77,7 @@ export type ScreenReport = ReturnType<JourneySession['report']>;
  * journey.report();                                   // screen s01 + Jev's suggested next tap
  * await journey.step({ next: 4, flow: 'Search', insight: 'Search is a full-screen sheet' });
  * await journey.autopilot({ screens: 5, flow: 'Search/Results' });
- * journey.finish();                                   // → journey.json, index.html, screens/*.png
+ * journey.finish();                                   // → journey.json, index.html, manifest.json, screens/s01-home.png …
  */
 export class JourneySession {
   readonly doc: JourneyDoc;
@@ -396,7 +398,7 @@ export class JourneySession {
     if (existing) {
       mergeFindings(this.#screen(existing).qa, findings);
     } else {
-      const screenshot = `screens/${id}.png`;
+      const screenshot = screenFileName(id, judgments.type);
       writeFileSync(join(this.outDir, screenshot), Buffer.from(await this.#tab.screenshot(), 'base64'));
       this.doc.screens.push({
         id,
@@ -513,6 +515,7 @@ export class JourneySession {
     this.doc.flows = buildFlows(this.doc.steps);
     writeFileSync(join(this.outDir, 'journey.json'), JSON.stringify(this.doc, null, 2));
     writeFileSync(join(this.outDir, 'index.html'), renderViewer(this.doc));
+    writeManifest(this.outDir, 'journey');
   }
 }
 
