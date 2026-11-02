@@ -23,7 +23,7 @@ body:
     id: summary
     attributes:
       label: The summary jevway returned
-      description: At least `status`, `reason`, `url` and `steps`. Remove anything private from `page_text`.
+      description: At least `status`, `reason`, `story` and `url`; the full result (`detail` set to `"full"`, CLI `--detail full`) when the steps' confidences matter. Remove anything private from `page_text`.
       render: json
   - type: textarea
     id: doctor
@@ -37,7 +37,8 @@ body:
     id: version
     attributes:
       label: jevway version
-      placeholder: "0.1.2"
+      description: The output of `npx jevway --version`.
+      placeholder: "npx jevway --version"
     validations:
       required: true
   - type: dropdown

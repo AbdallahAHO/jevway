@@ -2,7 +2,7 @@ node_modules
 dist
 .env
 verify/out
-/journeys/
+.jevway/
 .DS_Store
 .vitest/
 plans/
