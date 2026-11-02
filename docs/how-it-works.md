@@ -69,7 +69,7 @@ A **session** is one `BrowserTask`, starting on one tab. Each `jevway_task` call
 
 ### 1.1 The MCP adapter
 
-`src/mcp.ts` is the `jevway-mcp` entry: it loads `~/.config/jevway/env`, makes the runner and one session service, and serves `createMcpServer` (`src/mcp/server.ts`) through `serveStdio`. That builds a server per connection (twice when a 2026-07-28 probe falls back to `initialize`), so a server holds nothing: the sessions stay in the one service. The adapter translates and decides nothing about a run.
+`src/mcp.ts` is the MCP server's entry, started by the `jevway-mcp` bin or by `jevway mcp` (the main CLI importing it): it loads `~/.config/jevway/env`, makes the runner and one session service, and serves `createMcpServer` (`src/mcp/server.ts`) through `serveStdio`. That builds a server per connection (twice when a 2026-07-28 probe falls back to `initialize`), so a server holds nothing: the sessions stay in the one service. The adapter translates and decides nothing about a run.
 
 - **In.** Tool parameters become a `TaskRequest`. `checks` are advertised as a loose list (the full union would cost about 580 tokens of every tool list) and parsed strictly with `CHECKS` when the call arrives. A `jevway_task` with none of `url`, `tab` and `session` is refused with an example before any browser work.
 - **Out.** `presentSummary` (concise, or `detail: "full"`) whose keys lead with `status`, `reason`, `story`, `next`, `session` and end with `page_text` (the order the CLI shares), sent as one JSON text block and as the same object in `structuredContent`. Each `outputSchema` lists top-level fields and leaves every object open, so a field added later never fails a client's validation. After the JSON come the end page as an `image/jpeg` block when `attachesEndPage` (`src/mcp/results.ts`) says so (`JEVWAY_IMAGE_RESPONSES`, a hand-back status, or `screenshot: true`), then `resource_link`s with `file://` URIs to the run folder's files.
@@ -383,6 +383,16 @@ The six statuses are `TaskStatus` in `src/task/run-task.ts`. "Overridable" means
 
 Every summary that is not `done` and stopped on a decision carries `stuck`.
 
+### 8.1 Asking the user
+
+`presentSummary` adds `ask_user` (`src/task/ask-user.ts`) right after `next` on a hand-back that needs a person:
+`needs_input` with `missing`, `needs_confirmation`, `uncertain` with 2 or more distinct candidates, and a `blocked`
+wall. It is a question in the shape agents' ask tools take (`question`, `header`, 2–4 `options`, free-text `fields`,
+and `then`, what to do with the answer). It is built from the scrubbed summary only and quotes only control labels, the
+page title and the URL (one line, at most 60 characters, no backticks or double quotes), never page prose. Its `then`
+never pre-fills `confirm_target` from the page: consent words come from the person. On a headless wall it offers a
+visible browser instead of "Done". `done`, `step_budget` and every other `blocked` carry none.
+
 ## 9. Boundaries
 
 ### 9.1 Hosts
@@ -447,7 +457,7 @@ An input already under way is never aborted; it finishes and is reported. A sess
 
 The runner knows the browser source, so it tells each task whether a person can see it (`person.visible`: false for `launch-headless` and for a Chrome whose `Browser.getVersion` user agent says `HeadlessChrome`) and the call's wait (`waitForPersonSeconds`: the call's, else `JEVWAY_PERSON_WAIT_SECONDS`, else 120). A task built without the runner waits 0. Three walls get the wait, each once per call: a bot check after its 8 s, a sign-in wall where section 9.4 would end the run, and an SSO page (an identity provider's sign-in URL carrying another site's OAuth or SAML request), checked before a decision like the bot wall.
 
-The wait brings the tab forward, sends one desktop notification (`src/notify/`: the words come from the wall's kind, host and name only), tells a countdown through `run({ onWait })` at once and every 10 s, and reads the page every second with `observe()`. It asks Jev nothing and sends no input. A bot check is passed on the first read the detector rejects; a sign-in or SSO page on two reads in a row that are clearly past it (`stillSigningIn`: no password field, not the wall's page still listing its fields, not a sign-in path, not an SSO page). Tabs the page opens while it waits are dropped, never followed. Passed adds one `WAIT_FOR_PERSON` step ("A person passed the Cloudflare check") that Jev sees in `recent_actions`, and the loop goes on. Ran out ends `blocked` with the wall plus `waited_seconds`. A cancel or the time budget ends it as everywhere else. Every wall carries `person_can_act`.
+The wait brings the tab forward, sends one desktop notification (`src/notify/`: the words come from the wall's kind, host and name only), tells a countdown through `run({ onWait })` at once and every 10 s, and reads the page every second with `observe()`. It asks Jev nothing and sends no input. A bot check is passed on the first read the detector rejects; a sign-in or SSO page on two reads in a row that are clearly past it (`stillSigningIn`: no password field, not the wall's page still listing its fields, not a sign-in path, not an SSO page). Tabs the page opens while it waits are dropped, never followed. Passed adds one `WAIT_FOR_PERSON` step ("A person passed the Cloudflare check") that Jev sees in `recent_actions`, and the loop goes on. Ran out ends `blocked` with the wall plus `waited_seconds`. A cancel or the time budget ends it as everywhere else. Every wall carries `person_can_act`: false when headless, where the reason says a visible browser is needed and `ask_user` offers one (section 8.1). With no wait (headless, or a wait of 0) reasons are as before, and a headless SSO page is left to Jev. The SSO providers are `accounts.google.com`, `appleid.apple.com`, `login.microsoftonline.com` and `login.live.com`, counted only with another site's `client_id` and `redirect_uri`, or a `SAMLRequest`.
 
 ## 10. Box
 
@@ -533,16 +543,18 @@ An unrecorded request is a miss: it throws `ReplayMiss` naming the goal, step an
 
 | File | Responsibility |
 | --- | --- |
-| `src/mcp.ts` | `jevway-mcp` entry: env file, runner, one session service, `serveStdio`. |
-| `src/mcp/` | The MCP adapter: `server.ts` (tool set and order, instructions), `task-tools.ts` and `journey-tools.ts` (schemas, handlers, progress), `results.ts` (result JSON, the image rule, `resource_link`s), `instructions.ts`. |
+| `src/mcp.ts` | MCP server entry (`jevway-mcp`, or `jevway mcp`): env file, runner, one session service, `serveStdio`. |
+| `src/mcp/` | The MCP adapter: `server.ts` (tool set and order, instructions), `task-tools.ts`, `journey-tools.ts` and `inbox-tools.ts` (schemas, descriptions, handlers, progress), `results.ts` (result JSON, the image rule, `resource_link`s), `instructions.ts`. |
+| `src/cli/` | CLI entry (`main.ts`, `dispatch.ts`): one module per command, flags with did-you-mean (`flags.ts`), help, one JSON document on stdout, NDJSON events on stderr. |
+| `src/daemon/` | The CLI's session daemon: auto-started, one local socket, newline-delimited JSON `protocol.ts`, sessions kept between commands. |
 | `src/session/session-service.ts` | Transport-free sessions and journeys: ids, folders, waiting on a running call, events, errors. |
-| `src/output/` | The output root, folder and file names, slugs, `manifest.json`, what a call leaves in its run folder. |
-| `src/task/present.ts` | A summary as the caller reads it: `story`, `next`, concise or full. |
-| `src/cli/` | CLI: one module per command, flags with did-you-mean, help, one JSON document on stdout, NDJSON events on stderr. |
-| `src/daemon/` | The CLI's session daemon: auto-started, one local socket, sessions kept between commands. |
-| `src/inbox/` | The disposable inbox: provider calls and fallback, polling, code and link extraction, the in-memory registry, the one-shot CLI's env file. |
-| `src/task/start-task.ts` | Runner: key check, browser connection, opening tabs, host check on the start URL. |
+| `src/output/` | The output root, folder and file names, slugs (`layout.ts`), `manifest.json` (`manifest.ts`), what a call leaves in its run folder (`run-folder.ts`). |
+| `src/task/start-task.ts` | Runner: key check, browser connection, whether a person can see it, opening tabs, host check on the start URL. |
 | `src/task/run-task.ts` | The loop, hand-back rules, guards, confirmation, checks and evidence settling, statuses. |
+| `src/task/person-wait.ts` | SSO pages, "still signing in", and the wait for a person at a wall. |
+| `src/task/ask-user.ts` | The `ask_user` question on a hand-back that needs a person. |
+| `src/task/present.ts` | A summary as the caller reads it: `story`, `next`, `ask_user`, concise or full. |
+| `src/task/totp.ts` | Authenticator secrets: parsing, checking, RFC 6238 codes. |
 | `src/task/checks.ts` | Caller checks evaluated on the final page. |
 | `src/task/evidence.ts` | Span cutting and the `#:~:text=` deep link. |
 | `src/task/hosts.ts` | Host patterns, narrowing layers, the outside test. |
@@ -550,20 +562,26 @@ An unrecorded request is a miss: it throws `ReplayMiss` naming the goal, step an
 | `src/task/upload-files.ts` | Declared file checks, `https` URL fetches (public addresses only, ≤ 3 redirects, 50 MB) and names shown to the model. |
 | `src/browser/downloads.ts`, `src/task/downloads.ts` | Download behaviour per browser source, which tab a download belongs to, keeping a finished one in the run folder. |
 | `src/task/look.ts` | `jevway_look`: a read with no model call and no ids. |
-| `src/recording/recording.ts`, `src/recording/recording-page.ts` | The human record and its page. |
+| `src/notify/` | What jevway tells a person at a wall (`person-messages.ts`: wall kind, host and name only) and the desktop notifier (`desktop.ts`). |
+| `src/inbox/` | The disposable inbox: provider calls and fallback (`mail-api.ts`), polling (`inbox.ts`), code and link extraction (`message.ts`), the in-memory registry, the one-shot CLI's env file. |
+| `src/recording/` | The human record (`recording.ts`), the step wording the story shares (`describe-step.ts`), a run's `index.html` (`run-page.ts`) and the page design every report shares (`recording-page.ts`). |
 | `src/jev/decide.ts` | Request shape, heads, follow-ups, answer validation, rescue candidates, evidence request. |
 | `src/jev/action-space.ts` | Observed ids and per-operation target sets. |
 | `src/jev/instructions.ts` | Every instruction text sent to the model. |
 | `src/jev/model.ts` | Profiles, thresholds, routes, screenshot modes, prices. |
 | `src/jev/box.ts` | Box edges to viewport rects to observed ids. |
 | `src/jev/secrets.ts` | Secret markers and the scrubber. |
-| `src/jev/replay.ts` | Record and replay of model answers. |
+| `src/jev/replay.ts`, `src/jev/retry.ts` | Record and replay of model answers; the journeys' retry of a busy API. |
 | `src/browser/tab.ts` | One tab: observe, freshness, input, dialogs, new tabs, screenshots. |
-| `src/browser/snapshot.js` | In-page reader: controls, text, guards, scroll offers. |
+| `src/browser/snapshot.js` | In-page reader: controls, text, guards, scroll offers. Vendored from jev-ultrafast; keep it diffable. |
+| `src/browser/code-boxes.ts` | Grouping a code split into one-character boxes into one field. |
 | `src/browser/frames.ts` | Frame discovery, placement, isolated-world reads. |
-| `src/browser/chrome.ts`, `src/browser/cdp.ts` | Chrome connect or launch; the CDP connection. |
+| `src/browser/chrome.ts`, `src/browser/cdp.ts` | Chrome connect or launch; the CDP connection over the global WebSocket. |
 | `src/browser/bot-wall.ts` | Bot wall detection. |
 | `src/browser/words.ts` | Word matching for `confirm_target` and confirm dialogs. |
 | `src/browser/devices.ts` | Emulated devices. |
-| `src/journeys/` | Journey session, screen judgments, Box hotspots, autopilot policy, viewer. |
-| `src/setup/` | `~/.config/jevway/env` loading and `jevway doctor`. |
+| `src/journeys/` | Journey session, screen judgments, Box hotspots and missing-from-DOM QA (`screen-boxes.ts`), autopilot policy, viewer. |
+| `src/setup/` | The env file (`env-file.ts`: loading fills only unset keys, `CHROME_PATH` and `JEVWAY_*`; writing a line, mode 600), `jevway doctor`, `jevway setup` (`clients.ts`: each MCP client's detection, registration and skills folder; `setup-wizard.ts`: the interactive steps; whole-file writes), and `jevway skill`. |
+| `release/` | `state.ts` decides the next release step from main, npm, CI and the release PR (pure); `release.ts` is the `pnpm release*` CLI. |
+| `skill/`, `.claude-plugin/` | The agent-facing skills (`jevway`, and the standalone `jevway-inbox` script) and the Claude Code plugin that brings the server and `skill/jevway`. |
+| `verify/` | Live suites, fixtures, Docker apps (`verify/apps/`), the shared jobs runner and report (`verify/jobs/`) and the agent suite (`verify/agent/`); see [verification.md](verification.md#suites). |

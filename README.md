@@ -127,6 +127,8 @@ Having an agent install it? `npx -y jevway setup --client <claude-code|codex|cur
 exact command or config for that client and changes nothing. [SETUP.md](SETUP.md) has the
 steps per client, the rules (a diff before any config edit, no key in the chat) and the checks.
 
+jevway is also listed in the official MCP Registry as `io.github.abdallahaho/jevway`, for clients that install from it.
+
 **Choosing a browser** (`JEVWAY_BROWSER` in the server's env or the env file):
 
 | Value | Uses |
@@ -213,6 +215,8 @@ jevway keeps the person in the loop only where a person is truly needed, and han
   ("Pass the Cloudflare check in the Chrome window"), waits up to 120 s while it tells the agent how long is left,
   and carries on in the same call once you're through. It never tries to get past a check itself. In a headless
   browser it hands back and suggests a visible one.
+- **Codes split into boxes.** A verification code drawn as 4–8 one-character boxes is read as one field and typed one
+  character per box.
 - **Email codes for test sign-ups.** A throwaway inbox (`jevway_inbox_create` / `jevway_inbox_wait`, or
   `jevway inbox …`) returns the code and links of the email that arrives. Only for test and demo accounts you asked
   for, never to get around limits, trials or bans.
@@ -291,7 +295,7 @@ offline test suite (no API key needed) and the conventions. Report security issu
 ## License
 
 MIT. The task loop, DOM snapshot and guards build on [browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast)
-(MIT; see [LICENSE.jev-ultrafast](LICENSE.jev-ultrafast)).
+(MIT; its notice is in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 
 jevway was called jev-browse until 0.1.0. Its old tool names (`browser_task`, `browser_look`, `browser_task_end`,
 `journey_*`) and `JEV_*` environment variables no longer work.

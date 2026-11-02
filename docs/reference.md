@@ -7,6 +7,7 @@ inside, see [how-it-works.md](how-it-works.md). For the journey tools, see [jour
   - [Parameters](#parameters)
   - [The result](#the-result)
   - [Statuses](#statuses)
+  - [Asking the user](#asking-the-user)
   - [Confirming an irreversible click](#confirming-an-irreversible-click)
   - [Checks](#checks)
   - [Evidence](#evidence)
@@ -14,6 +15,7 @@ inside, see [how-it-works.md](how-it-works.md). For the journey tools, see [jour
   - [Authenticator codes](#authenticator-codes)
   - [Codes split into boxes](#codes-split-into-boxes)
   - [Hosts](#hosts)
+  - [Waiting for a person](#waiting-for-a-person)
   - [Recording](#recording)
 - [Output folder](#output-folder)
   - [Concise and full results](#concise-and-full-results)
@@ -26,7 +28,10 @@ inside, see [how-it-works.md](how-it-works.md). For the journey tools, see [jour
 - [CLI](#cli)
   - [The daemon](#the-daemon)
   - [`jevway inbox`](#jevway-inbox)
+- [`jevway setup`](#jevway-setup)
 - [`jevway doctor`](#jevway-doctor)
+- [`jevway skill`](#jevway-skill)
+- [`jevway mcp`](#jevway-mcp)
 - [Environment variables](#environment-variables)
 - [Models](#models)
 - [Limits](#limits)
@@ -521,7 +526,8 @@ Every tool carries MCP annotations for clients that ask before a call:
 
 ## MCP server
 
-`jevway-mcp` serves the tools over stdio to 2025-era clients (`initialize`) and 2026-07-28 clients alike.
+`jevway-mcp` (or `jevway mcp`, the same server) serves the tools over stdio to 2025-era clients (`initialize`) and
+2026-07-28 clients alike. It is listed in the official MCP Registry as `io.github.abdallahaho/jevway`.
 
 - **Instructions.** The server sends `instructions` (1,608 characters, at most 1,610; Claude Code shows them upfront and
   searches them): what jevway is for, `jevway_task` versus chrome-devtools, continuing with `session` after a hand-back, the
@@ -549,7 +555,8 @@ Every tool carries MCP annotations for clients that ask before a call:
 
 For agents without MCP, and for people. Every command prints exactly one JSON document on stdout: the result,
 `{ "ok": true, … }`, or `{ "ok": false, "error": { "code", "message", "hint" } }`. stderr carries only NDJSON progress
-events. Only `--help`, `--version` and the text modes of `doctor`, `setup` and `skill` print text. The CLI never prompts
+events. Only `--help`, `--version` and the text modes of `doctor`, `setup` and `skill` print text, and `mcp` speaks the MCP
+protocol. The CLI never prompts
 (`jevway setup` asks questions only in a terminal). No Node stack trace reaches either stream.
 
 ```bash
@@ -577,6 +584,7 @@ jevway stop
 | `end <id> [--keep-tab]` | [`jevway_end`](#jevway_end) (a journey id finishes the journey): `{ session, run_dir }`. |
 | `serve [--idle-timeout 1h]` | The daemon in the foreground. |
 | `stop` | Stops the daemon: `{ stopped: true, ended }`, or `{ stopped: false }`. |
+| `mcp` | The MCP server on stdio, the same as the `jevway-mcp` bin. See [`jevway mcp`](#jevway-mcp). |
 | `doctor`, `setup`, `skill`, `help [command]` | See below. `jevway help <command>` equals `jevway <command> --help`. |
 
 `run` flags mirror `jevway_task` in kebab-case:
@@ -736,6 +744,17 @@ env files have the same `ADDR=`/`PASS=`/`API=` lines as `jevway inbox`'s, so eit
 folder for either skill (or a symlink) is left as it is and nothing is copied: exit 1 with `"code": "skill_exists"`
 naming it, unless `--force` is given, which replaces it (a symlink is removed, never its target). `jevway setup`
 installs only `jevway`: its server has the inbox built in.
+
+## `jevway mcp`
+
+```bash
+npx -y jevway mcp                                  # the MCP server on stdio
+claude mcp add jevway -- npx -y jevway mcp         # register it under the main package name
+```
+
+Runs the MCP server on stdio, the same server as the `jevway-mcp` bin, until its client closes stdin. An MCP client or
+registry starts it; you don't run it by hand. `jevway setup` and `--client <name> --print` still register
+`npx -y -p jevway jevway-mcp`, which works the same.
 
 ## Environment variables
 
