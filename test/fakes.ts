@@ -1,6 +1,9 @@
 import { PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
 import type { Ask } from '../src/jev/decide.ts';
+import { BrowserTask } from '../src/task/run-task.ts';
+import type { Runner, StartOptions } from '../src/task/start-task.ts';
+import { vi } from 'vitest';
 
 export const NAME_RECT = { x: 20, y: 100, w: 350, h: 40 };
 export const PAY_RECT = { x: 20, y: 700, w: 350, h: 48 };
@@ -222,4 +225,50 @@ export const fakeTab = (pages: PageState[] = [page()]) => {
     },
   };
   return { tab, acted, asTab: tab as unknown as Tab };
+};
+
+/**
+ * A runner whose tasks are real `BrowserTask`s on fake tabs, driven by `ask` (a scripted Jev by default): no browser and
+ * no key. Journeys are stubs that report fixed screens.
+ */
+export const fakeRunner = ({ ask, pages }: { ask?: Ask; pages?: PageState[] } = {}) => {
+  const decide = ask ?? scriptedJev([{ operation: 'CLICK', click_target: '1' }, { operation: 'DONE' }]).ask;
+  const tabs: ReturnType<typeof fakeTab>['tab'][] = [];
+  const started: StartOptions[] = [];
+  const runner = {
+    requireKey: vi.fn(),
+    start: vi.fn(async (options: StartOptions) => {
+      started.push(options);
+      const { url: _url, tab: _tab, confirmIrreversible, confirmTarget, allowedHosts: _allowed, blockedHosts: _blocked, ...taskOptions } = options;
+      const fake = fakeTab(pages ?? [page({ fingerprint: 'a' }), page({ fingerprint: 'b', url: 'http://fixture/stays/2' })]);
+      tabs.push(fake.tab);
+      const task = new BrowserTask(fake.asTab, decide, { changeWaitMs: 0, ...taskOptions });
+      task.update({ confirmIrreversible, confirmTarget });
+      return task;
+    }),
+    look: vi.fn(async ({ url, tab }: { url?: string; tab?: string }) => page({ url: url ?? `http://fixture/${tab}`, text: 'Looked at' })),
+    startJourney: vi.fn(async (options: { outDir: string; startUrl: string }) => ({
+      report: () => ({ screen: { id: 's01', url: options.startUrl, screenshot: `${options.outDir}/screens/s01-home.png` } }),
+      preview: async () => 'PREVIEW',
+      step: async () => ({ screen: { id: 's02' } }),
+      autopilot: async () => ({ stopped: 'checkpoint', screen: { id: 's03' } }),
+      annotate: vi.fn(),
+      finish: vi.fn(async () => ({ screens: 3 })),
+    })),
+    close: vi.fn(async () => undefined),
+  };
+  return { runner: runner as unknown as Runner & typeof runner, tabs, started };
+};
+
+/** An `Ask` that answers only once `release()` is called, or never when the call is stopped first. */
+export const gatedAsk = (inner: Ask) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const asked: unknown[] = [];
+  const ask: Ask = async (request, options) => {
+    asked.push(request);
+    await gate;
+    return inner(request, options);
+  };
+  return { ask, release, asked };
 };
