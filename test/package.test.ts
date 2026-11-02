@@ -52,3 +52,24 @@ describe('the Claude Code plugin', () => {
     expect(readFileSync(new URL('../skill/jevway/SKILL.md', import.meta.url), 'utf8')).toMatch(/^---\nname: jevway\n/);
   });
 });
+
+describe('releases', () => {
+  const config = json('release-please-config.json');
+  const root = config.packages['.'];
+
+  it('start from the published version, so the next release PR bumps from it', () => {
+    expect(json('.release-please-manifest.json')).toEqual({ '.': pkg.version });
+  });
+
+  it('bump both plugin manifests with package.json, so the plugin never points at an older version', () => {
+    expect(root['extra-files']).toEqual([
+      { type: 'json', path: '.claude-plugin/plugin.json', jsonpath: '$.version' },
+      { type: 'json', path: '.claude-plugin/marketplace.json', jsonpath: '$.plugins[0].version' },
+    ]);
+  });
+
+  it('bump the minor for a feat or a breaking change until 1.0, and tag as v<version>', () => {
+    expect(root).toMatchObject({ 'release-type': 'node', 'bump-minor-pre-major': true, 'bump-patch-for-minor-pre-major': false });
+    expect(config['include-component-in-tag']).toBe(false);
+  });
+});
