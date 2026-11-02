@@ -21,7 +21,7 @@ The technical specification of jevway, taken from the code. Every number below i
 
 ## 1. Overview
 
-jevway is an MCP server (`jevway-mcp`, `src/mcp.ts`) and a CLI (`jevway`, `src/cli.ts`). A calling agent hands it a whole browser goal, a start page and the text values the goal needs. A task loop (`src/task/run-task.ts`) reads the page over the Chrome DevTools Protocol (CDP), sends one decision request per step to a model on TypeSafe's System One API (`/v1/systemone`), checks the answer, and performs the single input the answer names. When the goal is visibly done, or the next decision belongs to the caller, the agent gets one short summary back.
+jevway is an MCP server (`jevway-mcp`, `src/mcp.ts`) and a CLI (`jevway`, `src/cli/main.ts`, with a session daemon in `src/daemon/`). A calling agent hands it a whole browser goal, a start page and the text values the goal needs. A task loop (`src/task/run-task.ts`) reads the page over the Chrome DevTools Protocol (CDP), sends one decision request per step to a model on TypeSafe's System One API (`/v1/systemone`), checks the answer, and performs the single input the answer names. When the goal is visibly done, or the next decision belongs to the caller, the agent gets one short summary back.
 
 ```mermaid
 flowchart LR
@@ -29,7 +29,7 @@ flowchart LR
 
     subgraph jevway["jevway process"]
         direction TB
-        entry["<b>Entry points</b><br/>src/mcp.ts · src/cli.ts"]
+        entry["<b>Entry points</b><br/>src/mcp.ts · src/cli/main.ts"]
         loop["<b>Task loop</b><br/>src/task/run-task.ts<br/><i>guards · hand-backs · done check</i>"]
         decide["<b>Request + validation</b><br/>src/jev/decide.ts<br/><i>only listed ids are accepted</i>"]
         tab["<b>Guarded tab</b><br/>src/browser/tab.ts<br/><i>freshness · hit-test · real input</i>"]
@@ -72,10 +72,32 @@ A **session** is one `BrowserTask`, starting on one tab. Each `jevway_task` call
 `src/mcp.ts` is the `jevway-mcp` entry: it loads `~/.config/jevway/env`, makes the runner and one session service, and serves `createMcpServer` (`src/mcp/server.ts`) through `serveStdio`. That builds a server per connection (twice when a 2026-07-28 probe falls back to `initialize`), so a server holds nothing: the sessions stay in the one service. The adapter translates and decides nothing about a run.
 
 - **In.** Tool parameters become a `TaskRequest`. `checks` are advertised as a loose list (the full union would cost about 580 tokens of every tool list) and parsed strictly with `CHECKS` when the call arrives. A `jevway_task` with none of `url`, `tab` and `session` is refused with an example before any browser work.
-- **Out.** `presentSummary` (concise, or `detail: "full"`) with its keys reordered to lead with `status`, `reason`, `story`, `next`, `session` and end with `page_text`, sent as one JSON text block and as the same object in `structuredContent`. Each `outputSchema` lists top-level fields and leaves every object open, so a field added later never fails a client's validation. After the JSON come the end page as an `image/jpeg` block when `attachesEndPage` (`src/mcp/results.ts`) says so (`JEVWAY_IMAGE_RESPONSES`, a hand-back status, or `screenshot: true`), then `resource_link`s with `file://` URIs to the run folder's files.
+- **Out.** `presentSummary` (concise, or `detail: "full"`) whose keys lead with `status`, `reason`, `story`, `next`, `session` and end with `page_text` (the order the CLI shares), sent as one JSON text block and as the same object in `structuredContent`. Each `outputSchema` lists top-level fields and leaves every object open, so a field added later never fails a client's validation. After the JSON come the end page as an `image/jpeg` block when `attachesEndPage` (`src/mcp/results.ts`) says so (`JEVWAY_IMAGE_RESPONSES`, a hand-back status, or `screenshot: true`), then `resource_link`s with `file://` URIs to the run folder's files.
 - **Progress.** Each `step` event becomes `notifications/progress` (`progress` the step number, `message` "Step n: " plus the story line, `total` the call's `max_steps` when given), chained in order and awaited before the result is returned.
 - **Errors.** A thrown error becomes an `isError` result, `<tool> failed: <message>`; the service's `UnknownSession` message passes through unchanged. Schema errors carry an example for `goal`, `values` and `files`.
 - **Instructions and tool set.** `instructionsFor` (`src/mcp/instructions.ts`) states the rules several tools share once (session pattern, consent, `jevway_look` before repeating a write, files, untrusted page text); `JEVWAY_TOOLS` (`all`, `task`, `journeys`) picks the tools, registered in one fixed order so the list stays byte-stable.
+
+### 1.2 The CLI and its daemon
+
+`src/cli/main.ts` is the `jevway` entry. Every command prints exactly one JSON document on stdout (the result, or
+`{ "ok": false, "error": { "code", "message", "hint" } }`) and only NDJSON progress events on stderr; exit codes are
+0 (success, or `done`), 1 (a hand-back or a failure) and 2 (bad usage). Flags are declared once per command
+(`src/cli/flags.ts`), which drives both `--help` and the did-you-mean for a mistyped flag.
+
+- **One-shot.** `jevway run` without `--session` runs in this process, closes its tabs and prints the summary, as the
+  CLI always did (`jevway --goal …` is the same command).
+- **Sessions.** `run --session new` and `journey start` reach the daemon (`src/daemon/`), starting it in the background
+  if none answers. It holds the session service, its browser and its sessions between commands, on one local socket
+  under `JEVWAY_STATE_DIR` (default `$XDG_RUNTIME_DIR/jevway`, else `~/.cache/jevway`), and exits after an idle hour
+  (`--idle-timeout`). Commands that name an existing session, and `sessions`, `end` and `stop`, never start it.
+- **Protocol.** Newline-delimited JSON: the client sends `{ id, method, params }` (or `{ cancel: id }`), the daemon
+  answers with `{ id, event }` lines and then one `{ id, result }` or `{ id, error }`. Methods mirror the tools: `task`,
+  `look`, `end`, `sessions`, `journey.*`, plus `hello` and `stop`. The client resolves paths before sending, so a run
+  started from a project lands in that project's `.jevway/`.
+- **Safety.** A daemon of another version, or started with other settings, is replaced only when it holds no
+  sessions; otherwise the command fails `daemon_busy`. The settings check records which keys are set, never their
+  values, and the daemon log never holds a secret value. A connection that drops mid-run returns `outcome_unknown`:
+  the page may have changed, so the hint says to `jevway look` before repeating a write.
 
 ## 2. One step, end to end
 
@@ -483,7 +505,8 @@ An unrecorded request is a miss: it throws `ReplayMiss` naming the goal, step an
 | `src/session/session-service.ts` | Transport-free sessions and journeys: ids, folders, waiting on a running call, events, errors. |
 | `src/output/` | The output root, folder and file names, slugs, `manifest.json`, what a call leaves in its run folder. |
 | `src/task/present.ts` | A summary as the caller reads it: `story`, `next`, concise or full. |
-| `src/cli.ts` | CLI entry: flags, one task, exit code 0 only on `done`. |
+| `src/cli/` | CLI: one module per command, flags with did-you-mean, help, one JSON document on stdout, NDJSON events on stderr. |
+| `src/daemon/` | The CLI's session daemon: auto-started, one local socket, sessions kept between commands. |
 | `src/task/start-task.ts` | Runner: key check, browser connection, opening tabs, host check on the start URL. |
 | `src/task/run-task.ts` | The loop, hand-back rules, guards, confirmation, checks and evidence settling, statuses. |
 | `src/task/checks.ts` | Caller checks evaluated on the final page. |

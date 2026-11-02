@@ -88,6 +88,15 @@ until curl -s http://127.0.0.1:9333/json/version >/dev/null; do sleep 0.5; done
 - Keep the window visible (no `--headless`) when a site shows a Cloudflare or captcha check: a real window often clears it on its own. Never try to solve or bypass a challenge; if it still asks, hand the click to the user. `jevway_task` waits up to 8 s for one to clear, then ends `blocked` with a reason naming it ("The page is a bot check (Cloudflare; …)") and `wall: { kind: "bot_check", origin, name }`: rephrasing cannot help. Ask the user to pass it in that tab, then continue the same `session`.
 - A sign-up needing an email: use a throwaway inbox service for the address and its verification code, and pass both through `values`. Only for test or demo accounts the user asked for.
 
+## Without MCP: the `jevway` CLI
+
+The same tools as commands, for agents with a shell and no MCP. Every command prints one JSON document on stdout (the result, or `{"ok":false,"error":{"code","message","hint"}}`, whose `hint` says what to do), progress as JSON lines on stderr; exit 0 success, 1 hand-back or failure, 2 bad usage. `jevway <command> --help` starts with examples.
+
+- One-shot: `jevway run --url <url> --goal "<outcome>" --values '<json>' --done-when "<evidence>"` (closes its tab).
+- To answer a hand-back, start with `--session new`, then `jevway run --session <id> --goal … --values …` (a background daemon keeps the tab). Flags mirror the tool parameters in kebab-case (`--secret-keys`, `--confirm-irreversible`, `--confirm-target`, `--allowed-hosts`, `--record`, `--detail full`).
+- `jevway look --session <id>` (or `--url`, `--tab`), `jevway sessions`, `jevway end <id>`, `jevway journey start|step|autopilot|annotate|finish`.
+- The result's `files.screenshot` is a JPEG of the end page: open it to see what the page shows. An `outcome_unknown` error means the connection dropped mid-run: `jevway look` before repeating a write.
+
 ## Map a site's journeys
 
 For a UX review, a QA sweep or a competitor teardown, use the `jevway_journey_*` tools instead of `jevway_task`: they record every screen on an emulated phone, its type and UI patterns, the taps between screens, and QA findings (console errors, tap targets under 44 px, dead ends).

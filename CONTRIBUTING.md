@@ -36,7 +36,8 @@ For anything that calls Jev, copy `.env.example` to `.env` and add `TYPESAFE_API
 | `src/recording/` | the record a run keeps for people (`record_dir`) and the page design the reports share |
 | `src/journeys/` | the journey-map tools |
 | `src/setup/` | the env file and `jevway doctor` |
-| `src/mcp.ts`, `src/cli.ts` | the two entry points |
+| `src/mcp.ts` + `src/mcp/`, `src/cli/` + `src/daemon/` | the two entry points: the MCP server, and the CLI with its session daemon |
+| `src/session/`, `src/output/` | the session service both entry points share, and the `.jevway/` folder layout |
 | `test/` | offline tests (vitest), in folders that mirror the source folders |
 | `verify/` | live suites against fixtures, real apps in Docker (`verify/apps/`), and public sites; the shared jobs runner (`verify/jobs/`) and the agent suite (`verify/agent/`) |
 | `skill/jevway/` | the skill agents load |

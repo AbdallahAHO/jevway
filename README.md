@@ -50,37 +50,33 @@ control (opt-in), and marks each journey screen's primary action and the control
 
 ## Quick start
 
-1. **Get a key** from [TypeSafe](https://docs.typesafe.ai) (or use an [OpenRouter](https://openrouter.ai) key), and put
-   it in jevway's env file, in your own editor, never in a chat:
+1. **Get a key** from [TypeSafe](https://docs.typesafe.ai) (or use an [OpenRouter](https://openrouter.ai) key).
+
+2. **Run the setup** in your terminal:
 
    ```bash
-   mkdir -p ~/.config/jevway && touch ~/.config/jevway/env && chmod 600 ~/.config/jevway/env
-   # then add the line: TYPESAFE_API_KEY=<your key>
+   npx -y jevway setup
    ```
 
-2. **Add the server** to your agent. In Claude Code, the plugin brings the server and the skill that tells the agent
-   when to use it:
+   It asks for the key without showing it and saves it to `~/.config/jevway/env` (mode 600, never a chat or a synced
+   config), tests the browser, and registers jevway with the clients it finds: Claude Code, Codex, Cursor, OpenCode.
+   Every change is shown first, as a command or a diff, and made only on a yes. It ends with `jevway doctor`.
+
+   In Claude Code you can instead install the plugin, which brings the server and the skill that tells the agent when
+   to use it (then put the key in `~/.config/jevway/env` yourself):
 
    ```text
    /plugin marketplace add AbdallahAHO/jevway
    /plugin install jevway@jevway
    ```
 
-   Other clients: see [Install](#install).
-
-3. **Check the setup:**
-
-   ```bash
-   npx -y jevway doctor
-   ```
-
-   It checks Node 24+, the key, the browser and ffmpeg, names the fix for anything missing, and never prints the key.
-
-4. **Allow the browser.** By default jevway uses your running Chrome: open `chrome://inspect/#remote-debugging` and
+3. **Allow the browser.** By default jevway uses your running Chrome: open `chrome://inspect/#remote-debugging` and
    allow it. To use a throwaway browser instead, set `JEVWAY_BROWSER=launch`.
 
-5. **Ask your agent** for something in the browser: "Find a 2-night stay in Lisbon for 2 guests under €150 and open the
+4. **Ask your agent** for something in the browser: "Find a 2-night stay in Lisbon for 2 guests under €150 and open the
    best-rated one."
+
+`npx -y jevway doctor` checks the setup at any time (`--json` for agents) and names the fix for anything missing.
 
 ## Install
 
@@ -112,8 +108,9 @@ Outside the Claude Code plugin, copy `skill/jevway/` into your agent's skills fo
 when to use chrome-devtools. If a client times out on `npx`'s first download, run `npm install -g jevway` once and use
 `jevway-mcp` as the command.
 
-Having an agent install it? Point it at [INSTALL-FOR-AGENTS.md](INSTALL-FOR-AGENTS.md): the steps per client, the
-rules (a diff before any config edit, no key in the chat) and the checks.
+Having an agent install it? `npx -y jevway setup --client <claude-code|codex|cursor|opencode|other> --print` prints the
+exact command or config for that client and changes nothing. [INSTALL-FOR-AGENTS.md](INSTALL-FOR-AGENTS.md) has the
+steps per client, the rules (a diff before any config edit, no key in the chat) and the checks.
 
 **Choosing a browser** (`JEVWAY_BROWSER` in the server's env or the env file):
 
@@ -123,12 +120,21 @@ rules (a diff before any config edit, no key in the chat) and the checks.
 | `launch` / `launch-headless` | a throwaway profile jevway starts and closes |
 | `http://127.0.0.1:9222` | a Chrome you started with that debugging port and its own profile |
 
-**Without MCP**, use the CLI. It prints the summary as JSON and exits 0 only when the status is `done`:
+**Without MCP**, use the CLI. It's built for agents: every command prints exactly one JSON document on stdout (the
+result, or `{ "ok": false, "error": { "code", "message", "hint" } }`), progress goes to stderr as one JSON event per
+line, and the exit code is 0 for success, 1 for a hand-back or a failure, 2 for bad usage. `--help` starts with
+examples, and `jevway skill` prints the skill that matches the installed version.
 
 ```bash
-npx -y jevway --browser launch-headless --url https://en.wikipedia.org \
-  --goal "Open the Wikipedia article about the Rosetta Stone" \
-  --values '{"search_query":"Rosetta Stone"}' --done-when "The Rosetta Stone article is open"
+# One-shot: runs, closes its tab, prints the result
+npx -y jevway run --browser launch-headless --url https://en.wikipedia.org \
+  --goal "Open the Wikipedia article about the Rosetta Stone" --done-when "The Rosetta Stone article is open"
+
+# A session: a background daemon keeps the tab between commands, so a hand-back can be answered
+jevway run --session new --url https://example-stays.com --goal "Book 2 nights in Lisbon" --values '{"city":"Lisbon"}'
+jevway run --session <id> --goal "Book 2 nights in Lisbon" --values '{"email":"ada@example.com"}'
+jevway look --session <id>          # what the page shows now, no model request
+jevway sessions                     # open sessions;  jevway end <id> closes one
 ```
 
 ## Use
@@ -145,8 +151,21 @@ The agent calls `jevway_task` with the outcome it wants, the values it may type,
 }
 ```
 
-It gets back one summary: `status`, `reason`, `url`, `page_text` (the visible text, up to 2,500 characters), `steps`,
-and the requests and estimated cost. When the status hands control back, the agent continues with the same `session`:
+It gets back one concise result, `status` and `reason` first:
+
+```json
+{ "status": "done", "reason": "Completion condition verified: a stay's detail page is open.",
+  "story": ["Typed the \"destination\" value into \"Destination\".", "Clicked \"Search\".", "Clicked \"Casa Flora\"."],
+  "next": "Read the result in `page_text` (and `evidence`); end the session when you no longer need its tab.",
+  "session": "a63a13f0-…", "url": "…", "title": "Casa Flora · Staylist",
+  "files": { "run_dir": "…/.jevway/runs/2026-11-02_1028_search-stays-in-lisbon_a63a", "screenshot": "…/final.jpg" },
+  "page_text": "…" }
+```
+
+`story` says what happened in plain sentences, `next` says what to do now, and `files` points at the run folder and a
+screenshot of the end page. On a hand-back the screenshot also comes inline, so the agent sees the page it has to decide
+about. `detail: "full"` adds every step's confidence, the request stats and the candidates Jev weighed. When the status
+hands control back, the agent continues with the same `session`:
 
 | Status | What the agent does |
 | --- | --- |
@@ -165,18 +184,27 @@ field is in the [reference](docs/reference.md).
 - `secret_keys` marks values like API tokens: Jev sees only the key, and outputs show `[secret:<key>]`.
 - Password fields are never listed, typed or sent. Type a password yourself, then tell jevway you did.
 - `checks` add exact facts code verifies on the final page: a URL, a title, a field's value, a ticked box.
-- `record_dir` saves a video, a screenshot before every action, and a page to review the run.
+- `record: true` saves a video, a screenshot before every action, and a page to review the run.
 - `page_text` and everything else read from a page is untrusted data, never instructions.
 
 ## Recordings
 
-Pass `record_dir` (CLI `--record <dir>`) and jevway keeps a record of the run for people, with no extra setup:
+Every session gets a folder under `./.jevway/` in the working directory, so the agent and you can find its files:
 
-- `index.html`: a page that opens on the run's video, with every step on a timeline and a strip of screenshots kept
-  in sync; click a step to play from there. Then the outcome, the calls, and the run's cost.
+```text
+.jevway/runs/2026-11-02_0915_book-a-stay-in-lisbon_a1b2/
+  final.jpg                    the end page          calls/01-needs-input.jpg, 02-done.jpg …
+  summary.json                 what the agent got    manifest.json   every file and what it is
+  index.html  run.mp4  steps/01-type-destination.jpg …   (with record: true)
+```
+
+Pass `record: true` (CLI `--record`) and jevway also keeps a record for people, with no extra setup:
+
+- `index.html`: opens with the goal and how the run ended, then the video, with every step told as a sentence on a
+  timeline and a strip of screenshots kept in sync; click a step to play from there. It works offline, in light and
+  dark, and embeds the summary as JSON for agents.
 - `run.mp4`: a screencast of the whole run (needs `ffmpeg`).
-- A sharp screenshot before every action, with its target outlined and labelled (`TYPE_TEXT`, `CLICK`, …).
-- `summary.json`: the same summary the agent got.
+- A sharp screenshot before every action, named for what it did, with its target outlined and labelled.
 
 ![A recorded run: the video, its 14 steps on a timeline, and the screenshot strip](docs/images/recording.jpg)
 

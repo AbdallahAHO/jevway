@@ -65,7 +65,7 @@ Setup: headless Chrome 152 on macOS (arm64), model `jev-latest` (answered by jev
 
 Result: **18/18 passed.** Median Jev latency per request was 256–564 ms (typically about 300 ms). The Wikipedia task used about 40k input tokens, and the full fixture flow about 24k.
 
-Extra check: the built CLI (`dist/cli.js`) on an unseen goal, Wikipedia → Rosetta Stone, finished `done` in 3.3 s (7 requests, done check 0.97).
+Extra check: the built CLI (then `dist/cli.js`, now `dist/cli/main.js`) on an unseen goal, Wikipedia → Rosetta Stone, finished `done` in 3.3 s (7 requests, done check 0.97).
 
 ### Found by the first live run and fixed
 
