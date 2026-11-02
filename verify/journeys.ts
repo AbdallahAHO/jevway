@@ -206,10 +206,10 @@ await scenario('finish: journey.json flows, every screenshot on disk, viewer ren
   const check = await truth(
     viewer.targetId,
     `new Promise(r => setTimeout(() => r({
-      cards: document.querySelectorAll('#flows .card').length,
+      cards: document.querySelectorAll('#flows .flow-strip li').length,
       broken: [...document.images].filter(i => i.complete && !i.naturalWidth).length,
       hotspots: document.querySelectorAll('.hotspot').length,
-      flows: [...document.querySelectorAll('.flow h2')].map(h => h.textContent),
+      flows: [...document.querySelectorAll('#flows .flow h3')].map(h => h.textContent),
     }), 600))`,
   );
   writeFileSync(join(outRoot, 'viewer.png'), Buffer.from(await viewer.screenshot(), 'base64'));
