@@ -1,2 +1,0 @@
-minimumReleaseAgeExclude:
-  - '@typesafe-ai/sdk@0.7.0'
