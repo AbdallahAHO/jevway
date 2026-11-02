@@ -68,15 +68,34 @@ const waitFor = async <T>(what: string, seconds: number, read: () => T | undefin
   return fail(`gave up waiting ${seconds}s for ${what}`);
 };
 
+const watch = (runId: number, what: string) => {
+  const watched = spawnSync('gh', ['run', 'watch', String(runId), '--exit-status', '--compact'], { stdio: 'inherit' });
+  if (watched.status !== 0) fail(`${what} failed: gh run view ${runId} --log-failed`);
+};
+
+/** Runs CI on the release PR's own commit: a PR opened by GitHub Actions triggers no workflow by itself. */
+const checkReleasePr = async (pr: number) => {
+  const head = json<{ headRefName: string; headRefOid: string }>(gh('pr', 'view', String(pr), '--json', 'headRefName,headRefOid'))!;
+  gh('workflow', 'run', 'ci.yml', '--ref', head.headRefName);
+  const runId = await waitFor(`CI to start on release PR #${pr}`, 120, () =>
+    json<{ databaseId: number; headSha: string }[]>(
+      tryRun('gh', ['run', 'list', '--workflow', 'ci.yml', '--branch', head.headRefName, '--event', 'workflow_dispatch', '--json', 'databaseId,headSha']),
+    )?.find((run) => run.headSha === head.headRefOid)?.databaseId,
+  );
+  watch(runId, `CI on release PR #${pr}`);
+  console.log(`✓ CI passed on release PR #${pr}`);
+};
+
 const publish = async (pr: number, version: string) => {
-  gh('pr', 'merge', String(pr), '--squash', '--delete-branch');
+  await checkReleasePr(pr);
+  // Rebase keeps the bot's single commit as is, with no co-author trailer a squash would add.
+  gh('pr', 'merge', String(pr), '--rebase', '--delete-branch');
   const sha = gh('pr', 'view', String(pr), '--json', 'mergeCommit', '--jq', '.mergeCommit.oid');
   console.log(`✓ merged #${pr} as ${sha.slice(0, 7)}`);
   const runId = await waitFor('the release workflow to start', 120, () =>
     json<{ databaseId: number }[]>(tryRun('gh', ['run', 'list', '--workflow', 'release.yml', '--commit', sha, '--json', 'databaseId']))?.[0]?.databaseId,
   );
-  const watched = spawnSync('gh', ['run', 'watch', String(runId), '--exit-status', '--compact'], { stdio: 'inherit' });
-  if (watched.status !== 0) fail(`the release workflow failed: gh run view ${runId} --log-failed`);
+  watch(runId, 'the release workflow');
   await waitFor(`npm to list ${PACKAGE}@${version}`, 180, () => tryRun('npm', ['view', `${PACKAGE}@${version}`, 'version']) || undefined);
   console.log(`✓ ${PACKAGE}@${version} is live: https://www.npmjs.com/package/${PACKAGE}/v/${version}`);
 };

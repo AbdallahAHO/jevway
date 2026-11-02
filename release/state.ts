@@ -52,13 +52,14 @@ const ciProblem = ({ ci, head }: ReleaseState): NextStep | undefined => {
 /** Decides the one next step of a release from the current state. */
 export const nextStep = (state: ReleaseState): NextStep => {
   const { local, published, pr } = state;
-  if (published && compareVersions(local, published) > 0) {
-    return { kind: 'blocked', message: `v${local} is tagged but npm still has ${published}: the publish job failed; rerun it: gh run list --workflow release.yml` };
-  }
+  // A tag whose publish failed is left behind: the next release PR publishes past it.
+  const unpublished = published && compareVersions(local, published) > 0 ? `v${local} is tagged but never reached npm (it has ${published})` : undefined;
   if (!pr) {
+    if (unpublished) return { kind: 'blocked', message: `${unpublished}: land a fix: commit for the next release PR, or pnpm release as ${nextPatch(local)}` };
     return { kind: 'nothing', message: `Nothing to release: no feat: or fix: commit since v${local}. To release anyway: pnpm release as ${nextPatch(local)}` };
   }
   const version = versionFromTitle(pr.title);
   if (!version) return { kind: 'blocked', message: `Can't read a version from release PR #${pr.number} ("${pr.title}"): ${pr.url}` };
-  return ciProblem(state) ?? { kind: 'merge', pr: pr.number, version, message: `Release PR #${pr.number} publishes v${version}: ${pr.url}` };
+  const message = `Release PR #${pr.number} publishes v${version}${unpublished ? ` (${unpublished})` : ''}: ${pr.url}`;
+  return ciProblem(state) ?? { kind: 'merge', pr: pr.number, version, message };
 };

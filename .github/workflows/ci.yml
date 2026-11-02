@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # `pnpm release` runs it on the release PR, which GitHub Actions opened and so triggered nothing
+  workflow_dispatch:
 
 permissions:
   contents: read

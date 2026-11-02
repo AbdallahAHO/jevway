@@ -22,8 +22,13 @@ describe('the next release step', () => {
     expect(nextStep(state({ pr, ci: { ...green, conclusion: 'failure' } }))).toMatchObject({ kind: 'blocked', message: expect.stringContaining('https://ci/1') });
   });
 
-  it('points at the publish job when a tagged version never reached npm', () => {
-    expect(nextStep(state({ local: '0.2.0', published: '0.1.0' }))).toMatchObject({ kind: 'blocked', message: expect.stringContaining('publish job failed') });
+  it('names a tagged version that never reached npm, and releases past it with the next release PR', () => {
+    expect(nextStep(state({ local: '0.1.1', published: '0.1.0' }))).toMatchObject({ kind: 'blocked', message: expect.stringContaining('pnpm release as 0.1.2') });
+    expect(nextStep(state({ local: '0.1.1', published: '0.1.0', pr: { ...pr, title: 'chore(main): release 0.1.2' } }))).toMatchObject({
+      kind: 'merge',
+      version: '0.1.2',
+      message: expect.stringContaining('v0.1.1 is tagged but never reached npm'),
+    });
   });
 
   it('refuses a release PR whose title names no version', () => {
