@@ -2,11 +2,13 @@
 import { parseArgs } from 'node:util';
 import { runDoctor } from './setup/doctor-command.ts';
 import { loadEnvFile } from './setup/env-file.ts';
+import { runSkill } from './setup/skill-command.ts';
 import { CHECKS, type Check } from './task/checks.ts';
 import { createRunner } from './task/start-task.ts';
 
 const USAGE = `jevway --goal "<outcome>" (--url <url> | --tab <url part>) [options]
 jevway doctor [--plan] [--live]   check the setup (key, browser, Node, ffmpeg); --help for more
+jevway skill [--install <dir>]    print the agent skill, or copy it into a skills folder
 
   --values '{"city":"Lisbon"}'   text values Jev may type
   --secret-keys token,otp         keys of --values that are secrets: Jev sees the key only, output shows [secret:<key>]
@@ -30,6 +32,7 @@ Needs TYPESAFE_API_KEY (Jev only) or OPENROUTER_API_KEY (every model), from the 
 // Keys and JEVWAY_* settings the environment lacks come from ~/.config/jevway/env.
 const fromEnvFile = loadEnvFile();
 if (process.argv[2] === 'doctor') process.exit(await runDoctor(process.argv.slice(3), fromEnvFile));
+if (process.argv[2] === 'skill') process.exit(await runSkill(process.argv.slice(3)));
 
 const { values: args } = parseArgs({
   options: {
