@@ -107,6 +107,22 @@ describe('a code split into boxes', () => {
     for (const action of (await task.look()).actions.filter((action) => BOXES.includes(action.node!) && action.value)) expect(action.value).toBe(MARKER);
   });
 
+  it('masks only those boxes: a later document reusing their ids keeps its values', async () => {
+    const { ask, requests } = scriptedJev([typeCode, { operation: 'BLOCKED' }]);
+    // The next page is a new document: its element ids start again, so its email field has a box's old id.
+    const next = page({
+      url: 'http://fixture/welcome',
+      title: 'Welcome',
+      text: 'Signed in',
+      actions: [{ id: 'e1', kind: 'fill', node: 12, role: 'textbox', label: 'Backup email', value: 'ada@example.com' }],
+      page_key: [2],
+      fingerprint: 'b',
+    });
+    const { asTab } = fakeTab([{ ...codePage('a'), page_key: [1] }, next]);
+    await new BrowserTask(asTab, ask, { goal: 'Verify the email', values: { otp: CODE }, secretKeys: ['otp'], changeWaitMs: 0 }).run();
+    expect(valuesIn(requests[1])).toEqual({ 'Backup email': 'ada@example.com' });
+  });
+
   it('types a totp code across the boxes, and only the marker leaves', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.UTC(2026, 10, 2, 9, 0, 10));

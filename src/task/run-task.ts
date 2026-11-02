@@ -345,8 +345,11 @@ export class BrowserTask {
   #refusedForValue = new Set<number>();
   /** First-box nodes of split-code groups a value of the wrong length was chosen for: each is fed back once before the caller is asked. */
   #codeLengthNoted = new Set<number>();
-  /** Boxes of a split code a secret was typed into, with the secret's key: their values read as its marker from then on. */
-  #secretBoxes = new Map<number, string>();
+  /**
+   * Boxes of a split code a secret was typed into, with the secret's key and their document (ids restart in a new one):
+   * their values read as its marker from then on.
+   */
+  #secretBoxes = new Map<number, { key: string; document: string }>();
   /** The caller's authenticator secrets by key: only `decide` (as a marker) and the typing see them. */
   #totp = new Map<string, TotpSecret>();
   /** Secrets that are not supplied values, by key: each authenticator secret as given and as base32, every code typed. Kept for the session. */
@@ -427,7 +430,10 @@ export class BrowserTask {
       ...(page.passwordFields && { passwordFields: page.passwordFields.map((field) => ({ ...field, name: scrub(field.name) })) }),
       actions: page.actions.map((action) => {
         // A box of a split secret code may hold part of it, which no value match finds: it shows the key's marker.
-        const boxKey = [action.node, ...(action.boxes ?? [])].map((node) => this.#secretBoxes.get(node!)).find(Boolean);
+        const document = documentOf(page, action);
+        const boxKey = [action.node, ...(action.boxes ?? [])]
+          .map((node) => this.#secretBoxes.get(node!))
+          .find((noted) => noted?.document === document)?.key;
         return {
           ...action,
           label: scrub(action.label),
@@ -1064,6 +1070,11 @@ export class BrowserTask {
             record(false);
             const [count, boxes] = [[...text].length, action.boxes.length];
             if (this.#codeLengthNoted.has(action.node!)) {
+              // A hand-back decided on a page that has since changed is stale: read it again instead.
+              if (!(await this.#tab.fresh(page))) {
+                page = await this.#observe();
+                continue;
+              }
               return stop('needs_input', `"${action.label}" has ${boxes} boxes but the "${decision.valueKey}" value has ${count} characters; supply it as ${boxes} characters`, decision);
             }
             this.#codeLengthNoted.add(action.node!);
@@ -1078,7 +1089,7 @@ export class BrowserTask {
           }
           // Masked before it is typed, so the page read right after typing already shows the marker.
           if (this.#options.secretKeys.includes(decision.valueKey)) {
-            for (const node of action.boxes) this.#secretBoxes.set(node, decision.valueKey);
+            for (const node of action.boxes) this.#secretBoxes.set(node, { key: decision.valueKey, document: documentOf(page, action) });
             if (characters.join('') !== text) this.#moreSecrets.push([decision.valueKey, characters.join('')]);
           }
         }
@@ -1945,6 +1956,10 @@ const decoded = (url: string) => {
     return url;
   }
 };
+
+// The document an action's node belongs to (its frame's, or the page's): its start time, as the reader's keys hold it.
+const documentOf = (page: PageState, action: PageAction) =>
+  JSON.stringify(action.frame ? page.frames?.find((frame) => frame.id === action.frame)?.identity : (page.page_key as unknown[] | undefined)?.[0]);
 
 const bareLabel = (label: string) => label.replace(/ \(appears on hover\)$/, '');
 
