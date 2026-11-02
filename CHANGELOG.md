@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/AbdallahAHO/jevway/compare/v0.5.0...v0.5.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **cli:** never quote a json flag's input in its error ([309356a](https://github.com/AbdallahAHO/jevway/commit/309356a8f1180d6554fec8d991ba4dda3a3c1623))
+
 ## [0.5.0](https://github.com/AbdallahAHO/jevway/compare/v0.4.0...v0.5.0) (2026-11-02)
 
 
