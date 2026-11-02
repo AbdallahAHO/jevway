@@ -275,6 +275,8 @@ waited", with `wall.waited_seconds`. The caller's cancel and `max_seconds` still
 never waits: `wall.person_can_act` is false and the reason says a visible browser is needed, and an SSO page is left to
 Jev as before. The MCP server, an in-process `jevway run`, or the daemon read `JEVWAY_PERSON_WAIT_SECONDS` and
 `JEVWAY_NOTIFY` when they start; a running daemon keeps its values until `jevway stop`.
+The host check comes first: with `allowed_hosts`, include the provider's host (`accounts.google.com`) or an SSO
+redirect ends the run as outside its hosts before any wait.
 
 ### Recording
 
