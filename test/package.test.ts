@@ -66,10 +66,21 @@ describe('releases', () => {
     expect(json('.release-please-manifest.json')).toEqual({ '.': pkg.version });
   });
 
-  it('bump both plugin manifests with package.json, so the plugin never points at an older version', () => {
+  it('bump both plugin manifests and server.json with package.json, so none points at an older version', () => {
     expect(root['extra-files']).toEqual([
       { type: 'json', path: '.claude-plugin/plugin.json', jsonpath: '$.version' },
       { type: 'json', path: '.claude-plugin/marketplace.json', jsonpath: '$.plugins[0].version' },
+      { type: 'json', path: 'server.json', jsonpath: '$.version' },
+      { type: 'json', path: 'server.json', jsonpath: '$.packages[0].version' },
+    ]);
+  });
+
+  it('list the MCP server in the MCP Registry as this npm package, started with jevway mcp', () => {
+    const server = json('server.json');
+    expect(server.name).toBe(pkg.mcpName);
+    expect(server.version).toBe(pkg.version);
+    expect(server.packages).toEqual([
+      expect.objectContaining({ registryType: 'npm', identifier: pkg.name, version: pkg.version, transport: { type: 'stdio' }, packageArguments: [{ type: 'positional', value: 'mcp' }] }),
     ]);
   });
 
