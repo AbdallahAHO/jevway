@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { homedir, userInfo } from 'node:os';
+import { homedir, tmpdir, userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 
 type Env = Record<string, string | undefined>;
@@ -8,11 +8,20 @@ type Env = Record<string, string | undefined>;
 export const stateDir = (env: Env = process.env, home = homedir()) =>
   env.JEVWAY_STATE_DIR?.trim() || (env.XDG_RUNTIME_DIR?.trim() ? join(env.XDG_RUNTIME_DIR, 'jevway') : join(home, '.cache', 'jevway'));
 
-/** `<state>/daemon.sock`; on Windows a named pipe, one per state dir and user. */
-export const socketPath = (dir: string, platform = process.platform) =>
-  platform === 'win32'
-    ? `\\\\.\\pipe\\jevway-${createHash('sha256').update(`${userInfo().username}:${dir}`).digest('hex').slice(0, 16)}`
-    : join(dir, 'daemon.sock');
+// Unix socket paths are capped at 104 bytes on macOS (108 on Linux), counting the terminating NUL.
+const SOCKET_PATH_BYTES = 103;
+
+const stateDigest = (dir: string) => createHash('sha256').update(`${userInfo().username}:${dir}`).digest('hex').slice(0, 16);
+
+/**
+ * `<state>/daemon.sock`, or `<tmp>/jevway-<digest>.sock` when the state dir is too deep for a Unix socket; on Windows
+ * a named pipe. One state dir always maps to one socket.
+ */
+export const socketPath = (dir: string, platform = process.platform, tmp = tmpdir()) => {
+  if (platform === 'win32') return `\\\\.\\pipe\\jevway-${stateDigest(dir)}`;
+  const inState = join(dir, 'daemon.sock');
+  return Buffer.byteLength(inState) <= SOCKET_PATH_BYTES ? inState : join(tmp, `jevway-${stateDigest(dir)}.sock`);
+};
 
 export const logPath = (dir: string) => join(dir, 'daemon.log');
 
