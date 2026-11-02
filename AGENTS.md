@@ -17,7 +17,7 @@ Humans start at [CONTRIBUTING.md](CONTRIBUTING.md); how a step works end to end 
 
 ### Live suites
 Each spends credits and needs a key in `.env`; the full description of each (jobs, env vars that narrow it, how it is judged) is in [docs/verification.md](docs/verification.md#suites).
-- `pnpm verify` (core scenarios, about 30 s), `verify:reader` (no model), `verify:gotchas`, `verify:redteam`, `verify:capabilities`
+- `pnpm build && pnpm verify:mcp` (the built MCP server driven as a client through every tool, 39 checks), `pnpm verify` (core scenarios, about 30 s), `verify:reader` (no model), `verify:gotchas`, `verify:redteam`, `verify:capabilities`
 - `verify:forgejo`, `verify:signup`, `verify:vikunja` (Docker: `pnpm apps:forgejo:up`, `pnpm apps:vikunja:up`; `:down` removes the stack and its data)
 - `verify:checkout`, `verify:real`, `verify:langfuse`, `verify:grafana` (Langfuse and Grafana need a signed-in Chrome on a debugging port)
 - `verify:agent` (a real calling agent over MCP; spends that agent's usage too), `verify:journeys`

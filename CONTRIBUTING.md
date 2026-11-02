@@ -80,6 +80,7 @@ the maintainer will run it.
 | --- | --- | --- |
 | `pnpm verify` | the core scenarios on a local fixture, Wikipedia, and an MCP round trip | a key; about 30 s |
 | `pnpm verify:reader` | the page reader on fixtures | nothing (no model) |
+| `pnpm build && pnpm verify:mcp` | every MCP tool as a client sees it, on the local fixtures | a key |
 | `pnpm verify:gotchas`, `verify:redteam`, `verify:capabilities` | hard page patterns, bait and injection, known gaps | a key |
 | `pnpm verify:forgejo`, `verify:signup`, `verify:vikunja` | writes in self-hosted apps, judged by their APIs | a key and Docker (`pnpm apps:forgejo:up`, `pnpm apps:vikunja:up`) |
 | `pnpm verify:checkout`, `verify:real` | a practice shop, and live public sites | a key |
