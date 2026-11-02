@@ -24,6 +24,8 @@
   document.getElementById('confirm').addEventListener('submit', (event) => {
     event.preventDefault();
     window.__fixture.submitted = [...document.querySelectorAll('.code input')].map((box) => box.value).join('');
+    // A live run needs visible feedback, or Jev keeps pressing the button.
+    document.body.insertAdjacentHTML('beforeend', '<p role="status">Code confirmed.</p>');
   });
 </script>
 </body>

@@ -22,6 +22,8 @@
   document.getElementById('pin').addEventListener('submit', (event) => {
     event.preventDefault();
     window.__fixture.submitted = [...document.querySelectorAll('fieldset input')].map((box) => box.value).join('');
+    // A live run needs visible feedback, or Jev keeps pressing the button.
+    document.body.insertAdjacentHTML('beforeend', '<p role="status">Card unlocked.</p>');
   });
 </script>
 </body>

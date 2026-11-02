@@ -42,6 +42,8 @@
   document.getElementById('verify').addEventListener('submit', (event) => {
     event.preventDefault();
     window.__fixture.submitted = boxes.map((box) => box.value).join('');
+    // A live run needs visible feedback, or Jev keeps pressing the button.
+    document.body.insertAdjacentHTML('beforeend', '<p role="status">Code verified.</p>');
   });
 </script>
 </body>
