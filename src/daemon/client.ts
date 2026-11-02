@@ -213,11 +213,14 @@ export const daemonAccess = ({
   },
 });
 
+// The daemon inherits the environment already loaded; an --env-file flag would only log a missing .env in its state dir.
+const daemonExecArgv = () => process.execArgv.filter((arg) => !arg.startsWith('--env-file'));
+
 /**
  * Starts `node <entry> serve` detached in `stateDir`, its output appended to `daemon.log` (moved to `daemon.log.1`
  * past 5 MB). Returns at once; the caller waits for the socket.
  */
-export const spawnDaemon = ({ entry, stateDir, env, execArgv = process.execArgv }: { entry: string; stateDir: string; env: NodeJS.ProcessEnv; execArgv?: string[] }) => {
+export const spawnDaemon = ({ entry, stateDir, env, execArgv = daemonExecArgv() }: { entry: string; stateDir: string; env: NodeJS.ProcessEnv; execArgv?: string[] }) => {
   mkdirSync(stateDir, { recursive: true, mode: 0o700 });
   const log = logPath(stateDir);
   if ((statSync(log, { throwIfNoEntry: false })?.size ?? 0) > 5_000_000) renameSync(log, `${log}.1`);

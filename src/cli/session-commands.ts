@@ -127,7 +127,8 @@ export const serveCommand = async (argv: string[], deps: CliDeps) => {
     throw error;
   }
   const stopListening = deps.onInterrupt(() => void daemon.stop());
-  await printDoc(deps.io, { ok: true, socket, pid: process.pid, version: deps.version, idle_timeout_s: idleMs ? idleMs / 1000 : null });
+  // One line, so a background daemon's log stays one JSON object per line.
+  await deps.io.out(`${JSON.stringify({ ok: true, socket, pid: process.pid, version: deps.version, idle_timeout_s: idleMs ? idleMs / 1000 : null })}\n`);
   await daemon.closed;
   stopListening();
   return 0;
