@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import type { Client } from '@modelcontextprotocol/client';
 import { describe, expect, it, vi } from 'vitest';
 import type { TaskStatus } from '../../src/task/run-task.ts';
+import { page } from '../fakes.ts';
 import { connect, END_PAGE, fakeService, runTo, summaryFor } from './connect.ts';
 
 // What an agent reads back from each tool: one JSON result (text and structuredContent alike) that leads with how the
@@ -329,6 +330,15 @@ describe('jevway_look', () => {
       page_text: 'Looked at',
       elements: expect.any(Array),
     });
+  });
+
+  it('saves a PDF of the page with `pdf` and returns its path', async () => {
+    const { client, runner } = await setUp();
+    runner.look.mockImplementationOnce(async ({ url }: { url?: string }) => ({ ...page({ url: url!, text: 'Looked at' }), pdf: Buffer.from('%PDF-1.4') }));
+    const result: any = await client.callTool({ name: 'jevway_look', arguments: { url: 'http://fixture/stays', pdf: true } });
+    expect(result.isError).toBeFalsy();
+    expect(runner.look).toHaveBeenLastCalledWith({ url: 'http://fixture/stays', tab: undefined, pdf: true });
+    expect(result.structuredContent.pdf).toMatch(/[/\\]looks[/\\].+[/\\]page\.pdf$/);
   });
 
   it('asks for exactly one of session, tab or url, with an example', async () => {

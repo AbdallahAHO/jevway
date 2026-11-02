@@ -1,10 +1,10 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { cliNext } from '../../src/cli/run-command.ts';
 import { nextFor } from '../../src/task/present.ts';
 import type { TaskStatus } from '../../src/task/run-task.ts';
-import { fakeRunner, gatedAsk, scriptedJev } from '../fakes.ts';
+import { fakeRunner, gatedAsk, page, scriptedJev } from '../fakes.ts';
 import { cliWith, tempDir, VERSION } from './harness.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -232,6 +232,17 @@ describe('looking at a page', () => {
     expect(code).toBe(0);
     expect(json).toMatchObject({ ok: true, url: 'http://fixture/about', page_text: expect.stringContaining('Looked at'), elements: expect.any(Array) });
     expect(runner.close).toHaveBeenCalled();
+  });
+
+  it('saves a PDF of the page with --pdf under the output root, and prints its path', async () => {
+    const { cli, runner } = setup();
+    runner.look.mockImplementationOnce(async ({ url }: { url?: string }) => ({ ...page({ url: url!, text: 'Looked at' }), pdf: Buffer.from('%PDF-1.4') }));
+    const cwd = tempDir();
+    const { code, json } = await cli(['look', '--url', 'http://fixture/about', '--pdf'], { cwd });
+    expect(code).toBe(0);
+    expect(runner.look).toHaveBeenLastCalledWith({ url: 'http://fixture/about', tab: undefined, pdf: true });
+    expect(json.pdf.startsWith(join(cwd, '.jevway', 'looks'))).toBe(true);
+    expect(readFileSync(json.pdf, 'utf8')).toBe('%PDF-1.4');
   });
 
   it('wants exactly one of --url, --tab or --session', async () => {

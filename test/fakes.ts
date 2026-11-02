@@ -1,4 +1,5 @@
 import { PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
+import type { Download } from '../src/browser/downloads.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
 import type { Ask } from '../src/jev/decide.ts';
 import { BrowserTask } from '../src/task/run-task.ts';
@@ -148,6 +149,11 @@ export const fakeTab = (pages: PageState[] = [page()]) => {
       tab.uploads.push({ label: action.label, path });
     },
     wantedFiles: false,
+    /** A download the next act starts, and the downloads the run has not taken yet. */
+    downloadOnAct: undefined as Download | undefined,
+    pendingDownloads: [] as Download[],
+    downloadsAfterInput: async () => tab.pendingDownloads.splice(0),
+    pdf: async () => Buffer.from('%PDF-1.4 fake'),
     follow: async () => tab.next,
     closed: false,
     closes: 0,
@@ -219,6 +225,8 @@ export const fakeTab = (pages: PageState[] = [page()]) => {
         throw new TargetUnreachable('covered', false, tab.coverNodes);
       }
       acted.push({ label: action.label, ...(text && { text }) });
+      if (tab.downloadOnAct) tab.pendingDownloads.push(tab.downloadOnAct);
+      tab.downloadOnAct = undefined;
       if (tab.dialogOnAct) tab.dialogs.push(tab.dialogOnAct);
       if (tab.opensTabOn === action.label) tab.opened.push('T2');
       if (action.kind === 'scroll' && tab.scrolled !== undefined) return { scrolled: tab.scrolled };

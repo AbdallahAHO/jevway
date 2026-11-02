@@ -27,7 +27,7 @@ const expectedHints = {
 const expectedInputs = {
   jevway_task:
     'allow_coordinate_clicks allowed_hosts blocked_hosts checks confirm_irreversible confirm_target detail done_when files goal! max_seconds max_steps record record_dir screenshot secret_keys session tab totp url values wait_for_person_seconds',
-  jevway_look: 'session tab url',
+  jevway_look: 'pdf session tab url',
   jevway_end: 'keep_tab session!',
   jevway_journey_start: 'device intent out_dir stay_within url! values',
   jevway_journey_step: 'description flow insight journey! next! value',

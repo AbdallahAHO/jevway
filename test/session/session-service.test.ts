@@ -215,6 +215,31 @@ describe('look', () => {
   });
 });
 
+describe('a look with a PDF of the page', () => {
+  it("saves a session tab's PDF in its run folder, and a URL's in a look folder of its own", async () => {
+    const { runner } = fakeRunner();
+    runner.look.mockImplementation(async ({ url, pdf }: { url?: string; pdf?: boolean }) => ({
+      ...page({ url: url!, title: 'Pricing', text: 'Looked at' }),
+      ...(pdf && { pdf: Buffer.from('%PDF-1.4 url') }),
+    }));
+    const root = outDir();
+    const sessions = createSessionService(runner, { outDir: root, now: () => AT, env: {}, newId: () => 'ab12cd34-0000-4000-8000-000000000000' });
+
+    const byUrl = await sessions.look({ url: 'https://stays.example/pricing', pdf: true });
+    expect(runner.look).toHaveBeenLastCalledWith({ url: 'https://stays.example/pricing', tab: undefined, pdf: true });
+    expect(byUrl.pdf).toBe(join(root, 'looks', '2026-11-02_0905_stays.example_ab12', 'page.pdf'));
+    expect(readFileSync(byUrl.pdf!, 'utf8')).toBe('%PDF-1.4 url');
+    expect(await sessions.look({ url: 'https://stays.example/pricing' })).not.toHaveProperty('pdf');
+
+    const { session, files } = await sessions.task({ goal: 'Open', url: 'http://fixture/' });
+    const bySession = await sessions.look({ session, pdf: true });
+    expect(bySession.pdf).toBe(join(files!.run_dir, 'looks', '01-staylist.pdf'));
+    expect(readFileSync(bySession.pdf!, 'utf8')).toBe('%PDF-1.4 fake');
+    const manifest = JSON.parse(readFileSync(join(files!.run_dir, 'manifest.json'), 'utf8'));
+    expect(manifest.files.find((file: { path: string }) => file.path === 'looks/01-staylist.pdf')?.kind).toBe('pdf');
+  });
+});
+
 describe('journeys', () => {
   it('maps a journey into a folder named for its host, and steps it by id', async () => {
     const { runner } = fakeRunner();
