@@ -136,11 +136,11 @@ Lowercase conventional commits, no AI attribution, no push. `pnpm release:check`
 
 ## Done criteria
 
-- [ ] `rg -n "new Map|randomUUID" src/mcp.ts src/mcp/` is empty: no session logic in the adapter.
-- [ ] Every status's result passes the advertised output schema (the SDK validates it) and carries `story`, `next`.
-- [ ] `tools/list` ≤ ~2,500 tokens (was 4,515), pinned by a test.
-- [ ] `instructions` ≤ 1,500 characters, served to 2025 and 2026-07-28 clients.
-- [ ] `pnpm release:check` passes; `pnpm verify` passes its MCP scenarios live.
+- [x] `rg -n "new Map|randomUUID" src/mcp.ts src/mcp/` is empty: no session logic in the adapter.
+- [x] Every status's result passes the advertised output schema (the SDK validates it) and carries `story`, `next`.
+- [x] `tools/list` ≤ ~2,500 tokens (was 4,515), pinned by a test.
+- [x] `instructions` ≤ 1,500 characters, served to 2025 and 2026-07-28 clients.
+- [x] `pnpm release:check` passes; `pnpm verify` passes its MCP scenarios live (12/12, 2026-11-02).
 
 ## STOP conditions
 
@@ -154,3 +154,27 @@ The adapter only translates: parameters in, `presentSummary` out, events to prog
 adapter change (output schemas are loose) unless it should lead the JSON. A rule an agent needs is written once: in
 `instructions` when several tools share it, else in one parameter or tool description; `docs/reference.md` holds the
 long form. Re-measure `tools/list` when tool text changes and keep the test's ceiling honest.
+
+## Measured
+
+`tools/list` as a client receives it, tokens ≈ characters / 4 of each tool's JSON (same on both protocol eras):
+
+| Tool | Before (no output schema) | After (output schema included) |
+| --- | --- | --- |
+| `jevway_task` | 2,771 (description 1,175, input 1,548) | 1,113 (description ~190, input ~720, output ~170) |
+| `jevway_look` | 299 | 219 |
+| `jevway_end` | 129 | 182 |
+| 5 journey tools | 1,316 | 990 |
+| **All 8** | **4,515** | **2,490** |
+
+`instructions`: 1,429 characters (none before). The biggest single saving is `checks`: its advertised union was 581
+tokens; it is now a loose list described in one line and parsed strictly with `CHECKS` in the handler. Journey tools
+send `structuredContent` but declare no `outputSchema` (each cost ~42 tokens for an id), so decision 4's "where it is a
+short loose object" came out as none.
+
+## Deviations
+
+- The unknown-session text is the service's (`Unknown session "x". Sessions end when the server restarts; start a new
+  one with \`url\` (or \`tab\`).`), not a new MCP-only wording: one message shared with the CLI daemon, which adds its idle
+  time.
+- `jevway_end`'s output schema declares `session` and `run_dir`; `ended: true` is sent but left undeclared (open object).
