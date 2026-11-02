@@ -51,6 +51,7 @@ settings carry over.
 | `confirm_target` | string | The user's own words naming what that click acts on. |
 | `max_steps` | integer ≤ 100 | Step budget for this call. Default 40. |
 | `max_seconds` | integer ≤ 3600 | Time budget for this call. Default 300. |
+| `wait_for_person_seconds` | integer 0–600 | With a visible browser, how long to wait for the user at a bot check, a sign-in wall or an SSO sign-in before handing back. Default `JEVWAY_PERSON_WAIT_SECONDS`, else 120; 0 never waits; headless always 0. See [Waiting for a person](#waiting-for-a-person). |
 | `allowed_hosts` | string[] | Hosts the run may be on. See [Hosts](#hosts). |
 | `blocked_hosts` | string[] | Hosts the run must never be on. |
 | `allow_coordinate_clicks` | boolean | New session only, opt-in. When Jev is stuck and a screenshot box matches no listed element (a canvas, a skipped frame), click the box centre after a hit-test. Needs Jev 1.14 on the TypeSafe API. |
@@ -89,7 +90,7 @@ tool's `outputSchema`). It is concise unless the call passes `detail: "full"`, a
 | `session` | always | A full UUID. Pass it back to continue. |
 | `url`, `title` | always | The tab in use at the end (a tab the run's click opened, if it followed one). |
 | `missing` | `needs_input` | One `{label, role, path}` per field that wants a value; `path` is the URL pathname. |
-| `wall` | some `blocked` | `{kind: "sign_in", origin}` or `{kind: "bot_check", origin, name}`. |
+| `wall` | some `blocked` | `{kind: "sign_in", origin}` or `{kind: "bot_check", origin, name}` (an SSO sign-in: `kind: "sign_in"` at the provider's origin, `name` `google`, `apple` or `microsoft`), plus `person_can_act` (false in a headless browser: nobody can pass it there) and `waited_seconds` (when jevway waited for a person who didn't come). |
 | `checks` | `checks` given | Each check with `pass` and `detail`. |
 | `evidence` | `done` with `done_when` | See [Evidence](#evidence). |
 | `confirm_ignored` | a dropped confirmation | Consent the caller gave that jevway did not use, and why. |
@@ -116,7 +117,9 @@ After the JSON come:
 
 While a call runs, a client that sends a `progressToken` gets one `notifications/progress` per step, in order and all
 before the result: `progress` is the step number, `total` the call's `max_steps` when it passes one, and `message` the
-step's story line (`Step 3: Clicked "Search".`).
+step's story line (`Step 3: Clicked "Search".`). While the run waits for a person at a wall, a note goes out at once
+and every 10 s (`Waiting for you to pass the Cloudflare check in the Chrome window (45 s left)`), with `progress`
+between the last step's number and the next, so it keeps rising and the client's idle timer resets.
 
 ### Statuses
 
@@ -136,8 +139,10 @@ A run ends `blocked` when:
 - the page shows an error after this call acted (the reason quotes it);
 - a sign-in screen blocks the goal and no supplied value fits its fields (`wall.kind: "sign_in"`);
 - a bot check (Cloudflare, reCAPTCHA, hCaptcha, Turnstile, an "unusual traffic" page) didn't clear by itself within
-  8 s (`wall.kind: "bot_check"`, `wall.name` one of `cloudflare`, `recaptcha`, `hcaptcha`, `turnstile`,
-  `unusual-traffic`). No Jev request is spent on it, and jevway never tries to get past one;
+  8 s, nor did a person pass it while jevway waited (`wall.kind: "bot_check"`, `wall.name` one of `cloudflare`,
+  `recaptcha`, `hcaptcha`, `turnstile`, `unusual-traffic`). No Jev request is spent on it, and jevway never tries to
+  get past one;
+- nobody finished an SSO sign-in (Google, Apple, Microsoft) while jevway waited (`wall.kind: "sign_in"`);
 - the run left its allowed hosts (the reason names the host);
 - a click never reached the page (nothing was clicked; call again or check the browser);
 - the browser or the model API failed ("Browser error: …", "Model error: …");
@@ -244,6 +249,32 @@ person: `{"github_otp": "JBSWY3DPEHPK3PXP"}`.
 - The server's lists also apply to `jevway_look` with a `url` and to the journey tools.
 - Only top-level pages are checked: the session's tab, and a tab its click opened once the run follows it. Iframes and
   the page's own requests aren't.
+
+### Waiting for a person
+
+Some walls only a person can get past: a bot check (after its 8 s to clear by itself), a sign-in wall no supplied
+value fits, and an SSO sign-in (an `accounts.google.com`, `appleid.apple.com`, `login.microsoftonline.com` or
+`login.live.com` URL carrying another site's `client_id` and `redirect_uri`, or a `SAMLRequest`). With a visible
+browser (`auto`, `launch` or a debugging port, unless that Chrome reports itself headless) the call stays alive up to
+`wait_for_person_seconds` (default 120) for each kind of wall, once per call:
+
+- the tab comes to the front (`Page.bringToFront`, then `Target.activateTarget`);
+- one desktop notification titled "jevway" says what to do, naming only the wall and the host: "Pass the Cloudflare
+  check in the Chrome window", "Sign in to github.com in Chrome", "Finish signing in with Google in Chrome" (macOS
+  `osascript`, Linux `notify-send` when installed, nothing on Windows; `JEVWAY_NOTIFY=off` turns it off);
+- a progress note goes out at once and every 10 s (MCP progress, CLI `waiting` NDJSON events);
+- the page is read every second, with no Jev request and no input. A bot check is passed when the detector no longer
+  finds it. A sign-in is passed after two reads in a row that show no password field, are not the wall's page still
+  listing its fields, are not on a sign-in path (`/login`, `/session(s)`, `/auth`, `/oauth`, `/sso`, `/2fa`,
+  `/verify`, …) and are not an SSO page; an SSO sign-in after two reads off the provider's sign-in URL. Tabs the page
+  opens meanwhile are the person's and are never followed.
+
+When the person gets past it, the run goes on in the same call and the story says so ("A person passed the Cloudflare
+check."). When the wait runs out it ends `blocked` as before, the reason adding "nobody passed it in the 120 s jevway
+waited", with `wall.waited_seconds`. The caller's cancel and `max_seconds` still stop it. In a headless browser it
+never waits: `wall.person_can_act` is false and the reason says a visible browser is needed, and an SSO page is left to
+Jev as before. The MCP server, an in-process `jevway run`, or the daemon read `JEVWAY_PERSON_WAIT_SECONDS` and
+`JEVWAY_NOTIFY` when they start; a running daemon keeps its values until `jevway stop`.
 
 ### Recording
 
@@ -402,6 +433,7 @@ jevway stop
 | `--done-when` | `done_when` |
 | `--confirm-irreversible`, `--confirm-target` | `confirm_irreversible`, `confirm_target` |
 | `--max-steps`, `--max-seconds` | `max_steps`, `max_seconds` |
+| `--wait-for-person <seconds>` | `wait_for_person_seconds` (0 to 3600) |
 | `--allowed-hosts a,b`, `--blocked-hosts a,b` | `allowed_hosts`, `blocked_hosts` |
 | `--allow-coordinate-clicks` | `allow_coordinate_clicks` |
 | `--record` | `record` (the recording kept in the run folder) |
@@ -536,6 +568,8 @@ file fills only variables the environment lacks, and only the keys, `CHROME_PATH
 | `JEVWAY_JOURNEYS_DIR` | `<JEVWAY_OUT_DIR>/journeys` | Where journey maps are written. |
 | `JEVWAY_STATE_DIR` | `$XDG_RUNTIME_DIR/jevway`, else `~/.cache/jevway` | The CLI daemon's socket and log. See [The daemon](#the-daemon). |
 | `JEVWAY_TOOLS` | `all` | MCP: `all`, `task` (task, look, end) or `journeys`. See [MCP server](#mcp-server). |
+| `JEVWAY_PERSON_WAIT_SECONDS` | `120` | Seconds a run with a visible browser waits for a person at a wall, when the call names none; `0` never waits. See [Waiting for a person](#waiting-for-a-person). |
+| `JEVWAY_NOTIFY` | on | `off` stops the desktop notification while a run waits for a person. |
 | `JEVWAY_IMAGE_RESPONSES` | `auto` | MCP: when a task result carries its end page inline: `auto` (hand-backs, or `screenshot: true`), `always`, `never`. |
 | `JEVWAY_REPLAY`, `JEVWAY_REPLAY_DIR` | — | `record` or `replay` Jev answers in that folder (development; the folder is required). See [CONTRIBUTING.md](../CONTRIBUTING.md#live-suites). |
 | `CHROME_PATH` | the usual install path | The Chrome `launch` starts. |

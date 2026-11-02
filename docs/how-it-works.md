@@ -393,6 +393,8 @@ Not checked: frames and the page's own requests.
 
 The run waits up to 8 s (polling every 250 ms), once per call, then ends `blocked` naming the wall and its markers, with `wall: { kind: 'bot_check', origin, name }`. It never interacts with a challenge.
 
+With a visible browser the run then waits for a person (`src/task/person-wait.ts`, section 9.9) before it hands back.
+
 ### 9.4 Sign-in walls and page errors
 
 Both are Noul heads on every step (`sign_in_wall`, `page_error`). A sign-in wall at or above 0.7 ends the run `blocked` with `wall: { kind: 'sign_in', origin }` only when the page has an empty text or password field and no supplied value fits any empty text field. A page error at or above 0.8 ends it `blocked` only after this call executed an action, and only with something to quote: the page message after the last risky or saving click, else the lines the last action brought. The thresholds were set from recorded scores.
@@ -418,6 +420,12 @@ Setting up a followed tab may take 5 s before it counts as frozen, it may sit on
 `src/task/run-limit.ts`. A call stops when the caller cancels (the MCP request's signal, Ctrl-C in the CLI: `blocked`, "Cancelled by the caller") or when `max_seconds` pass (`step_budget`). The loop checks before every decision and right before every input. Waits end early on the stop, and every model request and screenshot carries or races the stop signal.
 
 An input already under way is never aborted; it finishes and is reported. A session's next call waits for a cancelled call that is still finishing.
+
+### 9.9 Waiting for a person
+
+The runner knows the browser source, so it tells each task whether a person can see it (`person.visible`: false for `launch-headless` and for a Chrome whose `Browser.getVersion` user agent says `HeadlessChrome`) and the call's wait (`waitForPersonSeconds`: the call's, else `JEVWAY_PERSON_WAIT_SECONDS`, else 120). A task built without the runner waits 0. Three walls get the wait, each once per call: a bot check after its 8 s, a sign-in wall where section 9.4 would end the run, and an SSO page (an identity provider's sign-in URL carrying another site's OAuth or SAML request), checked before a decision like the bot wall.
+
+The wait brings the tab forward, sends one desktop notification (`src/notify/`: the words come from the wall's kind, host and name only), tells a countdown through `run({ onWait })` at once and every 10 s, and reads the page every second with `observe()`. It asks Jev nothing and sends no input. A bot check is passed on the first read the detector rejects; a sign-in or SSO page on two reads in a row that are clearly past it (`stillSigningIn`: no password field, not the wall's page still listing its fields, not a sign-in path, not an SSO page). Tabs the page opens while it waits are dropped, never followed. Passed adds one `WAIT_FOR_PERSON` step ("A person passed the Cloudflare check") that Jev sees in `recent_actions`, and the loop goes on. Ran out ends `blocked` with the wall plus `waited_seconds`. A cancel or the time budget ends it as everywhere else. Every wall carries `person_can_act`.
 
 ## 10. Box
 

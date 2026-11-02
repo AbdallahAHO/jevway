@@ -119,7 +119,14 @@
    The task calls it inside a `try`: a notifier only hears.
 10. **Timing is injectable**: `person.pollMs` (1000) and `person.tickMs` (10000) for tests; never exposed as
     parameters.
-11. **`JEVWAY_PERSON_WAIT_SECONDS` and `JEVWAY_NOTIFY` are read by the process that runs the task** (the MCP server, the
+11. **The wall says whether a person can act** (asked for by 121's `ask_user`): every `wall` gains
+    `person_can_act` (false in a headless browser, true otherwise) and, when a wait ran out, `waited_seconds`.
+    `kind`, `origin` and `name` are unchanged. In a headless browser the reason ends with what is needed instead of
+    "A person can pass it in this tab": `This browser is headless, so nobody can pass it here: a visible browser is
+    needed (JEVWAY_BROWSER=auto or launch).` (bot check) and `pass the values, or sign in with a visible browser
+    (JEVWAY_BROWSER=auto or launch; this one is headless), then call again.` (sign-in). Decision 7's "byte for byte"
+    holds for a visible browser with a wait of 0.
+12. **`JEVWAY_PERSON_WAIT_SECONDS` and `JEVWAY_NOTIFY` are read by the process that runs the task** (the MCP server, the
     in-process CLI run, or the daemon as it was started). They are not added to the daemon's settings fingerprint, so a
     running daemon keeps its values until `jevway stop`; documented.
 
@@ -129,9 +136,9 @@ Branch `wt/exec-person-wait`. Commits, in order:
 1. `docs: add plan 122 wait for a person at a wall`
 2. `test: describe waiting for a person at a wall` (red)
 3. `feat: add desktop notifications for a person to act`
-4. `feat: wait for a person at a bot check, sign-in or sso page`
-5. `feat: add wait_for_person_seconds and --wait-for-person`
-6. `docs: describe waiting for a person`
+4. `feat: wait for a person at a bot check, sign-in or sso page` (with `wait_for_person_seconds` and
+   `--wait-for-person`: the adapter tests need the task option, so one commit keeps every commit green)
+5. `docs: describe waiting for a person`
 
 Lowercase conventional commits. **No AI attribution of any kind**. Do NOT push or merge.
 
@@ -160,7 +167,7 @@ Lowercase conventional commits. **No AI attribution of any kind**. Do NOT push o
 
 - [ ] New tests red first, then green; `pnpm release:check` passes
 - [ ] No Jev request, input or script on a challenge during a wait (asserted: `requests`, `acted`)
-- [ ] Headless and `wait 0` runs produce today's reasons byte for byte
+- [ ] Visible `wait 0` runs produce today's reasons byte for byte; headless ones say a visible browser is needed
 - [ ] Tool-list delta measured and the ceiling raised by exactly that
 - [ ] Live check numbers recorded, or reported as unit-tested only
 
