@@ -4,7 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { print, printError, printJson } from './command-output.ts';
 
-const USAGE = `jevway skill                      print the SKILL.md this version ships
+export const SKILL_USAGE = `Examples:
+  jevway skill
+  jevway skill --install ~/.claude/skills
+
+jevway skill                      print the SKILL.md this version ships
 jevway skill --install <dir> [--force]   copy the skill folder into <dir>/jevway
 
 Examples:
@@ -89,7 +93,7 @@ export const runSkill = async (argv: string[]): Promise<number> => {
     return printError(2, 'usage', `jevway skill: ${(error as Error).message}`, 'jevway skill --install <dir> [--force]');
   }
   if (options.help) {
-    await print(`${USAGE}\n`);
+    await print(`${SKILL_USAGE}\n`);
     return 0;
   }
   if (options.install === undefined) {

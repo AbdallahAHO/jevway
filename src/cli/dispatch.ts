@@ -1,7 +1,7 @@
 import type { DaemonAccess } from '../daemon/client.ts';
-import { runDoctor } from '../setup/doctor-command.ts';
-import { runSetup } from '../setup/setup-command.ts';
-import { runSkill } from '../setup/skill-command.ts';
+import { DOCTOR_USAGE, runDoctor } from '../setup/doctor-command.ts';
+import { SETUP_USAGE, runSetup } from '../setup/setup-command.ts';
+import { SKILL_USAGE, runSkill } from '../setup/skill-command.ts';
 import type { Runner } from '../task/start-task.ts';
 import { closestName, usageError } from './flags.ts';
 import { topHelp } from './help.ts';
@@ -28,7 +28,8 @@ export interface CliDeps {
   onInterrupt: (handler: () => void) => () => void;
 }
 
-type Command = { summary: string; run: (argv: string[], deps: CliDeps) => Promise<number> };
+/** `usage`: help text for a command that prints its own output (the setup commands), sent through `io` like every other help. */
+type Command = { summary: string; run: (argv: string[], deps: CliDeps) => Promise<number>; usage?: string };
 
 const COMMANDS: Record<string, Command> = {
   run: { summary: 'hand a browser goal to Jev (one-shot, or a session with --session)', run: runCommand },
@@ -38,9 +39,14 @@ const COMMANDS: Record<string, Command> = {
   end: { summary: 'end a session and close the tabs it opened', run: endCommand },
   serve: { summary: 'run the session daemon in the foreground', run: serveCommand },
   stop: { summary: 'stop the session daemon', run: stopCommand },
-  doctor: { summary: 'check the key, browser, Node and ffmpeg (--json for agents)', run: (argv, deps) => runDoctor(argv, deps.fromEnvFile) },
-  setup: { summary: 'set up the key, browser and MCP clients (interactive; --client <name> --print for agents)', run: (argv, deps) => runSetup(argv, deps.fromEnvFile) },
-  skill: { summary: 'print the agent skill, or --install it into a skills folder', run: (argv) => runSkill(argv) },
+  doctor: { summary: 'check the key, browser, Node and ffmpeg (--json for agents)', run: (argv, deps) => runDoctor(argv, deps.fromEnvFile), usage: DOCTOR_USAGE },
+  setup: { summary: 'set up the key, browser and MCP clients (interactive; --client <name> --print for agents)', run: (argv, deps) => runSetup(argv, deps.fromEnvFile), usage: SETUP_USAGE },
+  skill: { summary: 'print the agent skill, or --install it into a skills folder', run: (argv) => runSkill(argv), usage: SKILL_USAGE },
+};
+
+const printUsage = async (deps: CliDeps, usage: string) => {
+  await deps.io.out(usage.endsWith('\n') ? usage : `${usage}\n`);
+  return 0;
 };
 
 const commandList = () => [...Object.entries(COMMANDS).map(([name, { summary }]) => ({ name, summary })), { name: 'help [command]', summary: 'this help, or a command\'s' }];
@@ -74,12 +80,14 @@ export const runCli = async (argv: string[], deps: CliDeps): Promise<number> => 
     if (first === 'help') {
       const command = COMMANDS[rest[0]];
       if (!command) throw unknownCommand(rest[0]);
+      if (command.usage) return await printUsage(deps, command.usage);
       return await command.run([...rest.slice(1), '--help'], deps);
     }
     // Today's form: `jevway --goal … --url …` is `jevway run …`.
     if (first.startsWith('-')) return await runCommand(argv, deps);
     const command = COMMANDS[first];
     if (!command) throw unknownCommand(first);
+    if (command.usage && (rest.includes('--help') || rest.includes('-h'))) return await printUsage(deps, command.usage);
     return await command.run(rest, deps);
   } catch (error) {
     return printFailure(deps.io, error);

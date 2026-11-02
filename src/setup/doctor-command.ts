@@ -7,7 +7,12 @@ import { replayDir } from '../jev/replay.ts';
 import { diagnose, doctorJson, exitCode, liveCheck, planSteps, render, type Probes } from './doctor.ts';
 import { envFilePath, shownEnvFilePath } from './env-file.ts';
 
-const USAGE = `jevway doctor [--plan | --json] [--live] [--browser <source>] [--model <name>]
+export const DOCTOR_USAGE = `Examples:
+  jevway doctor
+  jevway doctor --json
+  jevway doctor --plan --browser launch-headless
+
+jevway doctor [--plan | --json] [--live] [--browser <source>] [--model <name>]
 
   Checks Node, the API key and the route it selects, the browser source and ffmpeg. Never prints a key.
   --plan     print the setup steps still missing, numbered
@@ -64,11 +69,11 @@ export const runDoctor = async (argv: string[], fromEnvFile: string[]): Promise<
       },
     }));
   } catch (error) {
-    console.error(`jevway doctor: ${(error as Error).message}\n\n${USAGE}`);
+    console.error(`jevway doctor: ${(error as Error).message}\n\n${DOCTOR_USAGE}`);
     return 2;
   }
   if (options.help) {
-    console.log(USAGE);
+    console.log(DOCTOR_USAGE);
     return 0;
   }
   const findings = await diagnose(realProbes(options.browser ?? process.env.JEVWAY_BROWSER ?? 'auto', options.model, fromEnvFile));

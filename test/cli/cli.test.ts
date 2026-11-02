@@ -27,7 +27,7 @@ const expectNoStackTrace = (text: string) => expect(text).not.toMatch(/\n\s+at |
 describe('help and version', () => {
   it('starts every help with examples, then the flags', async () => {
     const { cli } = setup();
-    for (const argv of [['--help'], ['help'], ['help', 'run'], ['run', '--help'], ['look', '-h'], ['journey', '--help'], ['journey', 'step', '--help'], ['help', 'sessions'], ['end', '--help'], ['serve', '--help'], ['stop', '--help']]) {
+    for (const argv of [['--help'], ['help'], ['help', 'run'], ['run', '--help'], ['look', '-h'], ['journey', '--help'], ['journey', 'step', '--help'], ['help', 'sessions'], ['end', '--help'], ['serve', '--help'], ['stop', '--help'], ['help', 'doctor'], ['help', 'setup'], ['help', 'skill'], ['doctor', '--help'], ['skill', '-h']]) {
       const { code, out, err } = await cli(argv);
       expect(code, argv.join(' ')).toBe(0);
       expect(out, argv.join(' ')).toMatch(/^Examples:\n {2}jevway /);

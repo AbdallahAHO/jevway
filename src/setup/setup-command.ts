@@ -13,7 +13,12 @@ import { terminalPrompter } from './terminal-prompter.ts';
 
 const CLIENT_LIST = CLIENT_NAMES.join('|');
 
-const USAGE = `jevway setup                                   interactive: key, browser, MCP clients (needs a terminal)
+export const SETUP_USAGE = `Examples:
+  jevway setup
+  jevway setup --client codex --print
+  jevway setup --client cursor --print --json
+
+jevway setup                                   interactive: key, browser, MCP clients (needs a terminal)
 jevway setup --client <${CLIENT_LIST}> --print [--json]
                                                print how to register jevway with that client; changes nothing
 
@@ -86,7 +91,7 @@ export const runSetup = async (argv: string[], fromEnvFile: string[] = []): Prom
     return printError(2, 'usage', `jevway setup: ${(error as Error).message}`, `jevway setup --client <${CLIENT_LIST}> --print [--json]`);
   }
   if (options.help) {
-    await print(`${USAGE}\n`);
+    await print(`${SETUP_USAGE}\n`);
     return 0;
   }
   if (options.print || options.client !== undefined || options.json) {
