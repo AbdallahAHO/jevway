@@ -95,47 +95,19 @@ screenshots as proof.
 
 ## Install
 
-**Claude Code:** the plugin above, or the server alone:
+`npx -y jevway setup` registers jevway with Claude Code, Codex, Cursor and OpenCode (Claude Code also has the plugin
+above). Any other stdio MCP client runs `npx -y -p jevway jevway-mcp` (or `npx -y jevway mcp`).
+`npx -y jevway setup --client <claude-code|codex|cursor|opencode|other> --print` prints the exact command or config for
+one client and changes nothing; every client's is listed in [`jevway setup`](docs/reference.md#jevway-setup), and
+[SETUP.md](SETUP.md) has the steps an agent follows, with the rules and checks. jevway is also listed in the official
+MCP Registry as `io.github.abdallahaho/jevway`, for clients that install from it.
 
-```bash
-claude mcp add jevway -s user -- npx -y -p jevway jevway-mcp
-```
+Outside the Claude Code plugin, install the skill with `npx -y jevway skill --install <your agent's skills folder>`, so
+it knows when to use jevway and when to use chrome-devtools. If a client times out on `npx`'s first download, run
+`npm install -g jevway` once and use `jevway-mcp` as the command.
 
-**Codex:**
-
-```bash
-codex mcp add jevway -- npx -y -p jevway jevway-mcp
-```
-
-**Cursor** (`~/.cursor/mcp.json`, under `mcpServers`) **or any stdio MCP client:**
-
-```json
-"jevway": { "command": "npx", "args": ["-y", "-p", "jevway", "jevway-mcp"] }
-```
-
-**OpenCode** (`opencode.json`, under `mcp`):
-
-```json
-"jevway": { "type": "local", "command": ["npx", "-y", "-p", "jevway", "jevway-mcp"], "enabled": true }
-```
-
-Outside the Claude Code plugin, install the skill with `npx -y jevway skill --install <your agent's skills folder>`, so it knows when to use jevway and
-when to use chrome-devtools. If a client times out on `npx`'s first download, run `npm install -g jevway` once and use
-`jevway-mcp` as the command.
-
-Having an agent install it? `npx -y jevway setup --client <claude-code|codex|cursor|opencode|other> --print` prints the
-exact command or config for that client and changes nothing. [SETUP.md](SETUP.md) has the
-steps per client, the rules (a diff before any config edit, no key in the chat) and the checks.
-
-jevway is also listed in the official MCP Registry as `io.github.abdallahaho/jevway`, for clients that install from it.
-
-**Choosing a browser** (`JEVWAY_BROWSER` in the server's env or the env file):
-
-| Value | Uses |
-| --- | --- |
-| `auto` (default) | your running Chrome, after you allow it at `chrome://inspect/#remote-debugging` |
-| `launch` / `launch-headless` | a throwaway profile jevway starts and closes |
-| `http://127.0.0.1:9222` | a Chrome you started with that debugging port and its own profile |
+`JEVWAY_BROWSER` picks the browser: `auto` (default, your running Chrome), `launch` / `launch-headless` (a throwaway
+profile) or a debugging URL; see [Environment variables](docs/reference.md#environment-variables).
 
 **Without MCP**, use the CLI. It's built for agents: every command prints exactly one JSON document on stdout (the
 result, or `{ "ok": false, "error": { "code", "message", "hint" } }`), progress goes to stderr as one JSON event per

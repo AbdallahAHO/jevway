@@ -28,23 +28,16 @@ For anything that calls Jev, copy `.env.example` to `.env` and add `TYPESAFE_API
 
 ## Find your way around
 
-| Folder | What's there |
+| To change… | Start in |
 | --- | --- |
-| `src/browser/` | Chrome over the DevTools Protocol: connecting, the page reader (`snapshot.js`, vendored from jev-ultrafast), frames, the guarded tab that acts |
-| `src/jev/` | what Jev is asked and how its answers are checked: the action space, instructions, the request, model profiles, Box, secrets, replay |
-| `src/task/` | the task loop and its hand-back rules, checks, evidence, hosts, the look tool |
-| `src/recording/` | the record a run keeps for people (`record_dir`) and the page design the reports share |
-| `src/journeys/` | the journey-map tools |
-| `src/setup/` | the env file and `jevway doctor` |
-| `src/mcp.ts` + `src/mcp/`, `src/cli/` + `src/daemon/` | the two entry points: the MCP server, and the CLI with its session daemon |
-| `src/session/`, `src/output/` | the session service both entry points share, and the `.jevway/` folder layout |
-| `test/` | offline tests (vitest), in folders that mirror the source folders |
-| `verify/` | live suites against fixtures, real apps in Docker (`verify/apps/`), and public sites; the shared jobs runner (`verify/jobs/`) and the agent suite (`verify/agent/`) |
-| `skill/jevway/` | the skill agents load |
-| `release/` | the release scripts |
+| what the page reader lists | `src/browser/snapshot.js` (vendored from jev-ultrafast), `src/browser/frames.ts`, then `pnpm verify:reader` |
+| what Jev is asked, or how its answers are checked | `src/jev/decide.ts`, `src/jev/instructions.ts` |
+| when a run stops and with which status | `src/task/run-task.ts` |
+| a tool, parameter or CLI flag | `src/mcp/*-tools.ts`, `src/cli/` |
 
-[docs/how-it-works.md](docs/how-it-works.md) explains how the pieces fit. [AGENTS.md](AGENTS.md) holds the rules the
-code must keep, in short form; read its "Invariants" before changing the loop, the reader or what Jev is asked.
+The file-by-file map is the [code map in docs/how-it-works.md](docs/how-it-works.md#14-code-map), which also explains
+how the pieces fit. [AGENTS.md](AGENTS.md) holds the rules the code must keep, in short form; read its "Invariants"
+before changing the loop, the reader or what Jev is asked.
 
 ## The rules that matter most
 
@@ -73,19 +66,8 @@ rules, the report pages. It needs no key and no network, and must pass without o
 
 The `pnpm verify*` suites drive real Chrome with real Jev requests. They cost API credits (usually cents) and aren't
 run in CI. Run the one closest to your change if you have a key, and put the result in the PR; if you don't, say so and
-the maintainer will run it.
-
-| Suite | What it covers | Needs |
-| --- | --- | --- |
-| `pnpm verify` | the core scenarios on a local fixture, Wikipedia, and an MCP round trip | a key; about 30 s |
-| `pnpm verify:reader` | the page reader on fixtures | nothing (no model) |
-| `pnpm build && pnpm verify:mcp` | every MCP tool as a client sees it, on the local fixtures | a key |
-| `pnpm verify:gotchas`, `verify:redteam`, `verify:capabilities` | hard page patterns, bait and injection, known gaps | a key |
-| `pnpm verify:forgejo`, `verify:signup`, `verify:vikunja` | writes in self-hosted apps, judged by their APIs | a key and Docker (`pnpm apps:forgejo:up`, `pnpm apps:vikunja:up`) |
-| `pnpm verify:checkout`, `verify:real` | a practice shop, and live public sites | a key |
-| `pnpm verify:langfuse`, `verify:grafana` | read-only jobs in real web apps | a key and a signed-in Chrome on a debugging port |
-
-[docs/verification.md](docs/verification.md) describes every suite and its latest results.
+the maintainer will run it. [docs/verification.md](docs/verification.md#suites) lists every suite, what it needs and
+its latest results.
 
 **Replay** makes the fixture suites free to re-run: record Jev's answers once, then replay them offline with no key.
 
@@ -112,15 +94,21 @@ A change to what Jev is asked misses the recording by design: record again after
 
 Releases are automatic: nobody bumps a version or runs `npm publish` by hand.
 
-1. Commits land on `main`. release-please keeps one release PR open with the next version and the `CHANGELOG.md`
-   entry, worked out from the commit messages.
+1. Commits land on `main`. release-please (`.github/workflows/release.yml`) keeps one release PR open with the next
+   version and the `CHANGELOG.md` entry, worked out from the commit messages. It bumps `package.json`,
+   `.release-please-manifest.json` and both `.claude-plugin/` manifests together (`test/package.test.ts` checks).
 2. Below 1.0, `feat:` and breaking changes bump the minor version (0.1 → 0.2), `fix:` and `perf:` the patch. `docs:`,
    `test:`, `chore:` and `refactor:` release nothing.
-3. The maintainer runs `pnpm release`. It runs CI on the release PR, merges it, waits for the publish workflow, and
-   confirms npm lists the new version. Publishing uses npm trusted publishing from GitHub Actions, with no token.
+3. The maintainer runs `pnpm release`. It waits (up to 10 min) for release-please and CI on main's head, merges the
+   release PR once CI is green, watches the release workflow and waits until npm lists the new version. It asks
+   first; `--yes` skips the question (required without a terminal).
+4. Merging tags `v<version>`, and the release workflow publishes three things: the GitHub release, the npm package
+   (trusted publishing from GitHub Actions, no token; `prepublishOnly` typechecks, tests and rebuilds `dist/`) and the
+   MCP Registry entry `io.github.abdallahaho/jevway` (GitHub OIDC), after npm.
 
-`pnpm release:status` shows where things stand, and `pnpm release as <x.y.z>` forces a version when only non-releasing
-commits landed.
+`pnpm release:status` shows main, npm, CI and the release PR with the one next step (read-only; `--json` for scripts).
+`pnpm release as <x.y.z>` forces a version when only non-releasing commits landed (an empty `Release-As:` commit pushed
+to main, then the same flow); it needs a clean, up-to-date `main`.
 
 ## Reporting bugs and security issues
 

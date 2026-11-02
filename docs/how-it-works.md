@@ -4,7 +4,7 @@ The technical specification of jevway, taken from the code. Every number below i
 
 ## Contents
 
-1. [Overview](#1-overview)
+1. [Overview](#1-overview): the MCP adapter, the CLI, the inbox, `jevway_look`, setup
 2. [One step, end to end](#2-one-step-end-to-end)
 3. [The action space](#3-the-action-space)
 4. [What the model decides and what code decides](#4-what-the-model-decides-and-what-code-decides)
@@ -71,11 +71,17 @@ A **session** is one `BrowserTask`, starting on one tab. Each `jevway_task` call
 
 `src/mcp.ts` is the MCP server's entry, started by the `jevway-mcp` bin or by `jevway mcp` (the main CLI importing it): it loads `~/.config/jevway/env`, makes the runner and one session service, and serves `createMcpServer` (`src/mcp/server.ts`) through `serveStdio`. That builds a server per connection (twice when a 2026-07-28 probe falls back to `initialize`), so a server holds nothing: the sessions stay in the one service. The adapter translates and decides nothing about a run.
 
+- **Starting.** `serveStdio` serves both protocol eras on stdio: 2025-era clients that open with `initialize`
+  (2024-10-07 to 2025-11-25) and 2026-07-28 clients that send `server/discover` or a per-request `_meta` version.
+  Without the chosen model's key the server still starts and lists every tool: `jevway_look` works, and `jevway_task`
+  and the journey tools answer `isError` naming the key, `~/.config/jevway/env` and `jevway doctor`, before any browser
+  connects. The CLI reports the same as a usage error (exit 2).
+
 - **In.** Tool parameters become a `TaskRequest`. `checks` are advertised as a loose list (the full union would cost about 580 tokens of every tool list) and parsed strictly with `CHECKS` when the call arrives. A `jevway_task` with none of `url`, `tab` and `session` is refused with an example before any browser work.
-- **Out.** `presentSummary` (concise, or `detail: "full"`) whose keys lead with `status`, `reason`, `story`, `next`, `session` and end with `page_text` (the order the CLI shares), sent as one JSON text block and as the same object in `structuredContent`. Each `outputSchema` lists top-level fields and leaves every object open, so a field added later never fails a client's validation. After the JSON come the end page as an `image/jpeg` block when `attachesEndPage` (`src/mcp/results.ts`) says so (`JEVWAY_IMAGE_RESPONSES`, a hand-back status, or `screenshot: true`), then `resource_link`s with `file://` URIs to the run folder's files.
+- **Out.** `presentSummary` (concise, or `detail: "full"`) whose keys lead with `status`, `reason`, `story`, `next`, `session` and end with `page_text` (the order the CLI shares), sent as one JSON text block and as the same object in `structuredContent`. Each `outputSchema` lists top-level fields and leaves every object open, so a field added later never fails a client's validation. After the JSON come the end page as an `image/jpeg` block when `attachesEndPage` (`src/mcp/results.ts`) says so (`JEVWAY_IMAGE_RESPONSES`, a hand-back status, or `screenshot: true`), then `resource_link`s with `file://` URIs to the run folder's files. A journey reply always carries its screen image as `content[1]`.
 - **Progress.** Each `step` event becomes `notifications/progress` (`progress` the step number, `message` "Step n: " plus the story line, `total` the call's `max_steps` when given), chained in order and awaited before the result is returned.
 - **Errors.** A thrown error becomes an `isError` result, `<tool> failed: <message>`; the service's `UnknownSession` message passes through unchanged. Schema errors carry an example for `goal`, `values` and `files`.
-- **Instructions and tool set.** `instructionsFor` (`src/mcp/instructions.ts`) states the rules several tools share once (session pattern, consent, `jevway_look` before repeating a write, files, untrusted page text, the inbox's test-and-demo-only rule); `JEVWAY_TOOLS` (`all`, `task`, `journeys`, `inbox`) picks the tools, registered in one fixed order so the list stays byte-stable.
+- **Instructions and tool set.** `instructionsFor` (`src/mcp/instructions.ts`) states the rules several tools share once (session pattern, consent, `jevway_look` before repeating a write, files, untrusted page text, the inbox's test-and-demo-only rule); `JEVWAY_TOOLS` (`all`, `task`, `journeys`, `inbox`) picks the tools, registered in one fixed order so the list stays byte-stable. `test/mcp/server.test.ts` pins a ceiling on the instructions' length and on the tool list's tokens.
 
 ### 1.2 The CLI and its daemon
 
@@ -115,7 +121,26 @@ mail.tm REST API (mail.gw speaks the same one), over the global `fetch`, with no
   address, and it holds no tab, so it lives in its own registry (`inbox-registry.ts`), one per `jevway-mcp` process
   and one per daemon, named by a UUID and found by id or address. The one-shot CLI writes a mode-600 env file under
   the output root instead. The password is a non-enumerable property, so serializing an inbox never shows it, and
-  provider error text is scrubbed of it and of the token.
+  provider error text is scrubbed of it and of the token. Neither ever reaches a result, an error, an event, a log line
+  or Jev.
+- **Nothing feeds a run.** A code reaches Jev only through `values` with `secret_keys`, which the agent passes. The
+  test-and-demo-only rule is stated once in `jevway_inbox_create`'s description and once in the server instructions.
+
+### 1.4 Looking without acting
+
+`jevway_look` (`src/task/look.ts`) only observes: no Jev request, no input, and no node or action ids, rects or guards
+in what it returns, so nothing in it can be passed back as a target. A `url` look closes its tab again. `pdf: true`
+saves `Page.printToPDF` to `<run>/looks/NN-<title>.pdf` on a session, else `<out>/looks/<stamp>_<host>_<id4>/page.pdf`,
+and returns the path; like `final.jpg` it is not masked, so a secret typed into a visible field is in it as text.
+
+### 1.5 Setup
+
+`src/setup/`. The env file `~/.config/jevway/env` fills only variables the environment lacks, and only the keys,
+`CHROME_PATH` and `JEVWAY_*`. `jevway doctor` checks the key and route, the browser, Node and ffmpeg and never prints a
+key; only `--live` makes a real Jev request. `jevway setup` writes a file only on an explicit yes (the key and browser
+lines once entered), always whole (a temporary file, then a rename), the env file with mode 600. It never edits another
+server's entry or a config file that is not plain JSON, never prints the key, and without a terminal asks nothing and
+exits 2.
 
 ## 2. One step, end to end
 
@@ -161,7 +186,7 @@ What the reader returns (`PageState`):
 | Never listed | Password, hidden and file inputs (file inputs are listed only when the caller declared `files`), disabled controls, closed shadow roots, canvas content. |
 | Password fields | Up to 5 visible ones, as `{ name, filled }` and as page-text lines `Password field "…": filled/empty`. Never the value or its length. |
 | Text | Text nodes that intersect the viewport, up to 6000 characters, password lines first. Frame text follows under `[Frame: …]` within the same 6000, frames keeping at least 1000. |
-| Page-level controls | `SCROLL_DOWN` / `SCROLL_UP` when the document can move that way (step 560 px), else for the largest visible pane at least 50×50 px that can (step 80 % of its visible height, 100 to 560 px). `WAIT` always. |
+| Page-level controls | `SCROLL_DOWN` / `SCROLL_UP` when the document can move that way (step 560 px), else for the largest visible pane at least 50×50 px that can (overflow `auto`, `scroll` or `overlay`; the wheel at the centre of its visible part, from DOM rects only; step 80 % of its visible height, 100 to 560 px). `WAIT` always. |
 | Freshness data | `marker` (whole page: URL, title, text, scroll, control semantics), `page_key`, one `guard` per control node, and `fingerprint` (sha256 of URL, text, controls and scroll) to tell whether a step changed anything. |
 
 When the caller marked secret keys, the loop scrubs the page as it reads it (title, URL, text, labels, field values, password field names) before anything else uses it (`#observe` in `src/task/run-task.ts`).
@@ -181,6 +206,10 @@ The state:
 | `supplied_files` | Only when files are declared: each key with the file's name, never its path. |
 | `recent_actions` | The last 10 history entries (operation, element, value or file key, `page_changed`, `value_kept`, `not_executed` notes, confidence). |
 | `screenshot` | Only when this step carries one (section 11): a marked JPEG of the viewport. |
+
+The `[Page message after "<label>"]` line holds only lines this run never saw on that path, and is replaced at the next
+risky or saving click. It exists because the done check judges the current page's text only (history is discounted),
+so a "saved" message that scrolled away would otherwise be lost. The caller's `page_text` never carries it.
 
 The goal is not in the state: it travels in each head's instructions (`{ goal, rules }`). The questions (heads) of the decision request:
 
@@ -307,6 +336,8 @@ All values are from `src/task/run-task.ts` (`GUARDS` and the constants above it)
 
 **Last look.** Before a progress guard hands back, the loop makes one more decision on the current page, with a screenshot unless screenshots are `off`. If its `done_check` is at least 0.5 the run ends `done`. This needs `done_when`.
 
+**Dismissing a popup.** `dismissPopup` sends Escape to the focused element, then blurs it and presses outside on `body`. It never moves focus first: that re-opens search suggestions. A rejected DONE goes into history as "not visible yet", naming a flipped box that nothing on the page was clicked after to save it.
+
 **Rescues before an unsure or blocked hand-back** (`#openDisclosure`, `foldedFavourite` and `overflowFolds` in `src/jev/decide.ts`). A `BLOCKED` step first opens the collapsed control (`aria-expanded="false"`) the click head ranks highest, if its probability is at least `minConfidence`. Otherwise it, and an unsure step, opens a collapsed overflow control ("+1", "Show N more …", "More actions", "⋯"), count chips first, at most 3 judged per step. Each is opened once per task, is judged by name for commit risk like any click, and never is the signed-in user's account menu.
 
 ## 6. Irreversible actions
@@ -375,7 +406,7 @@ The six statuses are `TaskStatus` in `src/task/run-task.ts`. "Overridable" means
 | Status | Triggered by | What the caller should do |
 | --- | --- | --- |
 | `done` | Any path in section 7.1, or checks overriding an overridable stop. | Read `page_text` and `evidence`; verify anything important. |
-| `needs_input` | `BLOCKED` with empty text fields no supplied value fits (or any empty field when no values were given); the same field chosen twice with no fitting value; the same for a file field. `missing` lists each field as `{label, role, path}`. | Add the value (or file) and call again on the session. |
+| `needs_input` | `BLOCKED` with empty text fields no supplied value fits (or any empty field when no values were given); the same field chosen twice with no fitting value; the same for a file field. `missing` lists each field as `{label, role?, path, options?}`: `path` is the URL pathname, `options` the choices the final page lists for it (a select of the same name, or an expanded combobox's rows; at most 10 × 80 characters). | Add the value (or file) and call again on the session. |
 | `needs_confirmation` | A risky click with no confirmation; a confirmed call whose risky click is a different control than the one flagged; a confirmation whose `confirm_target` is missing or not shown on the page. | Confirm only if the user's request names this action and target; otherwise ask the user. |
 | `uncertain` | Low confidence after rescues (overridable); Box points at a different control, or the target looks covered after 2 retries (overridable); 3 rejected DONEs (overridable); 6 unsure steps in a row (overridable); a failed check turned a `done`. | Read `stuck` (operation, element, top 5 candidates) and `page_text`; rephrase the goal or finish by hand. |
 | `blocked` | Jev's `BLOCKED` with nothing missing (overridable); no change ×3, toggling ×4, same element 6 in 7, unreachable ×3 (all overridable); stale refusals over `2 × maxSteps`; undoing its own toggle twice; a rejected resubmit; a declined dialog coming back; leaving a page with an unsaved edit twice; a page error after an action; a sign-in wall (`wall.kind: "sign_in"`); a bot wall (`wall.kind: "bot_check"`); a page outside the hosts; a dropped click; cancellation; a model or browser error. | The reason says which. Quote page errors to the user, pass sign-in or bot walls in the tab, or change the goal. |
@@ -409,7 +440,7 @@ Not checked: frames and the page's own requests.
 
 `src/jev/secrets.ts`. A key listed in `secret_keys` is secret for the rest of the session. Jev sees `[secret:<key>]` in `supplied_values` and in the value question, and the value is typed as given. A secret is never passed to `tab.want`, so the page's scripts see it only when it is typed.
 
-`scrubberFor` replaces the value (as typed, trimmed, URL-encoded, form-encoded, any case, longest form first) with the marker in every string of every request, in every page the run reads (`jevway_look` on a session included, through `BrowserTask.look`), in summaries (checks and evidence included), in `task.trace` and in the recording's text. Image parts are left alone, and recorded screenshots and video are pixels, so they are not masked. With no secret keys, requests are unchanged.
+`scrubberFor` replaces the value (as typed, trimmed, URL-encoded, form-encoded, any case, longest form first) with the marker in every string of every request, in every page the run reads (`jevway_look` on a session included, through `BrowserTask.look`), in summaries (checks and evidence included), in `task.trace` and in the recording's text. Image parts are left alone, and recorded screenshots and video are pixels, so they are not masked. With no secret keys, requests are unchanged. The loop itself keeps raw values (typing, `value_kept`, the resubmit and target checks); only what leaves it is scrubbed.
 
 **Authenticator codes.** `totp` (key → base32 secret or `otpauth://totp/` URI) is parsed and checked by `src/task/totp.ts` before a tab opens, and kept apart from `values`: only `#decide` adds each key to the values Jev gets (as a secret key, so it shows `[secret:<key>]`), and `tab.want` and every other reader of `values` never see it. When Jev's TYPE_TEXT picks such a key, `#textFor` in `src/task/run-task.ts` computes the RFC 6238 code at that moment (HMAC through Node `crypto`); with under 8 s left in its period (a third of a short one) it pauses on the run's stop signal and types the next period's code. The code joins the scrubber's extra entries (`scrubberFor`'s third argument, with the secret as given and as base32) before the step is recorded or typed, so the page read right after typing, a page that echoes the code, and every output above are already masked, and `value_kept` compares marker to marker. Codes stay in the list for the session.
 
@@ -435,21 +466,30 @@ Both are Noul heads on every step (`sign_in_wall`, `page_error`). A sign-in wall
 
 `#answerDialog` in `src/browser/tab.ts` answers at once with the choice that changes nothing: OK for an alert, Cancel for confirm and prompt, Stay for a leave-page dialog. The confirmed click's own confirm is the one exception (section 6). Each dialog is reported on the step that raised it.
 
-A declined dialog with the same type and message seen twice ends the run `blocked`. A leave-page dialog after a click on a page with unsaved typed text or a ticked control is fed back once as "save first", then handed back.
+A declined dialog with the same type and message seen twice ends the run `blocked`. A leave-page dialog after a click on a page with unsaved typed text or a ticked control is fed back once as "save first", then handed back naming the field. Dialogs from any frame reach the page session's handler.
+
+On a followed tab, dialogs are answered only once it is set up (shortly after it appears): one it raised before that freezes it, `Page.enable` does not re-send it, and following it fails after 5 s as a browser error (`blocked`), leaving that tab open. A protocol call that times out ends the run as a browser error, never a stale page.
 
 ### 9.6 New tabs
 
 A tab whose `openerId` is the session's tab becomes the session's tab, newest first. It inherits the device, wanted values and the confirmation arm, and the step gains `(new tab opened: <url>)`. When the tab in use closes, the run moves to the newest tab it drove that is still open, with `(the tab closed; back on <url>)`.
 
-Setting up a followed tab may take 5 s before it counts as frozen, it may sit on `about:blank` for 3 s, and its load wait is 15 s. Tabs nobody in the session opened are never attached, read or closed. `jevway_end` closes the followed tabs, and the first tab only when the session opened it.
+Setting up a followed tab may take 5 s before it counts as frozen, it may sit on `about:blank` for 3 s, and its load wait is 15 s. Tabs nobody in the session opened are never attached, read or closed. `jevway_end` closes the followed tabs, and the first tab only when the session opened it. Confirmation state belongs to the task, so it carries over to a followed tab.
+
+There is no browser-level `waitForDebuggerOnStart` (it would pause the user's own tabs), so a followed tab is set up shortly after it appears, not before its first document's scripts. Its input counter therefore starts late: a page listener registered in that window that hides a press makes a delivered click read as dropped, which ends the run `blocked` like any `InputNotDelivered`.
 
 ### 9.7 Frames
 
 `src/browser/frames.ts` reads each visible frame, same-origin or cross-origin, with the same `snapshot.js` in an isolated world named `jevway`. Each frame owns an id range of 1,000,000, so ids stay unique. Caps: 10 frames, 3 levels deep, a frame showing at least 16×16 px, 1.5 s per read; a frame read that fails or runs over is skipped, not an error. Freshness, cover checks, the input counter, settle, Enter and hover all run inside the target's frame.
 
+- **Placement.** A frame action's rect is in viewport pixels: owner content-box offsets compound, and the frame's visible part is clipped by every parent. It is listed only where every document around the frame has the frame on top.
+- **Input.** The counter is registered in the frame's world before its scripts (out-of-process frames are held at start until then). Before a press into a frame, two animation frames are awaited there: an unpainted frame lets the press fall through. Acting in a frame keeps the protocol timeout rule (section 9.5).
+- **Change.** Page-level actions compare frames by document (start time and URL), not by text.
+- **Text.** Only what shows in a frame's visible part, under `[Frame: …]`; password lines of every frame come first (5 at most).
+
 ### 9.8 Cancellation and time budget
 
-`src/task/run-limit.ts`. A call stops when the caller cancels (the MCP request's signal, Ctrl-C in the CLI: `blocked`, "Cancelled by the caller") or when `max_seconds` pass (`step_budget`). The loop checks before every decision and right before every input. Waits end early on the stop, and every model request and screenshot carries or races the stop signal.
+`src/task/run-limit.ts`. A call stops when the caller cancels (the MCP request's signal, Ctrl-C in the CLI: `blocked`, "Cancelled by the caller") or when `max_seconds` pass (`step_budget`). The loop checks before every decision and right before every input. Waits end early on the stop (the bot-wall and person waits, a followed tab's address and load, a scroll's settle poll, frame reads), and every model request (with its SDK retries and Retry-After sleeps, the evidence request too) and screenshot carries or races the stop signal, so a stop is never reported as a model or browser error.
 
 An input already under way is never aborted; it finishes and is reported. A session's next call waits for a cancelled call that is still finishing.
 
@@ -458,6 +498,14 @@ An input already under way is never aborted; it finishes and is reported. A sess
 The runner knows the browser source, so it tells each task whether a person can see it (`person.visible`: false for `launch-headless` and for a Chrome whose `Browser.getVersion` user agent says `HeadlessChrome`) and the call's wait (`waitForPersonSeconds`: the call's, else `JEVWAY_PERSON_WAIT_SECONDS`, else 120). A task built without the runner waits 0. Three walls get the wait, each once per call: a bot check after its 8 s, a sign-in wall where section 9.4 would end the run, and an SSO page (an identity provider's sign-in URL carrying another site's OAuth or SAML request), checked before a decision like the bot wall.
 
 The wait brings the tab forward, sends one desktop notification (`src/notify/`: the words come from the wall's kind, host and name only), tells a countdown through `run({ onWait })` at once and every 10 s, and reads the page every second with `observe()`. It asks Jev nothing and sends no input. A bot check is passed on the first read the detector rejects; a sign-in or SSO page on two reads in a row that are clearly past it (`stillSigningIn`: no password field, not the wall's page still listing its fields, not a sign-in path, not an SSO page). Tabs the page opens while it waits are dropped, never followed. Passed adds one `WAIT_FOR_PERSON` step ("A person passed the Cloudflare check") that Jev sees in `recent_actions`, and the loop goes on. Ran out ends `blocked` with the wall plus `waited_seconds`. A cancel or the time budget ends it as everywhere else. Every wall carries `person_can_act`: false when headless, where the reason says a visible browser is needed and `ask_user` offers one (section 8.1). With no wait (headless, or a wait of 0) reasons are as before, and a headless SSO page is left to Jev. The SSO providers are `accounts.google.com`, `appleid.apple.com`, `login.microsoftonline.com` and `login.live.com`, counted only with another site's `client_id` and `redirect_uri`, or a `SAMLRequest`.
+
+### 9.10 Files in and out
+
+**Uploads** (`src/task/upload-files.ts`). `files` maps a key to an absolute path, checked to be a readable file before the run, or an `https` URL fetched into `<run>/uploads/` when the call starts; never from `values`, never from the model. File inputs (frames included) and drop zones are listed, and UPLOAD offered, only when files are declared, so a call without them sends Jev the same request as before. The request carries each key and file name (`supplied_files`, `file_for_<index>`), never a path or URL. A URL fetch is `https` only, follows at most 3 redirects (each checked again, and one carrying credentials refused), stays inside the call's host rules, stops at 50 MB, and connects only to an address it checked to be public (no loopback, private, link-local, CGNAT, multicast, reserved, or their IPv6 forms; an address literal is checked by itself), handing that address to the connection so a name can't rebind. Errors start `files.<key>: "<url>"`.
+
+**Drop zones.** An area with no file input inside is listed only on a marker: an `ondrop` attribute, a drop-zone class, id or `data-` name, or text asking for a dropped file (section 2.5).
+
+**Downloads** (`src/browser/downloads.ts`). jevway's launched browser saves to a staging folder (`allowAndName`) and a finished file is moved into `<run>/downloads/`; the person's Chrome (`auto`, a port) keeps its own behaviour (`default`, events on) and the file is copied. A tab claims only downloads whose frame is its page, one of its frames or a tab it opened (section 2.6).
 
 ## 10. Box
 
@@ -484,6 +532,8 @@ Screenshot marks are drawn from snapshot rects in a closed shadow root, skip cov
 | `clef` | `cloudflare/clef` | no | `off` | 0.05 | yes | no |
 | `clef-flash` | `cloudflare/clef-flash` | yes | `always` | 0.3 | yes | no |
 | `gpt-6-luna` | `openai/gpt-6-luna-decisions` | yes | `always` | 0.3 | yes | no |
+
+Jev's `NEXT_ACTION`, its 0.3 threshold and the page-level commit-risk question are its verified baseline. Another model's settings are tuned on that model's own runs, never Jev's from them, and the `GUARDS` in section 5 are Jev-only provisional values.
 
 **Route.** `resolveModel` picks the profile from the explicit choice, then `JEVWAY_MODEL`, then `jev`. Jev takes the direct TypeSafe route when `TYPESAFE_API_KEY` is set: screenshots travel as an `Image` asset in the state (with the `TypeSafe-Danger-Zone-Images: true` header) and Box is on. Otherwise Jev, and every other profile, goes through OpenRouter with `OPENROUTER_API_KEY`: the screenshot is an `image_url` part placed before the JSON state, body compression is off, and Box is off. Under `JEVWAY_REPLAY=replay` the recorded route is used with no key.
 
@@ -531,7 +581,7 @@ Without `output` the task writes nothing. `src/output/layout.ts` names the folde
 
 The text files and every file name are scrubbed of secrets; the images and video are not. Recorded shots never go into a request.
 
-**Session service** (`src/session/session-service.ts`). `createSessionService(runner, options)` holds task sessions and journeys by `randomUUID()`, makes each one's folder, and waits for a session's still-running call before its next one. Its errors say what to do next (`UnknownSession`, `code: 'unknown_session'`). `onEvent` hears `started`, one `step` per step (`n`, the story sentence, the URL) and `finished`. `presentSummary` (`src/task/present.ts`) turns a result into the concise form (status, reason, `next`, `story`, page, `files`) or, with `detail: 'full'`, adds the raw steps, Jev's stats and the stuck candidates. The story is `describeStep`'s wording in the past tense plus what happened (a new tab, a dialog, a scroll that moved nothing, a field that did not keep its text), built from the scrubbed steps.
+**Session service** (`src/session/session-service.ts`). `createSessionService(runner, options)` holds task sessions and journeys by `randomUUID()`, makes each one's folder, and waits for a session's still-running call before its next one. Start-only fields (`url`, `tab`, `allowCoordinateClicks`, the recording) are ignored on a continue. Its errors say what to do next: an unknown id is `UnknownSession` (`code: 'unknown_session'`), saying sessions end at a restart (or after the idle time) and to start a new one with `url`. `onStep` and `onEvent` listeners only hear: one that throws is ignored and never decides how the run goes. `onEvent` hears `started`, one `step` per step (`n`, the story sentence, the URL) and `finished`. `presentSummary` (`src/task/present.ts`) turns a result into the concise form (status, reason, `next`, `story`, page, `files`) or, with `detail: 'full'`, adds the raw steps, Jev's stats and the stuck candidates. The story is `describeStep`'s wording in the past tense plus what happened (a new tab, a dialog, a scroll that moved nothing, a field that did not keep its text), built from the scrubbed steps.
 
 **Replay** (`src/jev/replay.ts`). `JEVWAY_REPLAY=record` wraps the live client and appends each answer to one JSONL file per process in `JEVWAY_REPLAY_DIR`, which is required whenever `JEVWAY_REPLAY` is set (`pnpm verify:replay` sets it per suite): a header with the profile, model id, route and screenshot mode, then `{ key, model, request, answer }` lines. The key is the sha256 of the model id plus the canonical request: keys sorted at every depth, every image replaced by `<image>`, and `127.0.0.1:<port>` / `localhost:<port>` normalised.
 
