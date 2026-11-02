@@ -43,7 +43,7 @@ settings carry over.
 | `values` | object | Text values Jev may type, by descriptive key: `{"city":"Lisbon","email":"ada@example.com"}`. Jev types nothing else. |
 | `secret_keys` | string[] | Keys of `values` that hold secrets. See [Secret values](#secret-values). |
 | `files` | object | Files Jev may upload, key → absolute path. Checked before the run. Jev sees each key and file name, never the path. |
-| `done_when` | string | Visible evidence of success on the page the call ends on. `done` needs this check to pass. |
+| `done_when` | string | Visible evidence of success on the page the call ends on. `done` needs this check to pass. On a continuing session it stays for the same goal; a call with a new `goal` and no `done_when` drops it. |
 | `checks` | object[] | Facts code checks on the final page. See [Checks](#checks). |
 | `confirm_irreversible` | boolean | Allows one click flagged as irreversible. See [Confirming](#confirming-an-irreversible-click). |
 | `confirm_target` | string | The user's own words naming what that click acts on. |

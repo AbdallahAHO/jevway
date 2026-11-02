@@ -45,7 +45,7 @@ const TASK_INPUT = z.object({
     .record(z.string(), z.string({ error: 'files maps keys to absolute paths, e.g. {"cv":"/Users/ada/cv.pdf"}' }))
     .optional()
     .describe('Files the user asked to upload: key → absolute path.'),
-  done_when: z.string().optional().describe('Visible proof of success on the page this call ends on. done needs it.'),
+  done_when: z.string().optional().describe('Visible proof of success on this call\'s end page; done needs it. Resend with a new goal.'),
   checks: CHECKS_INPUT.optional(),
   confirm_irreversible: z
     .boolean()

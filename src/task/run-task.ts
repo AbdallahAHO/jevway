@@ -437,10 +437,13 @@ export class BrowserTask {
     const { confirmIrreversible, confirmTarget, values, secretKeys, files, recordDir: _recordDir, output: _output, allowedHosts, blockedHosts, ...options } = patch;
     // First, so a list that would widen the hosts throws before anything else changes.
     const hosts = narrowHosts(this.#options.hosts, { allowed: allowedHosts, blocked: blockedHosts });
+    const newGoal = options.goal !== undefined && options.goal !== this.#options.goal;
     // A new goal may be to flip back what the old one flipped.
-    if (options.goal !== undefined && options.goal !== this.#options.goal) this.#toggled.clear();
+    if (newGoal) this.#toggled.clear();
     this.#options = {
       ...this.#options,
+      // The old goal's done_when may already hold, and would end the new goal before it starts.
+      ...(newGoal && options.doneWhen === undefined && { doneWhen: undefined }),
       ...definedOnly(options),
       hosts,
       values: { ...this.#options.values, ...values },

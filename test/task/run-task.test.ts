@@ -2314,3 +2314,28 @@ describe('a page error or a sign-in wall ends the run', () => {
     });
   });
 });
+
+describe('a continuing call with a new goal', () => {
+  it("drops the old done_when, so an already met condition can't end the new goal at once", async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'BLOCKED', done_check: 0.95 }]);
+    const task = new BrowserTask(fakeTab([page()]).asTab, ask, { goal: 'Open the article', doneWhen: 'The article is open', changeWaitMs: 0 });
+    await task.run();
+    expect(requests[0].questions.done_check).toBeDefined();
+    task.update({ goal: 'Open the section about its rediscovery' });
+    const summary = await task.run();
+    expect(requests.at(-1).questions.done_check).toBeUndefined();
+    expect(summary.status).not.toBe('done');
+  });
+
+  it('keeps done_when for the same goal, and takes a new one when the call passes it', async () => {
+    const { ask, requests } = scriptedJev([{ operation: 'BLOCKED' }]);
+    const task = new BrowserTask(fakeTab([page()]).asTab, ask, { goal: 'Open the article', doneWhen: 'The article is open', changeWaitMs: 0 });
+    await task.run();
+    task.update({ goal: 'Open the article' });
+    await task.run();
+    expect((requests.at(-1).questions.done_check as any).instructions.completion_condition).toBe('The article is open');
+    task.update({ goal: 'Open the rediscovery section', doneWhen: 'The rediscovery section is shown' });
+    await task.run();
+    expect((requests.at(-1).questions.done_check as any).instructions.completion_condition).toBe('The rediscovery section is shown');
+  });
+});

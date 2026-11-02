@@ -268,7 +268,8 @@ describe('what each call was asked, as the recording keeps it', () => {
     const record = JSON.parse(readFileSync(join(dir, 'summary.json'), 'utf8'));
     expect(record.asked).toEqual([
       { goal: 'Paste the token [secret:token] into settings', done_when: 'The page lists [secret:token]' },
-      { goal: 'Save it', done_when: 'The page lists [secret:token]' },
+      // A new goal drops the earlier done_when.
+      { goal: 'Save it' },
     ]);
     for (const file of ['summary.json', 'index.html']) expect(readFileSync(join(dir, file), 'utf8').toLowerCase()).not.toContain(TOKEN.toLowerCase());
     expect(readFileSync(join(dir, 'index.html'), 'utf8')).toContain('Paste the token [secret:token] into settings');
