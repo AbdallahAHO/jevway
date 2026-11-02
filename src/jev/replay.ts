@@ -41,7 +41,6 @@ export class ReplayMiss extends Error {
   }
 }
 
-const DEFAULT_DIR = 'verify/out/replay/default';
 const IMAGE = '<image>';
 const LOCAL_ORIGIN = /\b(127\.0\.0\.1|localhost):\d+/g;
 
@@ -59,8 +58,12 @@ export const replayMode = (): ReplayMode | undefined => {
   return mode;
 };
 
-/** The recording folder: `JEVWAY_REPLAY_DIR`, or `verify/out/replay/default` under the working directory. */
-export const replayDir = () => resolve(process.env.JEVWAY_REPLAY_DIR?.trim() || DEFAULT_DIR);
+/** The recording folder, `JEVWAY_REPLAY_DIR`: required whenever `JEVWAY_REPLAY` is set, so no run writes into a guessed folder. */
+export const replayDir = () => {
+  const dir = process.env.JEVWAY_REPLAY_DIR?.trim();
+  if (!dir) throw new Error('JEVWAY_REPLAY needs JEVWAY_REPLAY_DIR: the folder that holds the recordings.');
+  return resolve(dir);
+};
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype;

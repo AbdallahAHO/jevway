@@ -37,7 +37,7 @@ const realProbes = (browser: string, model: string | undefined, fromEnvFile: str
   devToolsActivePort,
   answers: (url) => fetch(url, { signal: AbortSignal.timeout(2_000) }).then(() => true, () => false),
   hasFfmpeg: () => new Promise((resolve) => execFile('ffmpeg', ['-version'], (error) => resolve(!error))),
-  ...(process.env.JEVWAY_REPLAY?.trim() && { replay: { mode: process.env.JEVWAY_REPLAY.trim(), dir: replayDir() } }),
+  ...(process.env.JEVWAY_REPLAY?.trim() && { replay: { mode: process.env.JEVWAY_REPLAY.trim(), dir: process.env.JEVWAY_REPLAY_DIR?.trim() ? replayDir() : '(JEVWAY_REPLAY_DIR is not set)' } }),
 });
 
 /**

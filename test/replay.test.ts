@@ -204,6 +204,13 @@ describe('JEVWAY_REPLAY picks the Ask', () => {
     vi.stubEnv('TYPESAFE_API_KEY', 'test-key');
     expect(() => createAsk(resolveModel({ model: 'jev' }).profile)).toThrow(/JEVWAY_REPLAY must be record or replay/);
   });
+
+  it('needs JEVWAY_REPLAY_DIR, so a run never writes recordings into a folder it guessed', () => {
+    vi.stubEnv('JEVWAY_REPLAY', 'record');
+    vi.stubEnv('JEVWAY_REPLAY_DIR', '');
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-key');
+    expect(() => createAsk(resolveModel({ model: 'jev' }).profile)).toThrow(/JEVWAY_REPLAY needs JEVWAY_REPLAY_DIR/);
+  });
 });
 
 describe('replay and the other callers', () => {
