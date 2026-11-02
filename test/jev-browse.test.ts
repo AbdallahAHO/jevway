@@ -1,7 +1,7 @@
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { CdpError, type CdpConnection } from '../src/browser/cdp.ts';
 import * as chrome from '../src/browser/chrome.ts';
 import { jpegSize, PAGE_LEVEL_KINDS, StalePage, TargetUnreachable, Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
@@ -523,9 +523,13 @@ describe('BrowserTask', () => {
   });
 
   describe('a new session started through the runner', () => {
-    afterEach(() => vi.restoreAllMocks());
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+    });
 
     const startWith = async (confirmIrreversible?: boolean, confirmTarget?: string) => {
+      vi.stubEnv('TYPESAFE_API_KEY', 'test-key');
       const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '4', commit_risk: 0.9 }]);
       const { asTab, acted } = fakeTab();
       vi.spyOn(model, 'createAsk').mockReturnValue(ask);
@@ -4301,6 +4305,7 @@ describe('a run stays on the allowed hosts and off the blocked ones', () => {
 
   describe('a new session started through the runner', () => {
     const startAt = async (url: string, hosts: { allowedHosts?: string[]; blockedHosts?: string[] }) => {
+      vi.stubEnv('TYPESAFE_API_KEY', 'test-key');
       const { ask } = scriptedJev([click]);
       vi.spyOn(model, 'createAsk').mockReturnValue(ask);
       vi.spyOn(chrome, 'connectChrome').mockResolvedValue({ cdp: {} } as chrome.ChromeHandle);
@@ -4531,6 +4536,10 @@ describe('values the caller marks secret', () => {
   });
 
   it('passes the marked keys from a new session started through the runner', async () => {
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-key');
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
     const { ask, requests } = scriptedJev([{ operation: 'BLOCKED' }]);
     const { asTab } = fakeTab([echoing('b')]);
     vi.spyOn(model, 'createAsk').mockReturnValue(ask);
