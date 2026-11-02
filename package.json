@@ -33,7 +33,7 @@
     "skill",
     "SETUP.md",
     "LICENSE",
-    "LICENSE.jev-ultrafast"
+    "THIRD_PARTY_NOTICES.md"
   ],
   "engines": {
     "node": ">=24"

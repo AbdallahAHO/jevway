@@ -1,3 +1,15 @@
+# Third-party notices
+
+jevway includes code from the projects below. Each is used under the license that follows its entry.
+
+## browser-use/jev-ultrafast
+
+<https://github.com/browser-use/jev-ultrafast>
+
+Used in jevway: the page reader `src/browser/snapshot.js` (vendored, with jevway's changes marked in it); adapted, the
+operation and target rules in `src/jev/instructions.ts` and the shape of the task loop and the tab's guards.
+
+```
 MIT License
 
 Copyright (c) 2026 Browser Use
@@ -19,3 +31,4 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```

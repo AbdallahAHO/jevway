@@ -1,4 +1,4 @@
-(() => {
+/* From browser-use/jev-ultrafast (MIT), with jevway's changes marked; see THIRD_PARTY_NOTICES.md. */ (() => {
   if (!document.body) return null;
   // jevway: a frame's ids start at its own base (set by the tab), so ids stay unique across frames.
   const cache = (window.__jevFast ||= { ids: new WeakMap(), nodes: new Map(), next: (window.__jevIdBase || 0) + 1 });
