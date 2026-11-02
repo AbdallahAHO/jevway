@@ -1,6 +1,6 @@
 {
   "name": "jevway",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Hand a browser goal to TypeSafe Jev; get a short verified summary back. MCP server + CLI.",
   "keywords": [
     "mcp",
