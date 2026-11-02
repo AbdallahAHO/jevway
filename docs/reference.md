@@ -346,7 +346,9 @@ in [The result](#the-result). Progress events while a call runs: `{ "type": "sta
 Its story says so (`Clicked "Download invoice"; downloaded invoice-1042.pdf (84 KB).`), the page text Jev reads next
 starts with `[Downloaded this call] invoice-1042.pdf (84 KB)` (a download shows nothing on the page, and the done check
 reads the page), `files.downloads` lists every downloaded file, and `manifest.json` names each one `download`. A
-download that was cancelled or still runs after 30 s is named in the story and has no file. Only downloads the session's
+download that was cancelled or still runs after 30 s is named in the story and has no file. A download that starts
+after its step's wait is noted on the next executed step; one that starts after the call's last action is not noted,
+though its file still arrives where Chrome saves it. Only downloads the session's
 own tab, its frames or a tab it opened started are taken; the person's other tabs are never read.
 
 Download behaviour is browser-wide in Chrome, so it is set once per browser connection:
@@ -360,8 +362,9 @@ Download behaviour is browser-wide in Chrome, so it is set once per browser conn
 
 **URL uploads.** A `files` value may be an `https` URL. It is fetched when the call starts, before the page is read,
 into the run folder's `uploads/` (once per URL per session), and Jev sees only its key and file name. The fetch follows
-at most 3 redirects, each checked again; refuses any host that resolves to a loopback, private, link-local, CGNAT,
-multicast or reserved address (and connects to the address it checked, so the name can't move in between); keeps to
+at most 3 redirects, each checked again (a redirect carrying a user name or password is refused); refuses an address
+literal or any host that resolves to a loopback, private, link-local, CGNAT, multicast or reserved address (and connects
+to the address it checked, so the name can't move in between); keeps to
 the call's host rules (`allowed_hosts`, `blocked_hosts`, the server's `JEVWAY_*_HOSTS`); and stops at 50 MB or 60 s.
 The file is named by `Content-Disposition`, else the URL path, else the key. Every error names the key and the URL:
 `files.cv: "https://…" answered 404`.
@@ -392,7 +395,8 @@ after a hand-back, or to check whether a write already happened before repeating
 `pdf: true` (CLI `--pdf`) also saves the page as a PDF (`Page.printToPDF`, the page's print styles, backgrounds included;
 headed and headless Chrome both print) and returns its absolute path as `pdf`: in the session's run folder as
 `looks/NN-<title>.pdf` (listed in its manifest as `pdf`), else in a folder of its own,
-`.jevway/looks/<time>_<host>_<id>/page.pdf`.
+`.jevway/looks/<time>_<host>_<id>/page.pdf`. A PDF holds the page's text, so a secret typed into a visible field is in it
+as text, not only as pixels as in `final.jpg`.
 
 ## `jevway_end`
 
