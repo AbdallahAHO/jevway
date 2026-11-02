@@ -39,6 +39,8 @@ export interface Client {
   /** Paths (config folders and files) any one of which means the client is installed. */
   markers: (machine: Machine) => string[];
   skillsDir: (machine: Machine) => string;
+  /** True when the client's jevway install already brings the skill (the Claude Code plugin). */
+  hasSkillBundled?: (machine: Machine) => boolean;
   isConfigured: (machine: Machine) => boolean;
   registration: CommandRegistration | ConfigRegistration;
 }
@@ -68,6 +70,9 @@ const namesJevway = (path: string, container: string) => {
   return /"jevway"\s*:/.test(readText(path) ?? '');
 };
 
+const hasClaudePlugin = (machine: Machine) =>
+  Object.keys(readJson(join(claudeFolder(machine), 'plugins', 'installed_plugins.json'))?.plugins ?? {}).some((id) => id.startsWith('jevway@'));
+
 const openCodeFile = (machine: Machine) => {
   const json = join(openCodeFolder(machine), 'opencode.json');
   const jsonc = join(openCodeFolder(machine), 'opencode.jsonc');
@@ -82,9 +87,8 @@ export const CLIENTS: Client[] = [
     binary: 'claude',
     markers: (machine) => [claudeFolder(machine), claudeJson(machine)],
     skillsDir: (machine) => join(claudeFolder(machine), 'skills'),
-    isConfigured: (machine) =>
-      Boolean(readJson(claudeJson(machine))?.mcpServers?.jevway) ||
-      Object.keys(readJson(join(claudeFolder(machine), 'plugins', 'installed_plugins.json'))?.plugins ?? {}).some((id) => id.startsWith('jevway@')),
+    hasSkillBundled: hasClaudePlugin,
+    isConfigured: (machine) => Boolean(readJson(claudeJson(machine))?.mcpServers?.jevway) || hasClaudePlugin(machine),
     registration: { kind: 'command', argv: ['claude', 'mcp', 'add', 'jevway', '-s', 'user', '--', SERVER.command, ...SERVER.args] },
   },
   {

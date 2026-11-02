@@ -1,8 +1,15 @@
+import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
 import { parseArgs } from 'node:util';
+import { createLiveAsk, resolveModel } from '../jev/model.ts';
 import { CLIENT_NAMES, onPathIn, printedRegistration, renderPrinted, type Machine, type PrintedRegistration } from './clients.ts';
 import { print, printError, printJson } from './command-output.ts';
+import { realProbes } from './doctor-command.ts';
+import { browserFinding, diagnose, exitCode, liveCheck, render, type Finding } from './doctor.ts';
 import { envFilePath, shownEnvFilePath } from './env-file.ts';
+import { setupWizard, type SetupDeps } from './setup-wizard.ts';
+import { bundledSkillDir } from './skill-command.ts';
+import { terminalPrompter } from './terminal-prompter.ts';
 
 const CLIENT_LIST = CLIENT_NAMES.join('|');
 
@@ -18,6 +25,36 @@ Examples:
 const realMachine = (): Machine => ({ home: homedir(), env: process.env, onPath: onPathIn() });
 
 const isClientName = (name: string): name is PrintedRegistration['client'] => (CLIENT_NAMES as readonly string[]).includes(name);
+
+const liveFinding = async (): Promise<Finding> => {
+  try {
+    const { profile } = resolveModel({ live: true });
+    return await liveCheck(createLiveAsk(profile), profile.model, [process.env.TYPESAFE_API_KEY, process.env.OPENROUTER_API_KEY]);
+  } catch (error) {
+    return { level: 'fail', area: 'Live', message: (error as Error).message, fix: 'Run `jevway doctor` for the details' };
+  }
+};
+
+const runCommand = (argv: string[]) =>
+  new Promise<{ ok: boolean; output: string }>((resolve) =>
+    execFile(argv[0], argv.slice(1), { timeout: 60_000 }, (error, stdout, stderr) =>
+      resolve({ ok: !error, output: `${stdout}${stderr}`.trim() || (error?.message ?? '') }),
+    ),
+  );
+
+const realDeps = (fromEnvFile: string[]): SetupDeps => ({
+  machine: realMachine(),
+  envFile: envFilePath(),
+  fromEnvFile,
+  checkBrowser: (source) => browserFinding(realProbes(source, undefined, fromEnvFile)),
+  checkLive: liveFinding,
+  run: runCommand,
+  doctor: async () => {
+    const findings = await diagnose(realProbes(process.env.JEVWAY_BROWSER?.trim() || 'auto', undefined, fromEnvFile));
+    return { report: render(findings), ready: exitCode(findings) === 0 };
+  },
+  skillSource: bundledSkillDir(),
+});
 
 /** The env-file steps an agent hands to a person, who types the key in their own editor. */
 const envFileSteps = () => {
@@ -69,7 +106,10 @@ export const runSetup = async (argv: string[], fromEnvFile: string[] = []): Prom
       `Key: ${envFileSteps()}. Client: jevway setup --client <${CLIENT_LIST}> --print. Check: jevway doctor --json.`,
     );
   }
-  void fromEnvFile;
-  await print(`${USAGE}\n`);
-  return 2;
+  const terminal = terminalPrompter();
+  try {
+    return await setupWizard(terminal.io, realDeps(fromEnvFile));
+  } finally {
+    terminal.close();
+  }
 };

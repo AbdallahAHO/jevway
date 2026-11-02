@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseEnv } from 'node:util';
+import { writeFileAtomic } from './atomic-write.ts';
 
 type Env = Record<string, string | undefined>;
 
@@ -57,3 +58,25 @@ export const missingKeyMessage = ({ name, apiKeyEnv }: { name: string; apiKeyEnv
     ? `No API key: set TYPESAFE_API_KEY (Jev on the TypeSafe API) or OPENROUTER_API_KEY ${where}`
     : `No ${apiKeyEnv}: ${name} needs it. Set it ${where}`;
 };
+
+/**
+ * `text` with `name` set to `value`: the first `NAME=` line (or `export NAME=`) is replaced and later ones dropped, a
+ * missing name is appended, and `value` undefined removes the line. Every other line is kept as it was.
+ *
+ * @example
+ * setEnvValue('# mine\nTYPESAFE_API_KEY=old\n', 'TYPESAFE_API_KEY', 'new') // '# mine\nTYPESAFE_API_KEY=new\n'
+ */
+export const setEnvValue = (text: string, name: string, value: string | undefined) => {
+  const assigns = new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=`);
+  const lines = text === '' ? [] : text.replace(/\n$/, '').split('\n');
+  const first = lines.findIndex((line) => assigns.test(line));
+  const kept = lines.flatMap((line, index) => {
+    if (!assigns.test(line)) return [line];
+    return index === first && value !== undefined ? [`${name}=${value}`] : [];
+  });
+  const next = first === -1 && value !== undefined ? [...kept, `${name}=${value}`] : kept;
+  return next.length ? `${next.join('\n')}\n` : '';
+};
+
+/** Writes the env file atomically with mode 600, creating its folder; a file other users could read becomes 600. */
+export const writeEnvFile = (path: string, text: string) => writeFileAtomic(path, text, 0o600);

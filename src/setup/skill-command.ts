@@ -37,6 +37,13 @@ const sameFolder = (source: string, target: string) => {
   }
 };
 
+/** Whether `<parent>/jevway` is missing, the same as `source`, or something else (a different skill or a symlink to one). */
+export const skillState = (source: string, parent: string): 'missing' | 'same' | 'different' => {
+  const path = join(parent, 'jevway');
+  if (!existsSync(path) && !lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) return 'missing';
+  return sameFolder(source, path) ? 'same' : 'different';
+};
+
 export type SkillInstall =
   | { status: 'installed' | 'unchanged' | 'replaced'; path: string; files: string[] }
   | { status: 'exists'; path: string };
@@ -53,9 +60,10 @@ export type SkillInstall =
 export const installSkill = (source: string, parent: string, { force }: { force: boolean }): SkillInstall => {
   const path = join(parent, 'jevway');
   const files = filesIn(source);
-  const present = existsSync(path) || lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink();
-  if (present && sameFolder(source, path)) return { status: 'unchanged', path, files };
-  if (present && !force) return { status: 'exists', path };
+  const state = skillState(source, parent);
+  if (state === 'same') return { status: 'unchanged', path, files };
+  if (state === 'different' && !force) return { status: 'exists', path };
+  const present = state === 'different';
   mkdirSync(parent, { recursive: true });
   const incoming = join(parent, `.jevway-${process.pid}.incoming`);
   cpSync(source, incoming, { recursive: true });
