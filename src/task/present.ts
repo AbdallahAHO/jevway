@@ -94,7 +94,7 @@ const defined = <T extends object>(value: T) => Object.fromEntries(Object.entrie
  * confirmation (`confirm_ignored`) shows in both: consent the caller gave and jevway did not use.
  *
  * @example
- * presentSummary({ session, summary, files }) // { session, status, reason, next, story, url, title, page_text, files }
+ * presentSummary({ session, summary, files }) // { status, reason, story, next, session, url, title, files, page_text }
  */
 export function presentSummary(result: { session: string; summary: TaskSummary; files?: RunFiles }, options?: { detail?: 'concise' }): ConciseSummary;
 export function presentSummary(result: { session: string; summary: TaskSummary; files?: RunFiles }, options: { detail: Detail }): ConciseSummary | FullSummary;
@@ -102,23 +102,24 @@ export function presentSummary(
   { session, summary, files }: { session: string; summary: TaskSummary; files?: RunFiles },
   { detail = 'concise' }: { detail?: Detail } = {},
 ): ConciseSummary | FullSummary {
-  const concise: ConciseSummary = {
-    session,
+  // The order both adapters print: how it ended and what to do first, then where, and the long page text last.
+  const { page_text, ...head } = {
     status: summary.status,
     reason: summary.reason,
-    next: nextFor(summary),
     story: storyOf(summary.steps),
+    next: nextFor(summary),
+    session,
     url: summary.url,
     title: summary.title,
-    page_text: summary.page_text,
     missing: summary.missing,
     wall: summary.wall,
     checks: summary.checks,
     evidence: summary.evidence,
     confirm_ignored: summary.confirm_ignored,
     files,
+    page_text: summary.page_text,
   };
-  if (detail === 'concise') return defined(concise);
+  if (detail === 'concise') return defined({ ...head, page_text });
   const { steps, jev, stuck, elapsed_ms, done_probability } = summary;
-  return defined({ ...concise, steps, jev, stuck, elapsed_ms, done_probability });
+  return defined({ ...head, steps, jev, stuck, elapsed_ms, done_probability, page_text });
 }

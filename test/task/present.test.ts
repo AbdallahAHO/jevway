@@ -138,13 +138,14 @@ describe('next', () => {
 describe('presentSummary', () => {
   it('is concise by default: the story, the page, the files and what to do next', () => {
     const concise = presentSummary({ session: 'S', summary: needsInputSummary, files: FILES });
-    expect(Object.keys(concise)).toEqual(['session', 'status', 'reason', 'next', 'story', 'url', 'title', 'page_text', 'missing', 'files']);
+    expect(Object.keys(concise)).toEqual(['status', 'reason', 'story', 'next', 'session', 'url', 'title', 'missing', 'files', 'page_text']);
     expect(concise.story).toEqual(['Typed the "name" value into "Full name".', 'Typed the "email" value into "Email address".']);
     expect(concise.files).toEqual(FILES);
   });
 
   it('adds the raw steps, Jev stats and stuck candidates in full', () => {
     const full = presentSummary({ session: 'S', summary: needsInputSummary, files: FILES }, { detail: 'full' });
+    expect(Object.keys(full).at(-1)).toBe('page_text');
     expect(full).toMatchObject({ steps: needsInputSummary.steps, jev: needsInputSummary.jev, stuck: needsInputSummary.stuck, elapsed_ms: 6120, done_probability: 0.04 });
   });
 
