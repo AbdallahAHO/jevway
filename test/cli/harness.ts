@@ -82,7 +82,7 @@ export const daemonHarness = ({
       started.push(daemon);
       return daemon;
     });
-  const access = daemonAccess({ socket, log: join(stateDir, 'daemon.log'), version: VERSION, fingerprint: FINGERPRINT, start: () => void serve(VERSION) });
+  const access = daemonAccess({ socket, log: join(stateDir, 'daemon.log'), version: VERSION, fingerprint: FINGERPRINT, start: () => void serve(VERSION).catch(() => undefined) });
   const { cli, interrupts } = cliWith({ createRunner: () => runner, daemon: access });
   return { cli, interrupts, socket, started, logged, serve, runner, access };
 };

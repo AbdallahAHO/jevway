@@ -103,14 +103,14 @@ describe('a one-shot run', () => {
     const { code, json, events } = await cli(['run', ...GOAL], { cwd });
 
     expect(code).toBe(0);
-    expect(json).toMatchObject({ ok: true, status: 'done', story: ['Clicked "Full name".'], url: 'http://fixture/stays/2' });
+    expect(json).toMatchObject({ ok: true, status: 'done', story: ['Clicked "Open Full name".'], url: 'http://fixture/stays/2' });
     expect(json.session).toBeUndefined();
     expect(json.steps).toBeUndefined();
     expect(json.files.run_dir).toMatch(new RegExp(`^${join(cwd, '.jevway', 'runs')}/\\d{4}-\\d{2}-\\d{2}_\\d{4}_book-a-stay-in-lisbon_[0-9a-f]{4}$`));
     expect(json.files.screenshot).toBe(join(json.files.run_dir, 'final.jpg'));
     expect(existsSync(json.files.manifest)).toBe(true);
     expect(events.map((event) => event.type)).toEqual(['started', 'step', 'finished']);
-    expect(events[1]).toMatchObject({ n: 1, story: 'Clicked "Full name".', session: expect.stringMatching(UUID) });
+    expect(events[1]).toMatchObject({ n: 1, story: 'Clicked "Open Full name".', session: expect.stringMatching(UUID) });
     expect(tabs[0].closes).toBe(1);
   });
 
@@ -127,13 +127,13 @@ describe('a one-shot run', () => {
     const { code, json } = await cli(['run', ...GOAL]);
     expect(code).toBe(1);
     expect(json).toMatchObject({ ok: true, status: 'needs_input' });
-    expect(json.next).toBe('Add the missing values to `--values` and run again (add `--session new` to keep the tab between calls).');
+    expect(json.next).toBe('Add the missing values to `--values` and run again. Pass `--session new` to keep the tab between calls.');
   });
 
   it('adds the raw steps and stats with --detail full', async () => {
     const { cli } = setup();
     const { json } = await cli(['run', ...GOAL, '--detail', 'full']);
-    expect(json.steps).toHaveLength(2);
+    expect(json.steps).toHaveLength(1);
     expect(json.jev).toBeDefined();
   });
 

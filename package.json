@@ -25,7 +25,7 @@
     "url": "git+https://github.com/AbdallahAHO/jevway.git"
   },
   "bin": {
-    "jevway": "dist/cli.js",
+    "jevway": "dist/cli/main.js",
     "jevway-mcp": "dist/mcp.js"
   },
   "files": [
@@ -39,7 +39,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && cp src/browser/snapshot.js dist/browser/snapshot.js && chmod +x dist/cli.js dist/mcp.js",
+    "build": "tsc -p tsconfig.build.json && cp src/browser/snapshot.js dist/browser/snapshot.js && chmod +x dist/cli/main.js dist/mcp.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "prepublishOnly": "pnpm typecheck && pnpm test && rm -rf dist && pnpm build",
@@ -48,7 +48,7 @@
     "release:check": "node release/release.ts check",
     "verify": "node --env-file-if-exists=.env verify/run.ts",
     "mcp": "node --env-file-if-exists=.env src/mcp.ts",
-    "cli": "node --env-file-if-exists=.env src/cli.ts",
+    "cli": "node --env-file-if-exists=.env src/cli/main.ts",
     "verify:reader": "node verify/reader.ts",
     "verify:journeys": "node --env-file-if-exists=.env verify/journeys.ts",
     "verify:real": "node --env-file-if-exists=.env verify/real-world.ts",

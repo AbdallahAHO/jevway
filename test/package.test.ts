@@ -8,7 +8,7 @@ describe('the npm package', () => {
   it('installs the commands jevway and jevway-mcp on Node 24 or later', () => {
     expect(pkg).toMatchObject({
       name: 'jevway',
-      bin: { jevway: 'dist/cli.js', 'jevway-mcp': 'dist/mcp.js' },
+      bin: { jevway: 'dist/cli/main.js', 'jevway-mcp': 'dist/mcp.js' },
       engines: { node: '>=24' },
       license: 'MIT',
     });
