@@ -49,6 +49,10 @@ describe('the diff setup shows before editing a config file', () => {
     expect(hunks).toEqual(['@@ -1,5 +1,5 @@', '@@ -16,5 +16,5 @@']);
   });
 
+  it('prints removed lines before the lines that replace them, and leaves out a count of 1', () => {
+    expect(unifiedDiff('{"a":1}\n', '{\n  "a": 1\n}\n', 'f')).toBe(['--- f', '+++ f', '@@ -1 +1,3 @@', '-{"a":1}', '+{', '+  "a": 1', '+}', ''].join('\n'));
+  });
+
   it('is empty when nothing changes', () => {
     expect(unifiedDiff('same\n', 'same\n', 'f')).toBe('');
   });

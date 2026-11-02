@@ -4,7 +4,7 @@ const CONTEXT = 3;
 
 const linesOf = (text: string) => (text === '' ? [] : text.replace(/\n$/, '').split('\n'));
 
-// Longest common subsequence, table-driven: config files are small enough for O(n·m).
+// Longest common subsequence, table-driven (config files are small enough for O(n·m)); removals print before additions.
 const lineOps = (before: string[], after: string[]): Line[] => {
   const common = Array.from({ length: before.length + 1 }, () => new Array<number>(after.length + 1).fill(0));
   for (let i = before.length - 1; i >= 0; i--) {
@@ -19,10 +19,10 @@ const lineOps = (before: string[], after: string[]): Line[] => {
     if (i < before.length && j < after.length && before[i] === after[j]) {
       ops.push({ op: ' ', text: before[i++] });
       j++;
-    } else if (j < after.length && (i === before.length || common[i][j + 1] >= common[i + 1][j])) {
-      ops.push({ op: '+', text: after[j++] });
-    } else {
+    } else if (i < before.length && (j === after.length || common[i + 1][j] >= common[i][j + 1])) {
       ops.push({ op: '-', text: before[i++] });
+    } else {
+      ops.push({ op: '+', text: after[j++] });
     }
   }
   return ops;
@@ -42,8 +42,8 @@ const hunkRanges = (ops: Line[]) => {
   return ranges;
 };
 
-// `@@ -start,count` uses the line before the hunk as its start when the side is empty, as diff does.
-const side = (start: number, count: number) => `${count ? start + 1 : start},${count}`;
+// As diff -u: an empty side starts at the line before the hunk, and a count of 1 is left out.
+const side = (start: number, count: number) => (count === 1 ? `${start + 1}` : `${count ? start + 1 : start},${count}`);
 
 /**
  * A unified diff of two texts with three lines of context, as `diff -u` prints it; `before` undefined is a new file
