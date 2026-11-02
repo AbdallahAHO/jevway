@@ -20,6 +20,7 @@ inside, see [how-it-works.md](how-it-works.md). For the journey tools, see [jour
 - [Tool hints](#tool-hints)
 - [MCP server](#mcp-server)
 - [CLI](#cli)
+  - [The daemon](#the-daemon)
 - [`jevway doctor`](#jevway-doctor)
 - [Environment variables](#environment-variables)
 - [Models](#models)
@@ -238,8 +239,8 @@ These images never reach the model, which gets its own 1024 px screenshots. The 
 
 ## Output folder
 
-The session service (`src/session/session-service.ts`) behind the MCP server gives every session a folder, whether or
-not it records:
+The session service (`src/session/session-service.ts`), which the MCP server and the CLI daemon adapt, gives
+every session a folder, whether or not it records:
 
 ```
 .jevway/                                        ($JEVWAY_OUT_DIR overrides; holds a .gitignore of "*")
@@ -326,28 +327,101 @@ Every tool carries MCP annotations for clients that ask before a call:
 
 ## CLI
 
-For agents without MCP. Prints one JSON summary; the exit code is 0 only when the status is `done`.
+For agents without MCP, and for people. Every command prints exactly one JSON document on stdout: the result,
+`{ "ok": true, … }`, or `{ "ok": false, "error": { "code", "message", "hint" } }`. stderr carries only NDJSON progress
+events. Only `--help`, `--version` and the text modes of `doctor`, `setup` and `skill` print text. The CLI never prompts
+(`jevway setup` asks questions only in a terminal). No Node stack trace reaches either stream.
 
 ```bash
-npx -y jevway --browser launch-headless \
-  --url https://en.wikipedia.org/wiki/Main_Page \
-  --goal "Open the Wikipedia article about the Rosetta Stone" \
-  --values '{"search_query":"Rosetta Stone"}' \
-  --done-when "The Rosetta Stone article is open"
+# One-shot, in this process: its tab closes at the end, as before (`jevway --goal …` still works)
+npx -y jevway run --browser launch-headless --url https://en.wikipedia.org/wiki/Main_Page \
+  --goal "Open the Wikipedia article about the Rosetta Stone" --done-when "The Rosetta Stone article is open"
+
+# A session: the background daemon keeps the tab (and a launched browser) between commands
+jevway run --session new --browser launch-headless --url https://shop.example/checkout \
+  --goal "Fill in the delivery details" --values '{"name":"Ada Lovelace"}'
+jevway run --session <id> --goal "Fill in the delivery details" --values '{"phone":"+44 20 7946 0000"}'
+jevway look --session <id>
+jevway sessions
+jevway end <id>
+jevway stop
 ```
+
+| Command | What it does |
+| --- | --- |
+| `run` | A task. Without `--session`: in-process, tabs closed at the end. `--session new` starts a session in the daemon; `--session <id>` continues it. |
+| `look` | [`jevway_look`](#jevway_look): `--session <id>` through the daemon, `--url` or `--tab` in-process. |
+| `journey start\|step\|autopilot\|annotate\|finish` | The journey tools through the daemon. The result is the screen report with `screen.screenshot` (an absolute path) instead of an inline image. |
+| `sessions` | `{ daemon: { pid, version, socket, log, idle_timeout_s, started_at } \| null, sessions: [{ session, kind, goal, status, url, running, run_dir, started_at, last_used_at }] }`. |
+| `end <id> [--keep-tab]` | [`jevway_end`](#jevway_end) (a journey id finishes the journey): `{ session, run_dir }`. |
+| `serve [--idle-timeout 1h]` | The daemon in the foreground. |
+| `stop` | Stops the daemon: `{ stopped: true, ended }`, or `{ stopped: false }`. |
+| `doctor`, `setup`, `skill`, `help [command]` | See below. `jevway help <command>` equals `jevway <command> --help`. |
+
+`run` flags mirror `jevway_task` in kebab-case:
 
 | Flag | Same as |
 | --- | --- |
-| `--goal`, `--url`, `--tab` | `goal`, `url`, `tab` |
+| `--goal`, `--url`, `--tab`, `--session <id\|new>` | `goal`, `url`, `tab`, `session` |
 | `--values '<json>'`, `--files '<json>'`, `--checks '<json>'` | `values`, `files`, `checks` |
 | `--secret-keys a,b` | `secret_keys` |
 | `--done-when` | `done_when` |
+| `--confirm-irreversible`, `--confirm-target` | `confirm_irreversible`, `confirm_target` |
 | `--max-steps`, `--max-seconds` | `max_steps`, `max_seconds` |
 | `--allowed-hosts a,b`, `--blocked-hosts a,b` | `allowed_hosts`, `blocked_hosts` |
 | `--allow-coordinate-clicks` | `allow_coordinate_clicks` |
-| `--record <dir>` | `record_dir` |
-| `--browser`, `--model`, `--screenshots` | `JEVWAY_BROWSER`, `JEVWAY_MODEL`, `JEVWAY_SCREENSHOTS` |
-| `--keep-open` | leaves the tabs open at the end (`auto` and remote browsers) |
+| `--record` | `record` (the recording kept in the run folder) |
+| `--record-dir <dir>` (or `--record <dir>`) | `record_dir` |
+| `--detail concise\|full` | `detail` |
+| `--screenshot` | `screenshot` (accepted; the CLI result always carries `files.screenshot`) |
+| `--browser`, `--model`, `--screenshots` | `JEVWAY_BROWSER`, `JEVWAY_MODEL`, `JEVWAY_SCREENSHOTS` (a session's first call only) |
+| `--keep-open` | one-shot only: leaves the tabs open at the end |
+
+The result is the [concise summary](#concise-and-full-results) (`--detail full` adds the raw steps) with `ok: true`.
+`files` holds absolute paths. `next` names flags, not MCP parameters, and the session to pass
+("Add the missing values to `--values` and run again with `--session <id>`."). A one-shot result names no session.
+
+**Exit codes.** 0: the status is `done`, or the command did what it says. 1: a hand-back (`needs_input`,
+`needs_confirmation`, `uncertain`, `step_budget`, `blocked`) or a tool error. 2: bad usage, or the model's key is
+missing.
+
+**Error codes.** `unknown_command` and `unknown_flag` (hint: `Did you mean --values? See jevway run --help`),
+`missing_command`, `missing_flag`, `missing_value`, `invalid_value` (a JSON flag names itself and its parse error, e.g.
+`--values: Expected property name …`, and the hint gives an example), `unexpected_argument`, `missing_key` (all exit 2);
+`unknown_session`, `daemon_busy`, `daemon_running`, `daemon_unavailable`, `failed` (anything else that went wrong, its
+message kept), and `outcome_unknown` (exit 1). `outcome_unknown` means the daemon stopped answering while a call that
+can click or type was running: it may already have happened, so check with `jevway look --session <id>` before
+repeating it.
+
+**Events on stderr**, one JSON object per line: `{"type":"started","session"}`,
+`{"type":"step","session","n","story","url"}` per step, `{"type":"finished","session","status"}`, and
+`{"type":"daemon","event":"started"|"restarted","pid","log","reason?"}` when a command started or replaced the daemon.
+Ctrl-C ends a run `blocked` ("Cancelled by the caller") and still prints its result; a second Ctrl-C exits 130.
+
+### The daemon
+
+The first command that needs a session (`run --session new`, `journey start`) starts `jevway serve` in the background.
+Commands that name an existing session, plus `sessions`, `end` and `stop`, never start one: with no daemon running, a
+session id is `unknown_session` and `sessions` lists nothing.
+
+- **One local socket**: `daemon.sock` in `$JEVWAY_STATE_DIR`, else `$XDG_RUNTIME_DIR/jevway`, else `~/.cache/jevway`
+  (mode 700); its log is `daemon.log` beside it (NDJSON; method, session, duration and error code per request, never a
+  request's values). On Windows it is a named pipe (untested).
+- **Sessions and browsers stay alive** between commands: one browser connection per `--browser`/`--model`/`--screenshots`
+  choice. Runs land under the caller's `.jevway/` (or `JEVWAY_OUT_DIR`), whichever directory started the daemon, and
+  each output root gets `sessions.json`: the open sessions writing there.
+- **Idle**: a session or journey unused for `--idle-timeout` (default `1h`; seconds, or `90s`, `30m`, `2h`; `0` never)
+  is ended, closing the tabs it opened; the daemon exits once it holds none and nothing has asked it anything for that
+  long.
+- **Version and settings**: a daemon of another version, or started with other keys set, `CHROME_PATH`,
+  `JEVWAY_ALLOWED_HOSTS`, `JEVWAY_BLOCKED_HOSTS` or `JEVWAY_REPLAY*`, is replaced when it holds no sessions (event
+  `restarted`) and is `daemon_busy` otherwise. It keeps the environment it started with: after rotating a key, run
+  `jevway stop`.
+- **Stale socket**: a socket file nothing answers on is removed and a new daemon started.
+- **Timeouts**: the client waits a call's `--max-seconds` (default 300) plus two minutes, a journey call 30 min, other
+  calls 60 s: always longer than the daemon's own limits, so the agent gets the daemon's real answer.
+- `jevway stop` aborts running calls (they end `blocked`), ends every session, closes the browsers it launched and
+  removes the socket.
 
 ## `jevway setup`
 
@@ -426,6 +500,7 @@ file fills only variables the environment lacks, and only the keys, `CHROME_PATH
 | `JEVWAY_ALLOWED_HOSTS`, `JEVWAY_BLOCKED_HOSTS` | — | Server-wide host lists, comma-separated. |
 | `JEVWAY_OUT_DIR` | `./.jevway` | The output root: `runs/` and `journeys/`. See [Output folder](#output-folder). |
 | `JEVWAY_JOURNEYS_DIR` | `<JEVWAY_OUT_DIR>/journeys` | Where journey maps are written. |
+| `JEVWAY_STATE_DIR` | `$XDG_RUNTIME_DIR/jevway`, else `~/.cache/jevway` | The CLI daemon's socket and log. See [The daemon](#the-daemon). |
 | `JEVWAY_TOOLS` | `all` | MCP: `all`, `task` (task, look, end) or `journeys`. See [MCP server](#mcp-server). |
 | `JEVWAY_IMAGE_RESPONSES` | `auto` | MCP: when a task result carries its end page inline: `auto` (hand-backs, or `screenshot: true`), `always`, `never`. |
 | `JEVWAY_REPLAY`, `JEVWAY_REPLAY_DIR` | — | `record` or `replay` Jev answers in that folder (development; the folder is required). See [CONTRIBUTING.md](../CONTRIBUTING.md#live-suites). |
