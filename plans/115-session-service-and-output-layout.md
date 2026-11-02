@@ -153,4 +153,14 @@ The adapters (116, 117) should only translate: parameters in, `presentSummary` o
 
 ## Measured
 
-(filled in at step 2)
+Tokens as chars/4 of `JSON.stringify(…, null, 1)`, on the three fixture summaries in `test/task/present.test.ts`
+(session id and absolute `files` included in both forms):
+
+| Fixture | Today's raw summary | Concise | Full |
+|---|---|---|---|
+| `done` (stays search, 4 steps, evidence, a check) | 642 | 608 | 788 |
+| `needs_input` (checkout form, stuck candidates) | 613 | 529 | 738 |
+| `needs_confirmation` (repo delete, 3 steps with notes) | 743 | 690 | 920 |
+
+`page_text` (about 1300–1900 characters here) is half of every form; without it, concise is about 40 % smaller than
+full. Concise is smaller than today's raw summary although it adds `story`, `next` and `files`.

@@ -25,6 +25,8 @@ export interface StepIntent {
   operation: string;
   element?: string;
   valueKey?: string;
+  /** For UPLOAD: the declared file's key. */
+  fileKey?: string;
   option?: string;
   confidence?: number;
 }
@@ -78,34 +80,50 @@ const shorten = (label: string, max = 70) => {
   return text.length > max ? `${text.slice(0, max).replace(/\s+\S*$/, '')}…` : text;
 };
 
+// Each verb as Jev is about to do it (`next`, the recording's step shots) and as done (`done`, a summary's story).
+const VERBS = {
+  click: ['Click', 'Clicked'],
+  type: ['Type', 'Typed'],
+  choose: ['Choose', 'Chose'],
+  press: ['Press', 'Pressed'],
+  scroll: ['Scroll', 'Scrolled'],
+  wait: ['Wait', 'Waited'],
+  upload: ['Upload', 'Uploaded'],
+} as const;
+
 /**
- * A step as one plain sentence for people reading a recording.
+ * A step as one plain sentence for people reading a recording (`next`, what happens on this screen) or a summary's
+ * story (`done`, what happened).
  *
  * @example
  * describeStep({ operation: 'TYPE_TEXT', element: 'Search traces', valueKey: 'search_query' })
  * // 'Type the "search_query" value into "Search traces"'
+ * describeStep({ operation: 'CLICK', element: 'Search' }, 'done') // 'Clicked "Search"'
  */
-export const describeStep = ({ operation, element = '', valueKey, option }: StepIntent) => {
+export const describeStep = ({ operation, element = '', valueKey, fileKey, option }: StepIntent, tense: 'next' | 'done' = 'next') => {
   const target = `"${shorten(element)}"`;
+  const verb = (name: keyof typeof VERBS) => VERBS[name][tense === 'next' ? 0 : 1];
   switch (operation) {
     case 'CLICK':
-      return `Click ${target}`;
+      return `${verb('click')} ${target}`;
     case 'CLICK_AT':
-      return `Click the control at ${target} by its on-screen position`;
+      return `${verb('click')} the control at ${target} by its on-screen position`;
     case 'TYPE_TEXT':
-      return `Type the "${valueKey}" value into ${target}`;
+      return `${verb('type')} the "${valueKey}" value into ${target}`;
+    case 'UPLOAD':
+      return fileKey ? `${verb('upload')} the "${fileKey}" file into ${target}` : `${verb('upload')} a file into ${target}`;
     case 'SELECT':
-      return option ? `Choose "${option}" in ${target}` : `Choose an option in ${target}`;
+      return option ? `${verb('choose')} "${option}" in ${target}` : `${verb('choose')} an option in ${target}`;
     case 'PRESS_ENTER':
-      return `Press Enter in ${target} to submit it`;
+      return `${verb('press')} Enter in ${target} to submit it`;
     case 'PRESS_ESCAPE':
-      return 'Press Escape to close the open menu or popup';
+      return `${verb('press')} Escape to close the open menu or popup`;
     case 'SCROLL_DOWN':
-      return 'Scroll down to reveal more of the page';
+      return `${verb('scroll')} down to reveal more of the page`;
     case 'SCROLL_UP':
-      return 'Scroll back up';
+      return `${verb('scroll')} back up`;
     case 'WAIT':
-      return 'Wait for the page to finish updating';
+      return `${verb('wait')} for the page to finish updating`;
     default:
       return `${operation} ${target}`;
   }
