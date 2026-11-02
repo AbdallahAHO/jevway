@@ -26,7 +26,8 @@ const MIN_CANDIDATE_PROBABILITY = 0.05;
 const SECRET_LABEL =
   /\b(password|passcode|passphrase|pin|token|api[ _-]?key|secret|cvc|cvv|security code|card number|one[- ]time|otp|2fa)\b/i;
 
-const BOT_CHECK_NAMES: Record<string, string> = {
+/** How a bot check's `wall.name` reads in a question. */
+export const BOT_CHECK_NAMES: Record<string, string> = {
   cloudflare: 'Cloudflare',
   recaptcha: 'reCAPTCHA',
   hcaptcha: 'hCaptcha',
@@ -169,20 +170,28 @@ const askWhichOne = (summary: TaskSummary): AskUser | undefined => {
   };
 };
 
-const askAtWall = ({ kind, origin, name }: NonNullable<TaskSummary['wall']>): AskUser =>
-  kind === 'sign_in'
-    ? {
-        question: `Sign in to ${quotable(origin)} in the Chrome window jevway uses, then choose Done.`,
-        header: 'Sign in',
-        options: DONE_OR_SKIP,
-        then: AFTER_WALL,
-      }
-    : {
-        question: `Pass the ${(name && BOT_CHECK_NAMES[name]) ?? 'bot'} check in the Chrome window jevway uses, then choose Done.`,
-        header: 'Bot check',
-        options: DONE_OR_SKIP,
-        then: AFTER_WALL,
-      };
+// A headless browser has no window: nobody can pass a check or sign in there, so the question offers a visible one.
+const VISIBLE_BROWSER_OPTIONS = [
+  { label: 'Visible browser', description: 'Start again where I can pass the check' },
+  { label: 'Skip', description: 'Leave it; stop here' },
+];
+const IN_A_VISIBLE_BROWSER =
+  'If the user picks Visible browser, start a new session with the same goal in a visible browser (JEVWAY_BROWSER=auto for their own Chrome, or launch; CLI --browser launch); on Skip, tell the user the step was not done.';
+
+const askAtWall = ({ kind, origin, name, person_can_act, waited_seconds }: NonNullable<TaskSummary['wall']>): AskUser => {
+  const check = `${(name && BOT_CHECK_NAMES[name]) ?? 'bot'} check`;
+  const site = quotable(origin);
+  if (person_can_act === false) {
+    return kind === 'sign_in'
+      ? { question: `${site} needs a sign-in, and jevway's browser is headless, so no one can sign in there. Run this again in a visible browser?`, header: 'Sign in', options: VISIBLE_BROWSER_OPTIONS, then: IN_A_VISIBLE_BROWSER }
+      : { question: `${site} shows a ${check}, and jevway's browser is headless, so no one can pass it. Run this again in a visible browser?`, header: 'Bot check', options: VISIBLE_BROWSER_OPTIONS, then: IN_A_VISIBLE_BROWSER };
+  }
+  const waited = waited_seconds ? `I waited ${waited_seconds} s: ` : '';
+  const sentence = (text: string) => (waited ? `${waited}${text[0].toLowerCase()}${text.slice(1)}` : text);
+  return kind === 'sign_in'
+    ? { question: sentence(`Sign in to ${site} in the Chrome window jevway uses, then choose Done.`), header: 'Sign in', options: DONE_OR_SKIP, then: AFTER_WALL }
+    : { question: sentence(`Pass the ${check} in the Chrome window jevway uses, then choose Done.`), header: 'Bot check', options: DONE_OR_SKIP, then: AFTER_WALL };
+};
 
 /**
  * The question a hand-back puts to the person, or none when the agent decides on its own (`done`, `step_budget`, a

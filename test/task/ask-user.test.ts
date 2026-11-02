@@ -210,6 +210,26 @@ describe('ask_user at a wall', () => {
     expect(wall(undefined)?.question).toMatch(/the bot check/);
     expect(wall('cloudflare')?.options?.map((option) => option.label)).toEqual(['Done', 'Skip']);
   });
+
+  it('says how long jevway waited when the wait for the person ran out', () => {
+    const ask = askUserFor(summary({ status: 'blocked', wall: { kind: 'bot_check', origin: 'https://www.npmjs.com', name: 'cloudflare', person_can_act: true, waited_seconds: 120 } }));
+    expect(ask?.question).toBe('I waited 120 s: pass the Cloudflare check in the Chrome window jevway uses, then choose Done.');
+  });
+
+  it('offers a visible browser when the browser is headless, since no person can pass anything there', () => {
+    const ask = askUserFor(summary({ status: 'blocked', wall: { kind: 'bot_check', origin: 'https://www.npmjs.com', name: 'cloudflare', person_can_act: false } }));
+    expect(ask).toMatchObject({
+      question: 'https://www.npmjs.com shows a Cloudflare check, and jevway\'s browser is headless, so no one can pass it. Run this again in a visible browser?',
+      header: 'Bot check',
+      options: [
+        { label: 'Visible browser', description: 'Start again where I can pass the check' },
+        { label: 'Skip', description: 'Leave it; stop here' },
+      ],
+    });
+    expect(ask?.then).toMatch(/new session .*JEVWAY_BROWSER=auto.*launch/);
+    const signIn = askUserFor(summary({ status: 'blocked', wall: { kind: 'sign_in', origin: 'https://github.com', person_can_act: false } }));
+    expect(signIn?.question).toBe("https://github.com needs a sign-in, and jevway's browser is headless, so no one can sign in there. Run this again in a visible browser?");
+  });
 });
 
 describe('no ask_user where the agent decides', () => {
