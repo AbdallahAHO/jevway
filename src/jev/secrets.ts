@@ -37,15 +37,20 @@ const isImagePart = (value: Record<string, unknown>) => value.type === 'image_ur
  * caller marked secret never reaches the model or any output, including when the page echoes it (upper-cased, in an
  * address). Matching is case-insensitive and takes the longest form first, in one pass, so a marker is never scrubbed
  * again. Every non-empty value counts, even a short one: a garbled text is the safe failure, a leaked secret is not.
- * With nothing marked it is the identity.
+ * `more` adds secrets that are not supplied values, each under the key it stands for (an authenticator secret's
+ * base32, every code typed from it). With nothing marked it is the identity.
  *
  * @example
  * const scrub = scrubberFor({ token: 'ghp_x1' }, ['token']);
  * scrub({ page_text: 'Token GHP_X1 created' }) // { page_text: 'Token [secret:token] created' }
  */
-export const scrubberFor = (values: Record<string, string>, secretKeys: readonly string[] = []) => {
+export const scrubberFor = (
+  values: Record<string, string>,
+  secretKeys: readonly string[] = [],
+  more: readonly (readonly [key: string, value: string])[] = [],
+) => {
   const keyByForm = new Map<string, string>();
-  for (const [key, value] of secretEntries(values, secretKeys)) {
+  for (const [key, value] of [...secretEntries(values, secretKeys), ...more.filter(([, value]) => value.trim() !== '')]) {
     for (const form of formsOf(value)) if (form && !keyByForm.has(form.toLowerCase())) keyByForm.set(form.toLowerCase(), key);
   }
   if (!keyByForm.size) return <T>(value: T): T => value;

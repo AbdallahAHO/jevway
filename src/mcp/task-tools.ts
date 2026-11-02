@@ -45,6 +45,10 @@ const TASK_INPUT = z.object({
     .record(z.string(), z.string({ error: 'files maps keys to absolute paths, e.g. {"cv":"/Users/ada/cv.pdf"}' }))
     .optional()
     .describe('Files the user asked to upload: key → absolute path.'),
+  totp: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe('2FA on the user\'s own account: key → authenticator secret (base32 or otpauth URI); the current code is typed.'),
   done_when: z.string().optional().describe('Visible proof of success on this call\'s end page; done needs it. Resend with a new goal.'),
   checks: CHECKS_INPUT.optional(),
   confirm_irreversible: z
@@ -144,6 +148,7 @@ export const taskTools = (service: SessionService, { images }: { images: ImageRe
               values: input.values,
               secretKeys: input.secret_keys,
               files: input.files,
+              totp: input.totp,
               doneWhen: input.done_when,
               checks,
               confirmIrreversible: input.confirm_irreversible,

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createSessionService, type TaskRequest } from '../session/session-service.ts';
 import { CHECKS } from '../task/checks.ts';
 import { presentSummary, type ConciseSummary } from '../task/present.ts';
+import { checkTotpSecrets } from '../task/totp.ts';
 import { callDaemon, daemonFor, placement, requireKey, runnerChoice, runnerFor, TIMEOUTS } from './daemon-call.ts';
 import type { CliDeps } from './dispatch.ts';
 import { choiceFlag, intFlag, jsonFlag, listFlag, parseFlags, usageError, type CommandSpec } from './flags.ts';
@@ -28,6 +29,7 @@ export const runSpec: CommandSpec = {
     values: { type: 'string', value: '<json>', describe: 'text values Jev may type, e.g. \'{"city":"Lisbon"}\'' },
     'secret-keys': { type: 'string', value: '<a,b>', describe: 'keys of --values that are secrets: Jev sees the key only, output shows [secret:<key>]' },
     files: { type: 'string', value: '<json>', describe: 'files Jev may upload, key to absolute path; Jev sees names, never paths' },
+    totp: { type: 'string', value: '<json>', describe: '2FA on the user\'s own account: key to authenticator secret (base32 or otpauth:// URI); the current code is typed' },
     'done-when': { type: 'string', value: '<text>', describe: 'visible evidence of success on the page the call ends on' },
     checks: { type: 'string', value: '<json>', describe: 'facts code checks on the final page, e.g. \'[{"type":"url_contains","text":"/issues/"}]\'' },
     'confirm-irreversible': { type: 'boolean', describe: 'allow one click flagged irreversible, only when the user\'s request names it' },
@@ -86,6 +88,17 @@ export const cliNext = (next: string, session: string | undefined) => {
 const withRecordDir = (argv: string[]) =>
   argv.flatMap((arg, i) => (arg === '--record' && argv[i + 1] !== undefined && !argv[i + 1].startsWith('-') ? ['--record-dir'] : [arg]));
 
+/** `--totp` as JSON, each secret checked here so a bad one is a usage error (exit 2) that never repeats it. */
+const totpFlag = (raw: string | undefined) => {
+  const totp = jsonFlag('totp', raw, TEXT_BY_KEY, '{"otp":"JBSWY3DPEHPK3PXP"}');
+  try {
+    checkTotpSecrets(totp);
+  } catch (error) {
+    throw usageError('invalid_value', `--totp: ${(error as Error).message}`, 'Pass the base32 secret behind the QR code or its otpauth://totp/ URI, e.g. --totp \'{"otp":"JBSWY3DPEHPK3PXP"}\'');
+  }
+  return totp;
+};
+
 const defined = <T extends object>(value: T) => Object.fromEntries(Object.entries(value).filter(([, inner]) => inner !== undefined)) as T;
 
 /** `jevway run`: one goal, in-process without `--session`, through the daemon with it. */
@@ -113,6 +126,7 @@ export const runCommand = async (argv: string[], deps: CliDeps) => {
     values: jsonFlag('values', text('values'), TEXT_BY_KEY, '{"city":"Lisbon"}'),
     secretKeys: listFlag(text('secret-keys')),
     files: jsonFlag('files', text('files'), TEXT_BY_KEY, '{"avatar":"/Users/ada/me.png"}'),
+    totp: totpFlag(text('totp')),
     doneWhen: text('done-when'),
     checks: jsonFlag('checks', text('checks'), CHECKS, '[{"type":"url_contains","text":"/issues/"}]'),
     maxSteps: intFlag('max-steps', text('max-steps'), { min: 1, max: 100 }),

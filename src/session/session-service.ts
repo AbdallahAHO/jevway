@@ -7,6 +7,7 @@ import { ensureOutRoot, journeyFolderName, outRoot, runFolderName } from '../out
 import type { RunFiles } from '../output/run-folder.ts';
 import { lookAt, type PageLook } from '../task/look.ts';
 import { storyLine } from '../task/present.ts';
+import { checkTotpSecrets, totpMasks } from '../task/totp.ts';
 import type { BrowserTask, TaskStatus, TaskSummary } from '../task/run-task.ts';
 import type { Runner, StartOptions } from '../task/start-task.ts';
 
@@ -92,6 +93,8 @@ interface TaskEntry {
   goal: string;
   values: Record<string, string>;
   secretKeys: string[];
+  /** The authenticator secrets the session was given, as the goal is masked with them. */
+  moreSecrets: [string, string][];
   status?: TaskStatus;
   url?: string;
   runDir: string;
@@ -149,11 +152,14 @@ export const createSessionService = (runner: Pick<Runner, 'start' | 'look' | 'st
     const id = newId();
     const at = now();
     const values = request.values ?? {};
-    const secretKeys = request.secretKeys ?? [];
-    const scrub = scrubberFor(values, secretKeys);
+    // An authenticator key is secret for the session, even if a later call gives it a plain value.
+    const secretKeys = [...(request.secretKeys ?? []), ...Object.keys(request.totp ?? {})];
+    // A bad authenticator secret is refused before a tab opens.
+    const moreSecrets = totpMasks(checkTotpSecrets(request.totp, request.values));
+    const scrub = scrubberFor(values, secretKeys, moreSecrets);
     const runDir = recordDir ? resolve(cwd, recordDir) : join(ensureOutRoot(root), 'runs', runFolderName({ at, goal: request.goal, id, scrub }));
     const task = await runner.start({ ...request, output: { dir: runDir, record: Boolean(record || recordDir) } });
-    const entry: TaskEntry = { task, ownsTab: Boolean(request.url), busy: false, goal: scrub(request.goal), values, secretKeys, runDir, startedAt: at, lastUsedAt: at };
+    const entry: TaskEntry = { task, ownsTab: Boolean(request.url), busy: false, goal: scrub(request.goal), values, secretKeys, moreSecrets, runDir, startedAt: at, lastUsedAt: at };
     sessions.set(id, entry);
     return { id, entry };
   };
@@ -167,6 +173,7 @@ export const createSessionService = (runner: Pick<Runner, 'start' | 'look' | 'st
       values: request.values,
       secretKeys: request.secretKeys,
       files: request.files,
+      totp: request.totp,
       doneWhen: request.doneWhen,
       checks: request.checks,
       maxSteps: request.maxSteps,
@@ -177,8 +184,9 @@ export const createSessionService = (runner: Pick<Runner, 'start' | 'look' | 'st
       confirmTarget: request.confirmTarget,
     });
     entry.values = { ...entry.values, ...request.values };
-    entry.secretKeys = [...new Set([...entry.secretKeys, ...(request.secretKeys ?? [])])];
-    entry.goal = scrubberFor(entry.values, entry.secretKeys)(request.goal);
+    entry.secretKeys = [...new Set([...entry.secretKeys, ...(request.secretKeys ?? []), ...Object.keys(request.totp ?? {})])];
+    entry.moreSecrets.push(...totpMasks(checkTotpSecrets(request.totp)));
+    entry.goal = scrubberFor(entry.values, entry.secretKeys, entry.moreSecrets)(request.goal);
     return { id, entry };
   };
 

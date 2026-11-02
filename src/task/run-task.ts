@@ -13,6 +13,7 @@ import { writeCall, type RunFiles } from '../output/run-folder.ts';
 import { Recording } from '../recording/recording.ts';
 import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
 import { checkUploadFiles, fileNames } from './upload-files.ts';
+import { checkTotpSecrets, totpMasks, typingCode, type TotpSecret } from './totp.ts';
 import { isTransientModelError } from '../jev/retry.ts';
 
 export interface TaskOptions {
@@ -29,6 +30,12 @@ export interface TaskOptions {
    * Jev picks a key for a file field and sees the file's name, never its path; nothing else is ever uploaded.
    */
   files?: Record<string, string>;
+  /**
+   * Authenticator secrets for the person's own accounts, by key: base32 or an `otpauth://totp/` URI (checked before the
+   * run). Kept apart from `values`: Jev sees `[secret:<key>]` and may pick the key for a field, and code types the code
+   * current at that moment. The secret and every code are masked like a secret value.
+   */
+  totp?: Record<string, string>;
   /** Visible evidence that the task is finished; checked by a separate Jev judgment on DONE. */
   doneWhen?: string;
   /** Maximum executed browser actions per call. */
@@ -251,7 +258,7 @@ const BLANK_PAGE: PageState = {
  */
 export class BrowserTask {
   readonly trace: TraceEntry[] = [];
-  #options: Required<Omit<TaskOptions, 'doneWhen' | 'recordDir' | 'output' | 'model'>> & Pick<TaskOptions, 'doneWhen' | 'model'>;
+  #options: Required<Omit<TaskOptions, 'doneWhen' | 'recordDir' | 'output' | 'model' | 'totp'>> & Pick<TaskOptions, 'doneWhen' | 'model'>;
   #history: (StepRecord & { confidence: number })[] = [];
   #latencies: number[] = [];
   #inputTokens = 0;
@@ -302,6 +309,10 @@ export class BrowserTask {
   #toggled = new Map<string, { label: string; checked: string; noted: boolean; clickedAfter?: string }>();
   /** Nodes of fields the model chose with no supplied value to type: each is refused once before the caller is asked. */
   #refusedForValue = new Set<number>();
+  /** The caller's authenticator secrets by key: only `decide` (as a marker) and the typing see them. */
+  #totp = new Map<string, TotpSecret>();
+  /** Secrets that are not supplied values, by key: each authenticator secret as given and as base32, every code typed. Kept for the session. */
+  #moreSecrets: [key: string, value: string][] = [];
   /** Trace entries before this index are already scrubbed of secret values. */
   #traceScrubbed = 0;
   /** The page each decision was made on: a `done_when` score counts for the caller's checks only on the page it judged. */
@@ -328,11 +339,13 @@ export class BrowserTask {
   /** This call's stop signal (caller cancel or time budget); set while a call runs. */
   #limit: RunLimit | undefined;
 
-  constructor(tab: Tab, ask: Ask, { recordDir, output, ...options }: TaskOptions) {
+  constructor(tab: Tab, ask: Ask, { recordDir, output, totp, ...options }: TaskOptions) {
     this.#tab = tab;
     this.#tabs = [tab];
     this.#ask = ask;
+    const authenticators = checkTotpSecrets(totp, options.values);
     this.#options = { ...DEFAULTS, values: {}, secretKeys: [], ...definedOnly(options), files: checkUploadFiles(options.files) };
+    this.#takeTotp(authenticators);
     this.#output = output ?? (recordDir ? { dir: recordDir, record: true } : undefined);
     if (this.#output?.record) this.#recording = new Recording(this.#output.dir, (text) => this.#scrub(text));
   }
@@ -350,7 +363,7 @@ export class BrowserTask {
 
   /** Replaces every value the caller marked secret with its marker, in a string or a plain object's strings. */
   #scrub<T>(value: T): T {
-    return scrubberFor(this.#options.values, this.#options.secretKeys)(value);
+    return scrubberFor(this.#options.values, this.#options.secretKeys, this.#moreSecrets)(value);
   }
 
   // jevway: a page is scrubbed of secrets as soon as the run reads it, so every label, value, history line, page
@@ -360,7 +373,7 @@ export class BrowserTask {
   async #observe(): Promise<PageState> {
     const page = await this.#tab.observe();
     if (!this.#options.secretKeys.length) return page;
-    const scrub = scrubberFor(this.#options.values, this.#options.secretKeys);
+    const scrub = scrubberFor(this.#options.values, this.#options.secretKeys, this.#moreSecrets);
     return {
       ...page,
       url: scrub(page.url),
@@ -434,9 +447,10 @@ export class BrowserTask {
   update(
     patch: Partial<Omit<TaskOptions, 'hosts'>> & { confirmIrreversible?: boolean; confirmTarget?: string; allowedHosts?: string[]; blockedHosts?: string[] },
   ) {
-    const { confirmIrreversible, confirmTarget, values, secretKeys, files, recordDir: _recordDir, output: _output, allowedHosts, blockedHosts, ...options } = patch;
-    // First, so a list that would widen the hosts throws before anything else changes.
+    const { confirmIrreversible, confirmTarget, values, secretKeys, files, totp, recordDir: _recordDir, output: _output, allowedHosts, blockedHosts, ...options } = patch;
+    // First, so a list that would widen the hosts, or a bad authenticator secret, throws before anything else changes.
     const hosts = narrowHosts(this.#options.hosts, { allowed: allowedHosts, blocked: blockedHosts });
+    const authenticators = checkTotpSecrets(totp, values);
     const newGoal = options.goal !== undefined && options.goal !== this.#options.goal;
     // A new goal may be to flip back what the old one flipped.
     if (newGoal) this.#toggled.clear();
@@ -451,6 +465,7 @@ export class BrowserTask {
       secretKeys: [...new Set([...this.#options.secretKeys, ...(secretKeys ?? [])])],
       files: { ...this.#options.files, ...checkUploadFiles(files) },
     };
+    this.#takeTotp(authenticators, values);
     if (!confirmIrreversible) return;
     // A confirmation answers the question jevway asked, so a flag carried onto a later call allows nothing (an unused earlier one stands).
     if (this.#lastStatus === undefined || this.#lastStatus === 'needs_confirmation') {
@@ -458,6 +473,25 @@ export class BrowserTask {
       this.#confirmTarget = confirmTarget;
       this.#confirmedControl = this.#lastStatus === 'needs_confirmation' ? this.#flagged : undefined;
     } else if (!this.#confirmedCommit) this.#confirmIgnored = this.#lastStatus;
+  }
+
+  // The newest plain value or authenticator secret for a key replaces the older one; either stays secret for the session.
+  #takeTotp(authenticators: Map<string, TotpSecret>, values: Record<string, string> = {}) {
+    for (const key of Object.keys(values)) this.#totp.delete(key);
+    for (const [key, secret] of authenticators) this.#totp.set(key, secret);
+    this.#moreSecrets.push(...totpMasks(authenticators));
+    if (!authenticators.size) return;
+    this.#options.values = Object.fromEntries(Object.entries(this.#options.values).filter(([key]) => !authenticators.has(key)));
+    this.#options.secretKeys = [...new Set([...this.#options.secretKeys, ...authenticators.keys()])];
+  }
+
+  // An authenticator key types the code current now (the next one when its period is about to end), masked before it is typed.
+  async #textFor(key: string, values: Record<string, string>) {
+    const secret = this.#totp.get(key);
+    if (!secret) return values[key];
+    const code = await typingCode(secret, { now: Date.now, pause: (ms) => this.#limit?.pause(ms) ?? Promise.resolve() });
+    this.#moreSecrets.push([key, code]);
+    return code;
   }
 
   /**
@@ -864,7 +898,7 @@ export class BrowserTask {
         }
 
         const action = decision.action!;
-        const text = decision.valueKey ? values[decision.valueKey] : undefined;
+        const text = decision.valueKey ? await this.#textFor(decision.valueKey, values) : undefined;
         let element: string;
         // jevway: the dialog a confirmed click opens is the same action asking again; any other dialog still gets the answer that changes nothing.
         if (isRiskyClick(decision) && this.#confirmedCommit) this.#tab.armConfirm([this.#confirmTarget ?? '', bareLabel(decision.action?.label ?? '')]);
@@ -1276,7 +1310,8 @@ export class BrowserTask {
       const decision = await decide(ask, {
         page: this.#withSaid(this.#withKeys(page)),
         goal,
-        values,
+        // An authenticator key is offered like a secret value: Jev sees its marker, never the secret.
+        values: { ...values, ...Object.fromEntries([...this.#totp].map(([key, secret]) => [key, secret.base32])) },
         secretKeys,
         files: fileNames(this.#options.files),
         history: this.#history.slice(-10),
