@@ -11,5 +11,5 @@
 - [ ] The PR title is a conventional commit (`feat: …`, `fix: …`, `docs: …`): it becomes the squashed commit and sets the next version
 - [ ] `pnpm release:check` passes (typecheck, tests, build, package contents)
 - [ ] Tests describe behaviour a caller sees, and pass without an API key
-- [ ] Docs updated where behaviour changed (README, `docs/reference.md`, `skill/jevway/SKILL.md`, the tool descriptions in `src/mcp.ts`)
+- [ ] Docs updated where behaviour changed (README, `docs/reference.md`, `skill/jevway/SKILL.md`, the tool descriptions in `src/mcp/*-tools.ts`)
 - [ ] Model output still only selects observed ids or value keys (see the invariants in `AGENTS.md`)

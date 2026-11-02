@@ -9,7 +9,7 @@ import { createRunner } from './task/start-task.ts';
 // JEVWAY_BROWSER: auto (running Chrome, shared with chrome-devtools-mcp --auto-connect) | launch | launch-headless | http://host:port
 // JEVWAY_MODEL: jev (default) | pplx-decider | clef-omni | clef | clef-flash | gpt-6-luna (see src/jev/model.ts)
 // JEVWAY_SCREENSHOTS: off | fallback | always (vision models only)
-// JEVWAY_TOOLS: all (default) | task | journeys; JEVWAY_IMAGE_RESPONSES: auto (default) | always | never
+// JEVWAY_TOOLS: all (default) | task | journeys | inbox; JEVWAY_IMAGE_RESPONSES: auto (default) | always | never
 // Keys and JEVWAY_* settings the client's environment lacks come from ~/.config/jevway/env.
 loadEnvFile();
 const runner = createRunner(process.env.JEVWAY_BROWSER ?? 'auto');

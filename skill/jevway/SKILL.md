@@ -14,7 +14,7 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 | --- | --- |
 | Get to a page state: search, forms, filters, pagination, open a result | `jevway_task` |
 | Look at it: console, network, performance, Lighthouse, screenshots, DOM details | chrome-devtools (same Chrome; `list_pages` → `select_page` by the summary's `url`) |
-| Closed shadow DOM, canvas, file inputs inside iframes, drag (iframes are read like the page) | chrome-devtools directly |
+| Closed shadow DOM, canvas, dragging items around (iframes, file fields in them and drop zones work like the page) | chrome-devtools directly |
 
 ## Call it well
 
@@ -87,9 +87,8 @@ until curl -s http://127.0.0.1:9333/json/version >/dev/null; do sleep 0.5; done
 - jevway: `JEVWAY_BROWSER=http://127.0.0.1:9333` (MCP env) or `--browser http://127.0.0.1:9333` (CLI).
 - agent-browser shares the same Chrome with `--cdp 9333`; use it for sign-up and login steps, then hand the goal to `jevway_task`.
 - Logins stay in that profile across runs. Stop only that Chrome: `pkill -f "user-data-dir=$PROFILE"`.
-- Keep the window visible (no `--headless`) when a site shows a Cloudflare or captcha check: a real window often clears it on its own. Never try to solve or bypass a challenge; if it still asks, hand the click to the user. `jevway_task` waits up to 8 s for one to clear, then ends `blocked` with a reason naming it ("The page is a bot check (Cloudflare; …)") and `wall: { kind: "bot_check", origin, name }`: rephrasing cannot help. Ask the user to pass it in that tab, then continue the same `session`.
+- Keep the window visible (no `--headless`) when a site shows a Cloudflare or captcha check: a real window often clears it on its own. Never try to solve or bypass a challenge. In a visible browser `jevway_task` gives a bot check or sign-in wall to the user: tab to the front, a desktop notification, a wait of up to 120 s (`wait_for_person_seconds`, else `JEVWAY_PERSON_WAIT_SECONDS`; 0 off), and the call carries on once they're through. Headless, or when the wait runs out, it ends `blocked` with `wall: { kind: "bot_check" | "sign_in", … }` and an `ask_user` (headless: run again in a visible browser): rephrasing cannot help.
 - A sign-up needing an email, only for test or demo accounts the user asked for (never to get around limits, trials or bans): `jevway_inbox_create` gives an `address` to pass in `values`; after submitting, `jevway_inbox_wait` (`inbox`, `from`) returns the email's `code` and `links`. Pass the code in `values` with its key in `secret_keys` on the same session; open a verification link with `jevway_task` `url`. A `timeout` means check the sign-up was sent (`jevway_look`) before waiting again. If the site rejects the address's domain, create one with `provider: "mail.gw"` once, then tell the user and stop. CLI: `jevway inbox create`, `jevway inbox wait <address> --from <sender>`.
-- A sign-up needing an email: use a throwaway inbox service for the address and its verification code, and pass both through `values`. Only for test or demo accounts the user asked for.
 
 ## Without MCP: the `jevway` CLI
 

@@ -119,7 +119,7 @@ codex mcp add jevway -- npx -y -p jevway jevway-mcp
 "jevway": { "type": "local", "command": ["npx", "-y", "-p", "jevway", "jevway-mcp"], "enabled": true }
 ```
 
-Outside the Claude Code plugin, copy `skill/jevway/` into your agent's skills folder, so it knows when to use jevway and
+Outside the Claude Code plugin, install the skill with `npx -y jevway skill --install <your agent's skills folder>`, so it knows when to use jevway and
 when to use chrome-devtools. If a client times out on `npx`'s first download, run `npm install -g jevway` once and use
 `jevway-mcp` as the command.
 

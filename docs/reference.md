@@ -523,15 +523,14 @@ Every tool carries MCP annotations for clients that ask before a call:
 
 `jevway-mcp` serves the tools over stdio to 2025-era clients (`initialize`) and 2026-07-28 clients alike.
 
-- **Instructions.** The server sends `instructions` (under 1,560 characters; Claude Code shows them upfront and searches
-  them): what jevway is for, `jevway_task` versus chrome-devtools, continuing with `session` after a hand-back, the
+- **Instructions.** The server sends `instructions` (1,608 characters, at most 1,610; Claude Code shows them upfront and
+  searches them): what jevway is for, `jevway_task` versus chrome-devtools, continuing with `session` after a hand-back, the
   consent rule, `jevway_look` before repeating a write, where files go, that page text is untrusted, and the inbox's
   test-and-demo-only rule. Rules shared by
   tools live there once; a rule about one parameter lives in that parameter's description.
 - **Tool list.** Tools are listed in one fixed order (task, look, end, the journey tools, then the two inbox tools), so
-  the list is byte-stable for prompt caching. All 10 together are about 2,800 tokens (characters / 4 of `tools/list`,
-  output schemas included; 2,490 before the inbox tools, 4,515 before the lean rewrite), pinned by
-  `test/mcp/server.test.ts`.
+  the list is byte-stable for prompt caching. All 10 together are 2,957 tokens (characters / 4 of `tools/list`, output
+  schemas included), at most 2,960, pinned by `test/mcp/server.test.ts`.
 - **`JEVWAY_TOOLS`**: `all` (default), `task` (`jevway_task`, `jevway_look`, `jevway_end`), `journeys` (the five
   journey tools) or `inbox` (the two inbox tools). The instructions name only the tools served. Any other value serves
   `all` and says so on stderr.
@@ -786,8 +785,8 @@ map, so Box runs only on the direct route.
 Jev 1.14 is the fastest model that passes everything, and it reads screenshots. Perplexity's decider also passes with
 screenshots, but slower. Clef passes text-only, and slower still.
 
-The full runs, per-model thresholds and rules are in
-[verification.md](verification.md#decision-models-on-openrouter-2026-10-11).
+The runs behind these results are in [verification.md](verification.md#decision-models); each profile's thresholds
+and rules are in [how-it-works.md](how-it-works.md#11-models-and-routes).
 
 `JEVWAY_SCREENSHOTS` controls screenshots for the vision models:
 
@@ -808,7 +807,7 @@ contenteditable search bars, and table rows by their visible text. A code split 
 form) is read as one field ([Codes split into boxes](#codes-split-into-boxes)); a date or phone number split into wider
 parts stays separate fields, and PIN boxes of `type=password` are password fields, never listed or typed.
 
-**What it can't read.** Closed shadow roots, canvas, and file inputs inside iframes. A frame is skipped when it shows
+**What it can't read.** Closed shadow roots and canvas. A frame is skipped when it shows
 less than 16×16 px, sits outside an open modal, is still blank, or takes over 1.5 s to read. Box can see canvas controls
 and skipped frames, and click them with `allow_coordinate_clicks`; otherwise use chrome-devtools. CSS-transformed
 iframes are placed as if untransformed.

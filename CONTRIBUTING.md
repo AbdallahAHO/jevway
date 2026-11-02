@@ -103,7 +103,8 @@ A change to what Jev is asked misses the recording by design: record again after
   `refactor: …`, `chore: …`. PRs are squash-merged, so the title becomes the whole commit on `main` (mark a breaking change with `!`: `feat!: …`), and it decides the next
   version (below).
 - **One change per PR.** A fix and an unrelated refactor are two PRs.
-- **Docs:** when behaviour a caller sees changes, update the tool description in `src/mcp.ts`,
+- **Docs:** when behaviour a caller sees changes, update the tool description in `src/mcp/task-tools.ts`,
+  `journey-tools.ts` or `inbox-tools.ts`,
   [docs/reference.md](docs/reference.md), and [skill/jevway/SKILL.md](skill/jevway/SKILL.md) where it applies.
 - `pnpm release:check` passes. CI runs the same command on every PR.
 

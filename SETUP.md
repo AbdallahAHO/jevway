@@ -136,14 +136,17 @@ the CLI) when it isn't `auto`. For the smoke test a visible one is best, so they
 ## 5. The skill (clients other than the Claude Code plugin)
 
 The skill says when to use `jevway_task` and when to use chrome-devtools. It ships in the package; `jevway skill`
-prints it, and this copies it into a client's skills folder as `<folder>/jevway/`:
+prints it, and this copies it into a client's skills folder as `<folder>/jevway/`, with the standalone inbox skill
+beside it as `<folder>/jevway-inbox/`:
 
 ```bash
 npx -y jevway skill --install ~/.codex/skills   # or ~/.claude/skills, ~/.cursor/skills, ~/.config/opencode/skills
 ```
 
-It prints `{ ok, status, path, files }`. A different `jevway` skill already there (or a symlink to one) is left alone
-with `"code": "skill_exists"` and exit 1; replace it with `--force` only if the person agrees.
+It prints `{ ok, status, path, files, skills }`: `status` (`installed`, `unchanged` or `replaced`), `path` and `files`
+for `jevway`, and `skills: [{ name, status, path, files }]` for both. A different skill already in either folder (or a
+symlink to one) is left alone and nothing is copied: `"code": "skill_exists"` naming it, exit 1; replace it with
+`--force` only if the person agrees.
 
 ## 6. Check the setup
 
