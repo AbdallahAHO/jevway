@@ -8,18 +8,26 @@ export const SKILL_USAGE = `Examples:
   jevway skill
   jevway skill --install ~/.claude/skills
 
-jevway skill                      print the SKILL.md this version ships
-jevway skill --install <dir> [--force]   copy the skill folder into <dir>/jevway
+jevway skill [--name jevway-inbox]       print the SKILL.md this version ships (default jevway)
+jevway skill --install <dir> [--force]   copy both skill folders into <dir>/jevway and <dir>/jevway-inbox
 
 Examples:
   jevway skill --install ~/.claude/skills
   jevway skill --install ~/.codex/skills
 
---install prints { ok, status: installed|unchanged|replaced, path, files }. A different jevway skill already in
-<dir>/jevway (or a symlink to one) is left alone unless --force is given.`;
+--install prints { ok, status: installed|unchanged|replaced, path, files } for jevway and the same for each skill in
+skills: [{ name, … }]. jevway-inbox is a standalone disposable inbox script for agents without jevway. A different
+skill already in either folder (or a symlink to one) is left alone, and nothing is copied, unless --force is given.`;
 
-/** The `skill/jevway/` folder of the installed package: two levels up from both `src/setup/` and `dist/setup/`. */
-export const bundledSkillDir = () => fileURLToPath(new URL('../../skill/jevway/', import.meta.url));
+/** The skills this package ships, by folder name; `--install` copies them all. */
+const BUNDLED_SKILLS = ['jevway', 'jevway-inbox'] as const;
+type BundledSkill = (typeof BUNDLED_SKILLS)[number];
+
+/** A `skill/<name>/` folder of the installed package: two levels up from both `src/setup/` and `dist/setup/`. */
+const bundledSkillFolder = (name: BundledSkill) => fileURLToPath(new URL(`../../skill/${name}/`, import.meta.url));
+
+/** The `skill/jevway/` folder of the installed package. */
+export const bundledSkillDir = () => bundledSkillFolder('jevway');
 
 /** Every file under `dir`, as sorted paths relative to it. */
 const filesIn = (dir: string): string[] =>
@@ -41,9 +49,9 @@ const sameFolder = (source: string, target: string) => {
   }
 };
 
-/** Whether `<parent>/jevway` is missing, the same as `source`, or something else (a different skill or a symlink to one). */
-export const skillState = (source: string, parent: string): 'missing' | 'same' | 'different' => {
-  const path = join(parent, 'jevway');
+/** Whether `<parent>/<name>` is missing, the same as `source`, or something else (a different skill or a symlink to one). */
+export const skillState = (source: string, parent: string, name = 'jevway'): 'missing' | 'same' | 'different' => {
+  const path = join(parent, name);
   if (!existsSync(path) && !lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) return 'missing';
   return sameFolder(source, path) ? 'same' : 'different';
 };
@@ -53,27 +61,40 @@ export type SkillInstall =
   | { status: 'exists'; path: string };
 
 /**
- * Copies `source` to `<parent>/jevway`. An identical copy is left as it is; a different folder or a symlink is
- * replaced only with `force` (a symlink is removed, never its target). The copy lands under a temporary name first,
- * so an interrupted install never leaves half a skill.
+ * Copies `source` to `<parent>/<name>` (default `jevway`). An identical copy is left as it is; a different folder or a
+ * symlink is replaced only with `force` (a symlink is removed, never its target). The copy lands under a temporary
+ * name first, so an interrupted install never leaves half a skill.
  *
  * @example
  * installSkill(bundledSkillDir(), '/Users/ada/.claude/skills', { force: false })
  * // { status: 'installed', path: '/Users/ada/.claude/skills/jevway', files: ['SKILL.md'] }
  */
-export const installSkill = (source: string, parent: string, { force }: { force: boolean }): SkillInstall => {
-  const path = join(parent, 'jevway');
+export const installSkill = (source: string, parent: string, { force, name = 'jevway' }: { force: boolean; name?: string }): SkillInstall => {
+  const path = join(parent, name);
   const files = filesIn(source);
-  const state = skillState(source, parent);
+  const state = skillState(source, parent, name);
   if (state === 'same') return { status: 'unchanged', path, files };
   if (state === 'different' && !force) return { status: 'exists', path };
   const present = state === 'different';
   mkdirSync(parent, { recursive: true });
-  const incoming = join(parent, `.jevway-${process.pid}.incoming`);
+  const incoming = join(parent, `.${name}-${process.pid}.incoming`);
   cpSync(source, incoming, { recursive: true });
   if (present) rmSync(path, { recursive: true, force: true });
   renameSync(incoming, path);
   return { status: present ? 'replaced' : 'installed', path, files };
+};
+
+/**
+ * Installs every bundled skill into `parent`, or none: a different folder for any of them, without `force`, is
+ * `exists` with its path and nothing is copied.
+ */
+export const installSkills = (parent: string, { force }: { force: boolean }) => {
+  const different = BUNDLED_SKILLS.filter((name) => skillState(bundledSkillFolder(name), parent, name) === 'different');
+  if (different.length && !force) return { status: 'exists' as const, paths: different.map((name) => join(parent, name)) };
+  return {
+    status: 'done' as const,
+    skills: BUNDLED_SKILLS.map((name) => ({ name, ...(installSkill(bundledSkillFolder(name), parent, { force, name }) as Exclude<SkillInstall, { status: 'exists' }>) })),
+  };
 };
 
 /**
@@ -87,7 +108,7 @@ export const runSkill = async (argv: string[]): Promise<number> => {
   try {
     ({ values: options } = parseArgs({
       args: argv,
-      options: { install: { type: 'string' }, force: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+      options: { install: { type: 'string' }, name: { type: 'string' }, force: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
     }));
   } catch (error) {
     return printError(2, 'usage', `jevway skill: ${(error as Error).message}`, 'jevway skill --install <dir> [--force]');
@@ -97,18 +118,23 @@ export const runSkill = async (argv: string[]): Promise<number> => {
     return 0;
   }
   if (options.install === undefined) {
-    await print(readFileSync(join(bundledSkillDir(), 'SKILL.md'), 'utf8'));
+    const name = options.name ?? 'jevway';
+    if (!BUNDLED_SKILLS.includes(name as BundledSkill)) {
+      return printError(2, 'usage', `jevway skill: --name must be ${BUNDLED_SKILLS.join(' or ')}, got "${name}"`, 'jevway skill --name jevway-inbox');
+    }
+    await print(readFileSync(join(bundledSkillFolder(name as BundledSkill), 'SKILL.md'), 'utf8'));
     return 0;
   }
-  const result = installSkill(bundledSkillDir(), options.install, { force: Boolean(options.force) });
+  const result = installSkills(options.install, { force: Boolean(options.force) });
   if (result.status === 'exists') {
     return printError(
       1,
       'skill_exists',
-      `${result.path} already holds a different jevway skill (or a link to one); it was left as it is`,
-      `Run again with --force to replace it with this version's skill: jevway skill --install ${options.install} --force`,
+      `${result.paths.join(' and ')} already ${result.paths.length === 1 ? 'holds a different skill' : 'hold different skills'} (or a link to one); nothing was copied`,
+      `Run again with --force to replace them with this version's skills: jevway skill --install ${options.install} --force`,
     );
   }
-  await printJson({ ok: true, ...result });
+  const [{ name: _name, ...jevway }] = result.skills;
+  await printJson({ ok: true, ...jevway, skills: result.skills });
   return 0;
 };
