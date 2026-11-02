@@ -12,6 +12,7 @@ inside, see [how-it-works.md](how-it-works.md). For the journey tools, see [jour
   - [Evidence](#evidence)
   - [Secret values](#secret-values)
   - [Authenticator codes](#authenticator-codes)
+  - [Codes split into boxes](#codes-split-into-boxes)
   - [Hosts](#hosts)
   - [Recording](#recording)
 - [Output folder](#output-folder)
@@ -274,6 +275,21 @@ person: `{"github_otp": "JBSWY3DPEHPK3PXP"}`.
   exits 2.
 - The key stays for the session. A later call's `totp` replaces it; a later `values` for the same key replaces it with a
   plain value, which stays secret.
+
+### Codes split into boxes
+
+A one-time code shown as 4–8 one-character boxes is one field to Jev, named for the group with its box count
+(`Verification code (6 boxes)`): from the boxes' group name or legend, else a short line right before them, else the
+words their own labels share, else `Verification code`. It takes a value from `values` or `totp` like any field.
+
+- The code is typed one character per box, each box checked and pressed like any field; a box the page already filled
+  with the right character (auto-advance, a spread paste) is skipped. The step reads `value_kept: false` when the boxes
+  don't end up holding the code.
+- A value whose length (spaces and hyphens ignored when that makes it fit) differs from the box count is not typed: Jev
+  is told once, then the call ends `needs_input` naming the field.
+- A secret typed into the boxes (a `secret_keys` value or a `totp` code) shows as its marker in every later read of those
+  boxes, joined or box by box. Recorded screenshots and video still show the digits.
+- One story step: `Typed the "otp" value into "Verification code (6 boxes)".`; the step shot outlines the whole group.
 
 ### Hosts
 
@@ -787,7 +803,10 @@ and the overlay is removed before any input. The model still only selects listed
 
 **What it reads.** Common HTML and ARIA controls, including inside open shadow roots and iframes (same-origin and
 cross-origin, up to 10 frames, 3 levels deep). Also sortable column headers, pointer-cursor items inside open popups,
-contenteditable search bars, and table rows by their visible text.
+contenteditable search bars, and table rows by their visible text. A code split into 4–8 one-character boxes
+(`maxlength=1`, or narrow numeric, `tel` or one-time-code inputs with no `maxlength`, side by side in one container and
+form) is read as one field ([Codes split into boxes](#codes-split-into-boxes)); a date or phone number split into wider
+parts stays separate fields, and PIN boxes of `type=password` are password fields, never listed or typed.
 
 **What it can't read.** Closed shadow roots, canvas, and file inputs inside iframes. A frame is skipped when it shows
 less than 16×16 px, sits outside an open modal, is still blank, or takes over 1.5 s to read. Box can see canvas controls

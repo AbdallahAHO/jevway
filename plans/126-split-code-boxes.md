@@ -122,11 +122,24 @@ today and stay so); a paste fast path; journeys beyond what `Tab.act` gives them
 
 ## Done criteria
 
-- [ ] new tests red first, then green; `pnpm release:check` passes; `pnpm verify:reader` passes
-- [ ] a split code is one target and is typed one character per box, verified
-- [ ] a secret typed across boxes never reaches a request or an output, reassembled or digit by digit
-- [ ] tool-list token delta 0
-- [ ] live (a)–(c) recorded in the report
+- [x] new tests red first, then green; `pnpm release:check` passes; `pnpm verify:reader` passes (87/87; the 4 new
+  positive checks fail without the change)
+- [x] a split code is one target and is typed one character per box, verified (`kept`)
+- [x] a secret typed across boxes never reaches a request or an output, reassembled or digit by digit
+- [x] tool-list token delta 0 (no MCP parameter, tool or description changed)
+- [x] live (a)–(c) through the built MCP server, headless: (a) six auto-advancing boxes, server-side TOTP check: `done`
+  in 2.9 s, 4 steps, the code accepted in its own period; (b) six wrapped boxes, a `values` code with `secret_keys`:
+  typed, then `needs_confirmation` on "Confirm" (commit risk 0.53, the existing consent rule), `done` after one
+  `confirm_irreversible` call (3.7 s for both); (c) four PIN boxes: `done` in 1.7 s (two earlier runs took 15.6 s and
+  29.1 s, the gap after typing, in the click step; in-process the same page finishes in 0.8–1.1 s and the typing itself
+  takes 0.1 s). No secret, code or 3+-digit run of one in any result, progress event, run folder text or server log.
+
+## Deviations
+
+- Typing re-reads the page before every box after the first and calls `act` for each, rather than one freshness check
+  and a raw resolve per box: `act` already holds the hit test, the delivered-press check and the key events, and the read
+  is what lets a page's own focus advance settle. Cost measured: about 25 ms per box.
+- A secret typed without its spaces (`123 456` into six boxes) is registered with the scrubber in its typed form too.
 
 ## STOP conditions
 
