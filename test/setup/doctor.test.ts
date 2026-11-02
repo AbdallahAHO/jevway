@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ask } from '../../src/jev/decide.ts';
-import { diagnose, exitCode, liveCheck, planSteps, render, type Finding, type Probes } from '../../src/setup/doctor.ts';
+import { runDoctor } from '../../src/setup/doctor-command.ts';
+import { diagnose, doctorJson, exitCode, liveCheck, planSteps, render, type Finding, type Probes } from '../../src/setup/doctor.ts';
 
 // A machine where everything is in place; each test breaks one thing.
 const healthy = (overrides: Partial<Probes> = {}): Probes => ({
@@ -203,6 +204,47 @@ describe('jevway doctor: what it prints', () => {
   it('--plan with nothing left says so', async () => {
     vi.stubEnv('TYPESAFE_API_KEY', 'ts-1');
     expect(planSteps(await diagnose(healthy()))).toBe('Nothing left to set up: jevway is ready.\n');
+  });
+});
+
+describe('jevway doctor --json', () => {
+  it('gives every finding as { check, level, message, fix? } and ready when nothing blocks', async () => {
+    vi.stubEnv('TYPESAFE_API_KEY', 'ts-1');
+    const findings = await diagnose(healthy({ hasFfmpeg: async () => false, envFile: { path: '~/.config/jevway/env', mode: 0o644 } }));
+    expect(doctorJson(findings)).toEqual({
+      ready: true,
+      findings: [
+        { check: 'node', level: 'ok', message: '24.21.0' },
+        { check: 'key', level: 'ok', message: expect.stringMatching(/^TYPESAFE_API_KEY from the environment/) },
+        { check: 'env_file', level: 'warn', message: expect.any(String), fix: 'chmod 600 ~/.config/jevway/env' },
+        { check: 'browser', level: 'ok', message: expect.stringMatching(/^auto:/) },
+        { check: 'ffmpeg', level: 'warn', message: expect.any(String), fix: expect.stringMatching(/ffmpeg/) },
+      ],
+    });
+  });
+
+  it('is not ready when something blocks, and never carries a key', async () => {
+    vi.stubEnv('TYPESAFE_API_KEY', 'ts-SECRET-4242');
+    const json = doctorJson(await diagnose(healthy({ nodeVersion: '22.1.0' })));
+    expect(json.ready).toBe(false);
+    expect(JSON.stringify(json)).not.toMatch(/SECRET|4242/);
+  });
+
+  it('prints parseable JSON on stdout and keeps the exit code: 1 when not ready', async () => {
+    vi.stubEnv('TYPESAFE_API_KEY', 'ts-SECRET-4242');
+    const printed: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string, done?: () => void) => {
+      printed.push(String(chunk));
+      done?.();
+      return true;
+    }) as typeof process.stdout.write);
+    // Nothing listens on port 9: the browser check fails, so doctor is not ready.
+    const code = await runDoctor(['--json', '--browser', 'http://127.0.0.1:9'], []);
+    vi.restoreAllMocks();
+    const output = JSON.parse(printed.join(''));
+    expect(output).toMatchObject({ ready: false, findings: expect.arrayContaining([expect.objectContaining({ check: 'browser', level: 'fail' })]) });
+    expect(code).toBe(1);
+    expect(printed.join('')).not.toMatch(/SECRET|4242/);
   });
 });
 
