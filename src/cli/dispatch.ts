@@ -32,6 +32,18 @@ export interface CliDeps {
 /** `usage`: help text for a command that prints its own output (the setup commands), sent through `io` like every other help. */
 type Command = { summary: string; run: (argv: string[], deps: CliDeps) => Promise<number>; usage?: string };
 
+const MCP_USAGE = `Examples:
+  jevway mcp
+  npx -y jevway mcp
+  claude mcp add jevway -- npx -y jevway mcp
+
+jevway mcp   run the MCP server on stdio, the same server as the jevway-mcp bin
+
+An MCP client starts this itself; jevway setup --client <name> registers it.`;
+
+// Never resolves: the server runs until its client closes stdin, then exits on its own.
+const serveMcp = () => import('../mcp.ts').then(() => new Promise<number>(() => {}));
+
 const COMMANDS: Record<string, Command> = {
   run: { summary: 'hand a browser goal to Jev (one-shot, or a session with --session)', run: runCommand },
   look: { summary: 'print what a page or a session\'s tab shows, with no model call', run: lookCommand },
@@ -39,6 +51,7 @@ const COMMANDS: Record<string, Command> = {
   inbox: { summary: 'a throwaway email inbox for test and demo sign-ups: create, wait, list, read', run: inboxCommand },
   sessions: { summary: 'list the open sessions and journeys', run: sessionsCommand },
   end: { summary: 'end a session and close the tabs it opened', run: endCommand },
+  mcp: { summary: 'run the MCP server on stdio (MCP clients and registries start it)', run: serveMcp, usage: MCP_USAGE },
   serve: { summary: 'run the session daemon in the foreground', run: serveCommand },
   stop: { summary: 'stop the session daemon', run: stopCommand },
   doctor: { summary: 'check the key, browser, Node and ffmpeg (--json for agents)', run: (argv, deps) => runDoctor(argv, deps.fromEnvFile), usage: DOCTOR_USAGE },

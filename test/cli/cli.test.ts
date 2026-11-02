@@ -27,7 +27,7 @@ const expectNoStackTrace = (text: string) => expect(text).not.toMatch(/\n\s+at |
 describe('help and version', () => {
   it('starts every help with examples, then the flags', async () => {
     const { cli } = setup();
-    for (const argv of [['--help'], ['help'], ['help', 'run'], ['run', '--help'], ['look', '-h'], ['journey', '--help'], ['journey', 'step', '--help'], ['help', 'sessions'], ['end', '--help'], ['serve', '--help'], ['stop', '--help'], ['help', 'doctor'], ['help', 'setup'], ['help', 'skill'], ['doctor', '--help'], ['skill', '-h']]) {
+    for (const argv of [['--help'], ['help'], ['help', 'run'], ['run', '--help'], ['look', '-h'], ['journey', '--help'], ['journey', 'step', '--help'], ['help', 'sessions'], ['end', '--help'], ['serve', '--help'], ['stop', '--help'], ['help', 'doctor'], ['help', 'setup'], ['help', 'skill'], ['doctor', '--help'], ['skill', '-h'], ['help', 'mcp'], ['mcp', '--help']]) {
       const { code, out, err } = await cli(argv);
       expect(code, argv.join(' ')).toBe(0);
       expect(out, argv.join(' ')).toMatch(/^Examples:\n {2}jevway /);
@@ -36,6 +36,12 @@ describe('help and version', () => {
     const { out } = await cli(['run', '--help']);
     expect(out.indexOf('Examples:')).toBeLessThan(out.indexOf('--values <json>'));
     expect(out).toMatch(/--session <id\|new>/);
+  });
+
+  it('lists jevway mcp, the MCP server MCP registries launch', async () => {
+    const { cli } = setup();
+    expect((await cli(['--help'])).out).toMatch(/\n {2}mcp +run the MCP server on stdio/);
+    expect((await cli(['mcp', '--help'])).out).toMatch(/npx -y jevway mcp/);
   });
 
   it('prints the version alone', async () => {
