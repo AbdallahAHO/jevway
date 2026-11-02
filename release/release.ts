@@ -7,7 +7,7 @@
  *   pnpm release:check        the publish gate locally: typecheck, test, build, npm pack --dry-run
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { nextStep, releaseAsProblem, type NextStep, type ReleaseState } from './state.ts';
 
@@ -134,6 +134,8 @@ const releaseAs = async (version: string | undefined) => {
 };
 
 const check = () => {
+  // A clean dist/, as prepublishOnly makes it, so a moved file never ships twice.
+  rmSync('dist', { recursive: true, force: true });
   const steps: [string, string[]][] = [
     ['pnpm', ['typecheck']],
     ['pnpm', ['test']],
