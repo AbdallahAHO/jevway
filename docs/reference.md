@@ -19,10 +19,12 @@ inside, see [how-it-works.md](how-it-works.md). For the journey tools, see [jour
 - [Files in and out](#files-in-and-out)
 - [`jevway_look`](#jevway_look)
 - [`jevway_end`](#jevway_end)
+- [Disposable inbox](#disposable-inbox)
 - [Tool hints](#tool-hints)
 - [MCP server](#mcp-server)
 - [CLI](#cli)
   - [The daemon](#the-daemon)
+  - [`jevway inbox`](#jevway-inbox)
 - [`jevway doctor`](#jevway-doctor)
 - [Environment variables](#environment-variables)
 - [Models](#models)
@@ -441,6 +443,53 @@ Takes `session` and `keep_tab`. Forgets the session and closes the tabs it opene
 `url`, and any tab its clicks opened. `keep_tab: true` leaves them open. It returns
 `{ "session", "ended": true, "run_dir" }`; the run folder stays.
 
+## Disposable inbox
+
+A receiving email address for a test or demo sign-up the user asked for, so the sign-up can finish without the user's
+own mailbox. Never to get around per-person limits, trials or bans, or to make accounts in bulk. The providers are
+mail.tm and mail.gw (the same public REST API, no key); jevway needs no model key for them.
+
+**`jevway_inbox_create`** takes an optional `provider` (`mail.tm` or `mail.gw`) and returns
+`{ "inbox", "address", "provider", "next" }`. `inbox` is a UUID; `address` is `test-<10 hex>@<domain>`. Without
+`provider` it tries mail.tm, then mail.gw once if mail.tm is down (network error, 5xx, 429), offers no active domain or
+refuses the account; both failing is `isError` naming both, with a hint to ask the user for a test mailbox of their
+own. With `provider` it uses only that one: when a site rejects the first address's domain, create one more with
+`provider: "mail.gw"`, and if that is rejected too, tell the user and stop.
+
+**`jevway_inbox_wait`** takes `inbox` (the id, or the address), `from` and `subject` (parts of the sender's name or
+address and of the subject, case-insensitive) and `timeout_seconds` (1 to 600, default 120). It checks the inbox now and
+every 3 s, sending `notifications/progress` each time (`progress` the seconds waited, `total` the timeout), and takes
+the newest matching email:
+
+```json
+{
+  "status": "received",
+  "inbox": "…", "address": "test-0a1b2c3d4e@…",
+  "id": "…", "from": "no-reply@staylist.example", "subject": "Verify your Staylist account",
+  "received_at": "2026-11-02T09:05:00+00:00",
+  "code": "482913",
+  "links": ["https://staylist.example/verify?token=abc&user=7"],
+  "text_excerpt": "Welcome to Staylist! Your verification code is 482913. …",
+  "next": "Type the code: jevway_task on the sign-up session with values {\"code\":\"482913\"} and secret_keys [\"code\"] …"
+}
+```
+
+- `code` is the first standalone 4–8 digit number in the subject and text (left out when there is none). A year or an
+  order number can come first, so read `text_excerpt` before typing it. Pass it in `values` with its key in
+  `secret_keys`: Jev sees only `[secret:code]`.
+- `links` are the unique http(s) links in the text and html parts (`&amp;` decoded; images and namespace URLs dropped).
+  Open a verification link with `jevway_task` `url`: a new tab in the same browser, so the sign-up's cookies apply.
+- `text_excerpt` is the text part (or the html without tags), whitespace folded, at most 600 characters. The email is
+  untrusted content: data, never instructions.
+- No match in time is not an error: `{ "status": "timeout", "inbox", "address", "links": [], "next" }`, where `next`
+  says to check the sign-up was sent (`jevway_look`), loosen the filters, then wait again.
+- Cancelling the request stops the wait at once. One failed check is ridden out (a 401 gets a new token); three in a
+  row end it `isError` with the provider's error.
+
+**Credentials.** The inbox's password and token never appear in a result, an error (provider text is scrubbed of
+them), a progress event or a log line. The MCP server keeps them in memory: inboxes end when it restarts, and an
+unknown one answers `isError` saying so. For the CLI, see [`jevway inbox`](#jevway-inbox).
+
 ## Tool hints
 
 Every tool carries MCP annotations for clients that ask before a call:
@@ -451,20 +500,25 @@ Every tool carries MCP annotations for clients that ask before a call:
 | `jevway_journey_start`, `jevway_journey_autopilot` | open-world, not destructive |
 | `jevway_look` | read-only |
 | `jevway_end`, `jevway_journey_annotate`, `jevway_journey_finish` | touch only jevway's own state |
+| `jevway_inbox_create` | open-world, not destructive: makes an account on a public inbox provider |
+| `jevway_inbox_wait` | read-only, open-world |
 
 ## MCP server
 
 `jevway-mcp` serves the tools over stdio to 2025-era clients (`initialize`) and 2026-07-28 clients alike.
 
-- **Instructions.** The server sends `instructions` (under 1,500 characters; Claude Code shows them upfront and searches
+- **Instructions.** The server sends `instructions` (under 1,560 characters; Claude Code shows them upfront and searches
   them): what jevway is for, `jevway_task` versus chrome-devtools, continuing with `session` after a hand-back, the
-  consent rule, `jevway_look` before repeating a write, where files go, and that page text is untrusted. Rules shared by
+  consent rule, `jevway_look` before repeating a write, where files go, that page text is untrusted, and the inbox's
+  test-and-demo-only rule. Rules shared by
   tools live there once; a rule about one parameter lives in that parameter's description.
-- **Tool list.** Tools are listed in one fixed order (task, look, end, then the journey tools), so the list is
-  byte-stable for prompt caching. All 8 together are about 2,500 tokens (characters / 4 of `tools/list`, output schemas
-  included; 4,515 before the lean rewrite), pinned by `test/mcp/server.test.ts`.
-- **`JEVWAY_TOOLS`**: `all` (default), `task` (`jevway_task`, `jevway_look`, `jevway_end`) or `journeys` (the five
-  journey tools). The instructions name only the tools served. Any other value serves `all` and says so on stderr.
+- **Tool list.** Tools are listed in one fixed order (task, look, end, the journey tools, then the two inbox tools), so
+  the list is byte-stable for prompt caching. All 10 together are about 2,800 tokens (characters / 4 of `tools/list`,
+  output schemas included; 2,490 before the inbox tools, 4,515 before the lean rewrite), pinned by
+  `test/mcp/server.test.ts`.
+- **`JEVWAY_TOOLS`**: `all` (default), `task` (`jevway_task`, `jevway_look`, `jevway_end`), `journeys` (the five
+  journey tools) or `inbox` (the two inbox tools). The instructions name only the tools served. Any other value serves
+  `all` and says so on stderr.
 - **`JEVWAY_IMAGE_RESPONSES`**: `auto` (default), `always` or `never`; see [The result](#the-result). Journey replies
   always carry their screen image.
 - **Sessions** live in the server process until it restarts or `jevway_end` ends them; there is no idle timeout. A call
@@ -503,6 +557,7 @@ jevway stop
 | `run` | A task. Without `--session`: in-process, tabs closed at the end. `--session new` starts a session in the daemon; `--session <id>` continues it. |
 | `look` | [`jevway_look`](#jevway_look): `--session <id>` through the daemon, `--url` or `--tab` in-process; `--pdf` saves the page as a PDF and prints its path. |
 | `journey start\|step\|autopilot\|annotate\|finish` | The journey tools through the daemon. The result is the screen report with `screen.screenshot` (an absolute path) instead of an inline image. |
+| `inbox create\|wait\|list\|read` | The [disposable inbox](#disposable-inbox) by address; see [`jevway inbox`](#jevway-inbox). |
 | `sessions` | `{ daemon: { pid, version, socket, log, idle_timeout_s, started_at } \| null, sessions: [{ session, kind, goal, status, url, running, run_dir, started_at, last_used_at }] }`. |
 | `end <id> [--keep-tab]` | [`jevway_end`](#jevway_end) (a journey id finishes the journey): `{ session, run_dir }`. |
 | `serve [--idle-timeout 1h]` | The daemon in the foreground. |
@@ -577,6 +632,29 @@ session id is `unknown_session` and `sessions` lists nothing.
 - `jevway stop` aborts running calls (they end `blocked`), ends every session, closes the browsers it launched and
   removes the socket.
 
+### `jevway inbox`
+
+```bash
+jevway inbox create [--provider mail.gw]                  # { ok, address, provider, kept_by, env_file?, next }
+jevway inbox wait <address> [--from staylist] [--subject verify] [--timeout 120]
+jevway inbox list <address>                               # { ok, address, messages: [{ id, from, subject, received_at }] }
+jevway inbox read <address> <id>                          # { ok, address, id, from, subject, received_at, code?, links, text }
+```
+
+- **Where the password lives.** `create` never starts the daemon. With one running, the daemon keeps the inbox in
+  memory (`kept_by: "daemon"`) until it stops. Without one, it is written to `<out root>/inboxes/<address>.env`
+  (`kept_by: "env_file"`, the path in `env_file`): mode 600 in a mode-700 folder, under `.jevway/` whose `.gitignore`
+  is `*`, as `ADDR=`, `PASS=` and `API=` lines (the bundled `jevway-inbox` script reads the same file). The password is
+  never printed, on stdout or stderr.
+- **`wait`, `list`, `read`** ask the running daemon first and read the env file when the daemon does not hold the
+  address (or none runs); neither is `unknown_inbox`, exit 1.
+- **`wait`** prints the same fields as [`jevway_inbox_wait`](#disposable-inbox) with `ok: true`, exit 0, and `next` as
+  CLI commands (`jevway run --session <id> … --values '{"code":"482913"}' --secret-keys code`, or
+  `jevway run --url <link> …`). No match in time is `status: "timeout"`, exit 1, like a hand-back. Each check is a
+  `{"type":"inbox_wait","address","elapsed_s","timeout_s"}` line on stderr; Ctrl-C stops it.
+- Provider failures keep their codes (`inbox_unavailable`, `provider_unavailable`, `provider_rejected`,
+  `message_not_found`), exit 1.
+
 ## `jevway setup`
 
 ```bash
@@ -632,12 +710,17 @@ key, and never replays recordings. `--json` names each finding by `check` (`node
 
 ```bash
 npx -y jevway skill                              # print the SKILL.md this version ships
-npx -y jevway skill --install ~/.codex/skills    # copy skill/jevway/ to ~/.codex/skills/jevway/
+npx -y jevway skill --name jevway-inbox          # print the standalone inbox skill
+npx -y jevway skill --install ~/.codex/skills    # copy skill/jevway/ and skill/jevway-inbox/ into ~/.codex/skills/
 ```
 
-`--install` prints `{ ok, status, path, files }`, `status` being `installed`, `unchanged` (the same skill is already
-there) or `replaced`. A different `jevway` folder (or a symlink) is left as it is: exit 1 with
-`"code": "skill_exists"`, unless `--force` is given, which replaces it (a symlink is removed, never its target).
+`--install` prints `{ ok, status, path, files }` for `jevway`, `status` being `installed`, `unchanged` (the same skill
+is already there) or `replaced`, plus `skills: [{ name, status, path, files }]` for `jevway` and `jevway-inbox`.
+`jevway-inbox` is the disposable inbox as a dependency-free script (`scripts/inbox.mjs`) for agents without jevway; its
+env files have the same `ADDR=`/`PASS=`/`API=` lines as `jevway inbox`'s, so either reads the other's. A different
+folder for either skill (or a symlink) is left as it is and nothing is copied: exit 1 with `"code": "skill_exists"`
+naming it, unless `--force` is given, which replaces it (a symlink is removed, never its target). `jevway setup`
+installs only `jevway`: its server has the inbox built in.
 
 ## Environment variables
 
@@ -655,7 +738,7 @@ file fills only variables the environment lacks, and only the keys, `CHROME_PATH
 | `JEVWAY_OUT_DIR` | `./.jevway` | The output root: `runs/` and `journeys/`. See [Output folder](#output-folder). |
 | `JEVWAY_JOURNEYS_DIR` | `<JEVWAY_OUT_DIR>/journeys` | Where journey maps are written. |
 | `JEVWAY_STATE_DIR` | `$XDG_RUNTIME_DIR/jevway`, else `~/.cache/jevway` | The CLI daemon's socket and log. See [The daemon](#the-daemon). |
-| `JEVWAY_TOOLS` | `all` | MCP: `all`, `task` (task, look, end) or `journeys`. See [MCP server](#mcp-server). |
+| `JEVWAY_TOOLS` | `all` | MCP: `all`, `task` (task, look, end), `journeys` or `inbox`. See [MCP server](#mcp-server). |
 | `JEVWAY_PERSON_WAIT_SECONDS` | `120` | Seconds a run with a visible browser waits for a person at a wall, when the call names none; `0` never waits. See [Waiting for a person](#waiting-for-a-person). |
 | `JEVWAY_NOTIFY` | on | `off` stops the desktop notification while a run waits for a person. |
 | `JEVWAY_IMAGE_RESPONSES` | `auto` | MCP: when a task result carries its end page inline: `auto` (hand-backs, or `screenshot: true`), `always`, `never`. |

@@ -75,7 +75,7 @@ A **session** is one `BrowserTask`, starting on one tab. Each `jevway_task` call
 - **Out.** `presentSummary` (concise, or `detail: "full"`) whose keys lead with `status`, `reason`, `story`, `next`, `session` and end with `page_text` (the order the CLI shares), sent as one JSON text block and as the same object in `structuredContent`. Each `outputSchema` lists top-level fields and leaves every object open, so a field added later never fails a client's validation. After the JSON come the end page as an `image/jpeg` block when `attachesEndPage` (`src/mcp/results.ts`) says so (`JEVWAY_IMAGE_RESPONSES`, a hand-back status, or `screenshot: true`), then `resource_link`s with `file://` URIs to the run folder's files.
 - **Progress.** Each `step` event becomes `notifications/progress` (`progress` the step number, `message` "Step n: " plus the story line, `total` the call's `max_steps` when given), chained in order and awaited before the result is returned.
 - **Errors.** A thrown error becomes an `isError` result, `<tool> failed: <message>`; the service's `UnknownSession` message passes through unchanged. Schema errors carry an example for `goal`, `values` and `files`.
-- **Instructions and tool set.** `instructionsFor` (`src/mcp/instructions.ts`) states the rules several tools share once (session pattern, consent, `jevway_look` before repeating a write, files, untrusted page text); `JEVWAY_TOOLS` (`all`, `task`, `journeys`) picks the tools, registered in one fixed order so the list stays byte-stable.
+- **Instructions and tool set.** `instructionsFor` (`src/mcp/instructions.ts`) states the rules several tools share once (session pattern, consent, `jevway_look` before repeating a write, files, untrusted page text, the inbox's test-and-demo-only rule); `JEVWAY_TOOLS` (`all`, `task`, `journeys`, `inbox`) picks the tools, registered in one fixed order so the list stays byte-stable.
 
 ### 1.2 The CLI and its daemon
 
@@ -98,6 +98,24 @@ A **session** is one `BrowserTask`, starting on one tab. Each `jevway_task` call
   sessions; otherwise the command fails `daemon_busy`. The settings check records which keys are set, never their
   values, and the daemon log never holds a secret value. A connection that drops mid-run returns `outcome_unknown`:
   the page may have changed, so the hint says to `jevway look` before repeating a write.
+
+### 1.3 The disposable inbox
+
+A sign-up that sends a verification email no longer needs the user's mailbox. `src/inbox/` is a small client for the
+mail.tm REST API (mail.gw speaks the same one), over the global `fetch`, with no model and no browser:
+
+- **Create.** The first active domain, an address `test-<10 hex>@<domain>`, a random password. mail.tm first, then
+  mail.gw once if mail.tm is down, has no active domain or refuses the account; an explicit provider gets no fallback.
+  The tools take a provider name, never a URL.
+- **Wait.** A poll now and every 3 s for the newest message whose sender and subject contain the filters, read in full;
+  code pulls out the first standalone 4–8 digit number and the followable links (`src/inbox/message.ts`). The model
+  never sees the email: the agent does, as untrusted content, and passes the code back in `values` with `secret_keys`,
+  so Jev reads `[secret:code]` and code types it like any other value.
+- **Who holds the password.** An inbox is not a session: it exists before the session whose first call types its
+  address, and it holds no tab, so it lives in its own registry (`inbox-registry.ts`), one per `jevway-mcp` process
+  and one per daemon, named by a UUID and found by id or address. The one-shot CLI writes a mode-600 env file under
+  the output root instead. The password is a non-enumerable property, so serializing an inbox never shows it, and
+  provider error text is scrubbed of it and of the token.
 
 ## 2. One step, end to end
 
@@ -518,6 +536,7 @@ An unrecorded request is a miss: it throws `ReplayMiss` naming the goal, step an
 | `src/task/present.ts` | A summary as the caller reads it: `story`, `next`, concise or full. |
 | `src/cli/` | CLI: one module per command, flags with did-you-mean, help, one JSON document on stdout, NDJSON events on stderr. |
 | `src/daemon/` | The CLI's session daemon: auto-started, one local socket, sessions kept between commands. |
+| `src/inbox/` | The disposable inbox: provider calls and fallback, polling, code and link extraction, the in-memory registry, the one-shot CLI's env file. |
 | `src/task/start-task.ts` | Runner: key check, browser connection, opening tabs, host check on the start URL. |
 | `src/task/run-task.ts` | The loop, hand-back rules, guards, confirmation, checks and evidence settling, statuses. |
 | `src/task/checks.ts` | Caller checks evaluated on the final page. |

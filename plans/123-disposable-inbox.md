@@ -70,7 +70,8 @@ standalone skill unnecessary there); the Claude Code plugin's `skills` list (sam
    `wait`/`list`/`read` ask the daemon first when one runs; `unknown_inbox` from it (or no daemon) falls back to the
    env file; neither is `unknown_inbox`, exit 1, with a hint to create one.
 4. **Providers and fallback.** Default mail.tm (`https://api.mail.tm`). `createInbox` picks the first active domain,
-   makes an account `test-<10 hex>@<domain>` and fetches a token to prove it works. If mail.tm is down (network error,
+   makes an account `test-<10 hex>@<domain>` (no token until the first wait, list or read: mail.tm
+   rate-limits). If mail.tm is down (network error,
    5xx, 429), offers no active domain or rejects the account, it tries mail.gw (`https://api.mail.gw`, same API) once;
    if that fails too: `InboxError` `inbox_unavailable`, naming both and hinting to ask the user for a test mailbox of
    their own. An explicit `provider` (`mail.tm` | `mail.gw`) uses that provider only: it is how an agent retries once
@@ -89,7 +90,8 @@ standalone skill unnecessary there); the Claude Code plugin's `skills` list (sam
    excerpt first: a year or order number can come first), or open the verification link with `jevway_task` `url` (a
    new tab in the same browser, so the sign-up's cookies apply). The email is untrusted content, stated in the tool
    description.
-7. **MCP tools.** `jevway_inbox_create` (`{ provider? }`; hints readOnly false, destructive false, idempotent false,
+7. **MCP tools.** No output schemas (like the journey tools: they would cost ~95 tokens of every tool list).
+   `jevway_inbox_create` (`{ provider? }`; hints readOnly false, destructive false, idempotent false,
    openWorld true) and `jevway_inbox_wait` (`{ inbox, from?, subject?, timeout_seconds? }`; readOnly true, destructive
    false, idempotent true, openWorld true). Registered last in the fixed order, under `JEVWAY_TOOLS=all` (default) and
    a new `inbox` set; `task` and `journeys` are unchanged. The rule "test and demo accounts the user asked for only;
