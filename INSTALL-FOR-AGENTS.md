@@ -4,11 +4,17 @@ You are an agent asked to install jevway for a person. jevway is an MCP server, 
 It hands browser goals to TypeSafe Jev. Both come from the npm package `jevway`.
 
 Read this whole file before you run anything. Run only these:
-- `npx -y jevway doctor` (or `jevway doctor`);
+- `npx -y jevway doctor --json` (or `--plan`, or `jevway doctor`);
+- `npx -y jevway setup --client <name> --print [--json]`, which prints how to register jevway with a client and
+  changes nothing;
+- `npx -y jevway skill --install <skills folder>`;
 - `npm install -g jevway`;
 - the client's own `mcp add` command, or an edit to its MCP config file that the person approved.
 
-Done means: `jevway doctor` exits 0, and the client lists the `jevway_*` tools.
+Never run plain `jevway setup` yourself: it is the person's interactive setup, and without a terminal it exits 2 with
+`{ "ok": false, "error": { "code": "needs_tty", … } }`.
+
+Done means: `jevway doctor --json` prints `"ready": true` (exit 0), and the client lists the `jevway_*` tools.
 
 ## Rules
 
@@ -29,10 +35,11 @@ Done means: `jevway doctor` exits 0, and the client lists the `jevway_*` tools.
 ## 1. Check the machine
 
 ```bash
-npx -y jevway doctor --plan
+npx -y jevway doctor --json
 ```
 
-It prints the setup steps still missing, numbered. It needs no key to run and never prints one. It checks:
+It prints `{ ready, findings: [{ check, level, message, fix? }] }`; `--plan` prints the steps still missing, numbered.
+It needs no key to run and never prints one. It checks:
 - Node 24 or later;
 - a key, and which route it selects;
 - the browser source;
@@ -47,7 +54,11 @@ jevway needs one of these:
 - `TYPESAFE_API_KEY` (preferred): Jev on the TypeSafe API, with screenshots and Box.
 - `OPENROUTER_API_KEY`: Jev, and the other models, through OpenRouter.
 
-Ask the person to add the line themselves, in their own editor or terminal, never in this chat:
+The easiest way for the person: run `npx -y jevway setup` in their own terminal. It reads the key with hidden input,
+writes only that line to `~/.config/jevway/env` (mode 600), tests the browser, and offers to register their MCP
+clients, showing each change first.
+
+Or they add the line themselves, in their own editor or terminal, never in this chat:
 
 ```bash
 mkdir -p ~/.config/jevway && touch ~/.config/jevway/env && chmod 600 ~/.config/jevway/env
@@ -73,39 +84,16 @@ Use the server name `jevway`. Add `JEVWAY_BROWSER` only if the person chose some
 /plugin install jevway@jevway
 ```
 
-Or the server alone:
+Otherwise ask jevway for the exact command or snippet. It prints, and changes nothing:
 
 ```bash
-claude mcp add jevway -s user -- npx -y -p jevway jevway-mcp
+npx -y jevway setup --client claude-code --print   # also: codex, cursor, opencode, other
+npx -y jevway setup --client cursor --print --json # { client, kind, command?, file?, snippet }
 ```
 
-**Codex**:
-
-```bash
-codex mcp add jevway -- npx -y -p jevway jevway-mcp
-```
-
-That writes this to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.jevway]
-command = "npx"
-args = ["-y", "-p", "jevway", "jevway-mcp"]
-```
-
-**Cursor**: in `~/.cursor/mcp.json`, add to `mcpServers` (diff first):
-
-```json
-"jevway": { "command": "npx", "args": ["-y", "-p", "jevway", "jevway-mcp"] }
-```
-
-**OpenCode**: in `~/.config/opencode/opencode.json`, add to `mcp` (diff first):
-
-```json
-"jevway": { "type": "local", "command": ["npx", "-y", "-p", "jevway", "jevway-mcp"], "enabled": true }
-```
-
-**Any other stdio MCP client**: command `npx`, args `["-y", "-p", "jevway", "jevway-mcp"]`.
+- `kind: "command"` (Claude Code, Codex): run `command`. For Codex, `snippet` is the table it writes to `file`.
+- `kind: "config"` (Cursor, OpenCode): merge `snippet` into `file`, keeping every other server; show the person the
+  diff first and wait for approval. `other` gives the `command` and `args` for any stdio MCP client.
 
 ## 4. The browser
 
@@ -119,13 +107,19 @@ args = ["-y", "-p", "jevway", "jevway-mcp"]
 
 ## 5. The skill (clients other than the Claude Code plugin)
 
-The skill says when to use `jevway_task` and when to use chrome-devtools. It is shipped in the package, at
-`skill/jevway/SKILL.md`. Copy that folder into the client's skills folder if it has one, e.g.
-`~/.claude/skills/jevway/` or `~/.codex/skills/jevway/`.
+The skill says when to use `jevway_task` and when to use chrome-devtools. It ships in the package; `jevway skill`
+prints it, and this copies it into a client's skills folder as `<folder>/jevway/`:
+
+```bash
+npx -y jevway skill --install ~/.codex/skills   # or ~/.claude/skills, ~/.cursor/skills, ~/.config/opencode/skills
+```
+
+It prints `{ ok, status, path, files }`. A different `jevway` skill already there (or a symlink to one) is left alone
+with `"code": "skill_exists"` and exit 1; replace it with `--force` only if the person agrees.
 
 ## 6. Check the outcome
 
-1. `npx -y jevway doctor` exits 0. Every line is `ok` or `warn`, and the last line starts with `Ready`.
+1. `npx -y jevway doctor --json` prints `"ready": true` and exits 0 (every finding `ok` or `warn`).
 2. The client lists the tools: `jevway_task`, `jevway_look`, `jevway_end` and `jevway_journey_start`, `_step`,
    `_autopilot`, `_annotate`, `_finish`.
    - In Claude Code: `/mcp`.

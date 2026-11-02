@@ -305,16 +305,67 @@ npx -y jevway --browser launch-headless \
 | `--browser`, `--model`, `--screenshots` | `JEVWAY_BROWSER`, `JEVWAY_MODEL`, `JEVWAY_SCREENSHOTS` |
 | `--keep-open` | leaves the tabs open at the end (`auto` and remote browsers) |
 
+## `jevway setup`
+
+```bash
+npx -y jevway setup                                    # interactive, in a terminal
+npx -y jevway setup --client cursor --print            # how to register jevway with Cursor; changes nothing
+npx -y jevway setup --client codex --print --json      # the same as { client, kind, command?, file?, snippet }
+```
+
+The interactive setup has three steps, then runs the doctor and names one thing to try first:
+1. **Key.** TypeSafe (recommended) or OpenRouter. The key is read with hidden input and written only as its line in
+   `~/.config/jevway/env` (`$XDG_CONFIG_HOME` respected), mode 600, every other line kept. A key already set is kept
+   unless you say replace. One real request (`doctor --live`) is offered, default no.
+2. **Browser.** `auto`, `launch`, `launch-headless` or a port, tested with the doctor's browser check.
+   `JEVWAY_BROWSER` is written only for a choice other than `auto`.
+3. **MCP clients.** Claude Code, Codex, Cursor and OpenCode, found by their command on `PATH` or their config. Each
+   change is shown first (the command it runs, or a unified diff of the config file) and made only on a yes; other
+   servers' entries are never touched, a client that already has `jevway` is skipped, and a config file that is not
+   plain JSON is left alone with the snippet to add by hand. It also offers to copy the skill into that client's
+   skills folder.
+
+Every file is written whole (a temporary file renamed into place), so Ctrl-C at any point leaves each file as it was
+or complete. Without a terminal it asks nothing and exits 2 with
+`{ "ok": false, "error": { "code": "needs_tty", "message", "hint" } }` on stdout, naming `--client <name> --print`
+and the env-file steps.
+
+`--client <name> --print`:
+
+| `--client` | `kind` | What it prints |
+| --- | --- | --- |
+| `claude-code` | `command` | `claude mcp add jevway -s user -- npx -y -p jevway jevway-mcp` |
+| `codex` | `command` | `codex mcp add jevway -- npx -y -p jevway jevway-mcp`, and the `[mcp_servers.jevway]` table it writes to `~/.codex/config.toml` |
+| `cursor` | `config` | `{ "mcpServers": { "jevway": … } }` for `~/.cursor/mcp.json` |
+| `opencode` | `config` | `{ "mcp": { "jevway": { "type": "local", … } } }` for `~/.config/opencode/opencode.json` |
+| `other` | `config` | `{ "command": "npx", "args": ["-y", "-p", "jevway", "jevway-mcp"] }` |
+
+Paths honour `$CODEX_HOME` and `$XDG_CONFIG_HOME`. An unknown client is exit 2.
+
 ## `jevway doctor`
 
 ```bash
 npx -y jevway doctor          # Node, key and route, browser, ffmpeg; exit 0 when ready
 npx -y jevway doctor --plan   # the setup steps still missing, numbered
+npx -y jevway doctor --json   # { ready, findings: [{ check, level, message, fix? }] }
 npx -y jevway doctor --live   # plus one real Jev request (a fraction of a cent)
 ```
 
 `--browser <source>` and `--model <name>` check another browser or model than the configured one. It never prints a
-key, and never replays recordings.
+key, and never replays recordings. `--json` names each finding by `check` (`node`, `key`, `model`, `env_file`,
+`browser`, `ffmpeg`, `replay`, `live`), `level` is `ok`, `warn` or `fail`, and `fix` comes with every `warn` and
+`fail`; the exit code is the same as without it.
+
+## `jevway skill`
+
+```bash
+npx -y jevway skill                              # print the SKILL.md this version ships
+npx -y jevway skill --install ~/.codex/skills    # copy skill/jevway/ to ~/.codex/skills/jevway/
+```
+
+`--install` prints `{ ok, status, path, files }`, `status` being `installed`, `unchanged` (the same skill is already
+there) or `replaced`. A different `jevway` folder (or a symlink) is left as it is: exit 1 with
+`"code": "skill_exists"`, unless `--force` is given, which replaces it (a symlink is removed, never its target).
 
 ## Environment variables
 

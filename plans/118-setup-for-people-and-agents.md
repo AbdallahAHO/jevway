@@ -104,8 +104,9 @@ README.md, `src/mcp.ts`, live suites, new dependencies.
     a different one (or a symlink) is refused, exit 1, code `skill_exists`, hint `--force`. `--force` replaces it
     (a symlink is replaced by the copy, its target untouched). The wizard offers the same per client, shown and
     confirmed.
-12. **`doctor --json`**: `{ ready, findings: [{ check, level, message, fix? }] }` with `check` = the finding's
-    `area`, mapped at the edge (the `Finding` type keeps `area`). Exit codes unchanged; no key ever.
+12. **`doctor --json`**: `{ ready, findings: [{ check, level, message, fix? }] }` with `check` the finding's `area`
+    as a stable lowercase slug (`node`, `key`, `model`, `env_file`, `browser`, `ffmpeg`, `replay`, `live`), mapped at
+    the edge (the `Finding` type keeps `area`). `fix` only on `warn`/`fail`. Exit codes unchanged; no key ever.
 13. **Wizard end**: the doctor's report, then one line on what to try first (a `jevway --goal` example on
     `launch-headless` or the configured browser).
 
