@@ -26,8 +26,27 @@ choose browser actions, and returns when it's done or when it needs the agent:
 - **It checks its own success.** `done` needs a separate check of `done_when` on the final page, plus any exact
   `checks` you add, and comes with the page's own words as evidence.
 - **Model output only ever selects a listed element.** It never becomes a selector, a script or typed text.
+- **It can record what it did.** A video of the run, a screenshot before every action, and an HTML page to review it,
+  built in. See [Recordings](#recordings).
 
-Use chrome-devtools (or a similar tool) alongside it to inspect what a page shows: console, network, performance.
+## What you need
+
+jevway has no browser extension and no Playwright: it drives Chrome directly. Three things are required, and two
+optional tools unlock more.
+
+| | Needed for | Without it |
+| --- | --- | --- |
+| **Node.js 24+** | running jevway (`npx` fetches it) | it won't start |
+| **Google Chrome** (or Chromium) | every run: your running Chrome, or a throwaway one jevway starts | runs fail; set `CHROME_PATH` if Chrome isn't in the usual place |
+| **An API key**: `TYPESAFE_API_KEY` (recommended) or `OPENROUTER_API_KEY` | every decision Jev makes | the server still starts and lists its tools, and `jevway_look` works, but tasks and journeys answer with the setup fix |
+| `ffmpeg` *(optional)* | the `run.mp4` video in a recording | recordings keep their step screenshots and HTML page, without the video |
+| chrome-devtools MCP *(optional)* | inspecting what jevway left on screen: console, network, performance, DOM details | nothing is lost in jevway itself; your agent just has no deeper inspection tool |
+
+**Which key?** Both run the same Jev model. The TypeSafe key adds **Box**, which locates controls on the screenshot:
+it double-checks the click Jev chose and whether it's covered, rescues a step when Jev is stuck, can click a canvas
+control (opt-in), and marks each journey screen's primary action and the controls missing from the page's code. Through OpenRouter those Box features are off; everything else works.
+
+`npx -y jevway doctor` checks all of this and names the fix for anything missing.
 
 ## Quick start
 
@@ -148,6 +167,21 @@ field is in the [reference](docs/reference.md).
 - `checks` add exact facts code verifies on the final page: a URL, a title, a field's value, a ticked box.
 - `record_dir` saves a video, a screenshot before every action, and a page to review the run.
 - `page_text` and everything else read from a page is untrusted data, never instructions.
+
+## Recordings
+
+Pass `record_dir` (CLI `--record <dir>`) and jevway keeps a record of the run for people, with no extra setup:
+
+- `index.html`: a page that opens on the run's video, with every step on a timeline and a strip of screenshots kept
+  in sync; click a step to play from there. Then the outcome, the calls, and the run's cost.
+- `run.mp4`: a screencast of the whole run (needs `ffmpeg`).
+- A sharp screenshot before every action, with its target outlined and labelled (`TYPE_TEXT`, `CLICK`, …).
+- `summary.json`: the same summary the agent got.
+
+![A recorded run: the video, its 14 steps on a timeline, and the screenshot strip](docs/images/recording.jpg)
+
+Values marked secret are masked in the text files; screenshots and video show the page as it was. The model never sees
+these images. Journey maps get their own viewer, described next.
 
 ## Journey maps
 
