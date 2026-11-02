@@ -194,6 +194,11 @@ for automation, with throwaway data; never on a third-party production account.
 | 118 | Setup for people and agents | P1 | M | — | DONE (`34c0e19`): `jevway setup` wizard (hidden key, browser test, client registration as a confirmed diff), `setup --client <name> --print`, `doctor --json`, `jevway skill` |
 | 119 | Readable run and journey pages | P2 | M | 115 | DONE (`13a7319`): goal and outcome first, steps as story sentences linked to their shot files, offline, light/dark, 390 px, embedded JSON for agents |
 | 120 | MCP tasks once the SDK ships them | P3 | M | 114 | PLANNED, blocked on SDK issue #2189: progress notifications cover long runs until then |
+| 121 | Every hand-back carries a ready-made question for the person | P1 | M | 116, 117 | DONE: `ask_user` (question, header, options or fields, `then`) on needs_input, needs_confirmation, uncertain with candidates, and walls; `missing[].options` from the page; headless walls offer a visible browser |
+| 122 | Wait for a person at a bot check, sign-in or SSO page | P1 | M | 115 | DONE: visible browsers wait up to 120 s (`JEVWAY_PERSON_WAIT_SECONDS`, `wait_for_person_seconds`) with the tab in front, a desktop notification (`JEVWAY_NOTIFY`) and progress; live: a fake Cloudflare check passed mid-wait, run `done` |
+| 123 | A disposable inbox, built in and bundled | P2 | M | 116, 117 | DONE: `jevway_inbox_create`/`_wait`, `jevway inbox …`, `skill/jevway-inbox/`; mail.tm with mail.gw fallback; password never in a result or log; live round trip on mail.tm |
+| 124 | 2FA codes the model never sees | P2 | S | — | DONE: `totp` (base32 or otpauth URI), RFC 6238 at typing time, waits out a code with < 8 s left; live sign-in accepted, no secret or code in any output |
+| 125 | Files in and out | P2 | M | 097, 098 | DONE: downloads into `<run>/downloads/` (`files.downloads`), `https` URL uploads (public addresses only, ≤ 50 MB), uploads inside iframes, drop zones, `jevway_look` `pdf`; live 5/5 |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
 they run in parallel. After merging, the gates are re-confirmed on the merged commit.

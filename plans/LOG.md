@@ -2,6 +2,16 @@
 
 Newest first. Each entry: what changed, why, and the measured effect. Numbers come from runs, not estimates.
 
+## 2026-11-02 — Round 14: autonomy without losing the person (plans 121–125)
+
+- **121 `ask_user`**: hand-backs carry the question for the agent's own ask tool (no MCP elicitation).
+- **122 wait for a person**: bot checks, sign-ins and SSO pages wait in visible browsers with a desktop notification;
+  headless walls say a visible browser is needed (`wall.person_can_act`, `wall.waited_seconds`).
+- **123 inbox**, **124 TOTP**, **125 files** (downloads, URL uploads, frame uploads, drop zones, look PDF).
+- **Integration**: wall questions reworded for headless browsers and finished waits; the inbox tools stay on by default
+  by the owner's choice, so the tool list is 2,957 tokens (was 2,490) and instructions 1,608 characters.
+- Tests 940 → 1,158, all offline. Each plan ran its own live check (see the rows above).
+
 ## 2026-11-02 — Round 13: agent-first MCP and CLI (plans 114–120)
 
 - **SDK v2** (114): `@modelcontextprotocol/server` 2.4 with `serveStdio`; 2025-era and 2026-07-28 clients both list and
