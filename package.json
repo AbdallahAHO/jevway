@@ -31,7 +31,7 @@
   "files": [
     "dist",
     "skill",
-    "INSTALL-FOR-AGENTS.md",
+    "SETUP.md",
     "LICENSE",
     "LICENSE.jev-ultrafast"
   ],

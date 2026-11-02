@@ -3,7 +3,7 @@
 | I want to… | Read |
 | --- | --- |
 | install jevway and run a first task | the [README](../README.md#quick-start) |
-| have an agent install it for someone | [INSTALL-FOR-AGENTS.md](../INSTALL-FOR-AGENTS.md) |
+| have an agent set it up for someone | [SETUP.md](../SETUP.md) |
 | know every parameter, status, flag and variable | [reference.md](reference.md) |
 | understand how a step works and why it's safe | [how-it-works.md](how-it-works.md) |
 | map a site's user journeys on a phone | [journeys.md](journeys.md) |

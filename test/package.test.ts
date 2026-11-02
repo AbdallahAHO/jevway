@@ -15,9 +15,9 @@ describe('the npm package', () => {
   });
 
   it('ships the built code, the skill and the install guide for agents, and nothing from verify/ or test/', () => {
-    expect(pkg.files).toEqual(expect.arrayContaining(['dist', 'skill', 'INSTALL-FOR-AGENTS.md']));
+    expect(pkg.files).toEqual(expect.arrayContaining(['dist', 'skill', 'SETUP.md']));
     expect(pkg.files.join(' ')).not.toMatch(/verify|test|src/);
-    expect(existsSync(new URL('../INSTALL-FOR-AGENTS.md', import.meta.url))).toBe(true);
+    expect(existsSync(new URL('../SETUP.md', import.meta.url))).toBe(true);
   });
 
   it('ships the standalone jevway-inbox skill and its script beside the jevway skill', () => {
