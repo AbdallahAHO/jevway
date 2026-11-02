@@ -1,8 +1,8 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { envFilePath, loadEnvFile } from '../../src/setup/env-file.ts';
+import { envFilePath, loadEnvFile, setEnvValue, writeEnvFile } from '../../src/setup/env-file.ts';
 
 const fileWith = (text: string) => {
   const path = join(mkdtempSync(join(tmpdir(), 'jevway-env-')), 'env');
@@ -39,5 +39,40 @@ describe('the env file (~/.config/jevway/env)', () => {
   it('lives in $XDG_CONFIG_HOME/jevway/env, else ~/.config/jevway/env', () => {
     expect(envFilePath({ XDG_CONFIG_HOME: '/cfg' })).toBe(join('/cfg', 'jevway', 'env'));
     expect(envFilePath({})).toBe(join(homedir(), '.config', 'jevway', 'env'));
+  });
+});
+
+describe('updating the env file (jevway setup)', () => {
+  it('replaces the line for that name, keeps every other line as it was, and drops later duplicates', () => {
+    const text = '# my settings\nJEVWAY_MODEL=clef\nTYPESAFE_API_KEY=old\n\nexport TYPESAFE_API_KEY=older\nCHROME_PATH=/opt/chrome\n';
+    expect(setEnvValue(text, 'TYPESAFE_API_KEY', 'new-key')).toBe('# my settings\nJEVWAY_MODEL=clef\nTYPESAFE_API_KEY=new-key\n\nCHROME_PATH=/opt/chrome\n');
+  });
+
+  it('appends a missing name, adding the newline the file lacked', () => {
+    expect(setEnvValue('JEVWAY_MODEL=clef', 'JEVWAY_BROWSER', 'launch')).toBe('JEVWAY_MODEL=clef\nJEVWAY_BROWSER=launch\n');
+    expect(setEnvValue('', 'JEVWAY_BROWSER', 'launch')).toBe('JEVWAY_BROWSER=launch\n');
+  });
+
+  it('removes the line when the value is undefined', () => {
+    expect(setEnvValue('JEVWAY_BROWSER=launch\nJEVWAY_MODEL=clef\n', 'JEVWAY_BROWSER', undefined)).toBe('JEVWAY_MODEL=clef\n');
+  });
+
+  it('never touches a line whose name only starts the same', () => {
+    expect(setEnvValue('JEVWAY_BROWSER_X=1\n', 'JEVWAY_BROWSER', 'launch')).toBe('JEVWAY_BROWSER_X=1\nJEVWAY_BROWSER=launch\n');
+  });
+
+  it('writes the file with mode 600 through a temporary file, even when it was readable by others', () => {
+    const path = fileWith('JEVWAY_MODEL=clef\n');
+    chmodSync(path, 0o644);
+    writeEnvFile(path, 'JEVWAY_MODEL=clef\nTYPESAFE_API_KEY=k\n');
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(readFileSync(path, 'utf8')).toBe('JEVWAY_MODEL=clef\nTYPESAFE_API_KEY=k\n');
+    expect(readdirSync(dirname(path))).toEqual(['env']);
+  });
+
+  it('creates the folder and the file when neither exists', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'jevway-env-')), 'config', 'jevway', 'env');
+    writeEnvFile(path, 'JEVWAY_BROWSER=launch\n');
+    expect(statSync(path).mode & 0o777).toBe(0o600);
   });
 });
