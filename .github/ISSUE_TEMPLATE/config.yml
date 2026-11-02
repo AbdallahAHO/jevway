@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/AbdallahAHO/jevway/security/advisories/new
+    about: Privately, for anything that lets a page push a run past its limits.
+  - name: Setup problem
+    url: https://github.com/AbdallahAHO/jevway/blob/main/INSTALL-FOR-AGENTS.md
+    about: Run `npx jevway doctor --plan` first; it names the fix for most setup problems.
