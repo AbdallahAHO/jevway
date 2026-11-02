@@ -403,6 +403,7 @@ footer span { overflow-wrap: anywhere; }
   .shot { flex: 0 0 calc((100% - 3 * var(--gap)) / 4); break-inside: avoid; }
   .player .shot img { opacity: 1; }
   li, figure, article, .fact { break-inside: avoid; }
+  h1, h2, h3, .block-head { break-after: avoid; }
   a { text-decoration: underline; }
 }
 
