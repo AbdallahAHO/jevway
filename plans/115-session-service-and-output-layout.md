@@ -116,10 +116,11 @@
 1. `docs: add plan 115 session service and output layout`
 2. `feat: add the output layout, slugs and manifests`
 3. `feat: tell each step as a sentence and present concise summaries`
-4. `feat: give a task a run folder with its final screenshot`
-5. `feat: name recorded steps and journey screens for people`
+4. `feat: give a task a run folder with its end page and named step shots`
+5. `feat: name journey screens by type and list a journey's files`
 6. `feat: add the transport-free session service`
 7. `docs: describe the output layout and the session service`
+8. `fix: keep a summary in the run folder when the recording fails`
 
 Tests first in each (red for the right reason). `pnpm release:check` passes at every handed-over commit.
 
@@ -136,10 +137,10 @@ Tests first in each (red for the right reason). `pnpm release:check` passes at e
 
 ## Done criteria
 
-- [ ] typecheck, test, build, `npm pack --dry-run` pass (`pnpm release:check`); new tests were red first
-- [ ] `test/mcp.test.ts` and every existing suite pass unchanged except the recorded file names
-- [ ] concise vs full token counts (chars/4) measured on 3 fixture summaries and written below
-- [ ] `git diff --stat main` lists only in-scope paths
+- [x] typecheck, test, build, `npm pack --dry-run` pass (`pnpm release:check`); new tests were red first
+- [x] `test/mcp.test.ts` and every existing suite pass unchanged except the recorded file names
+- [x] concise vs full token counts (chars/4) measured on 3 fixture summaries and written below
+- [x] `git diff --stat main` lists only in-scope paths
 
 ## STOP conditions
 
