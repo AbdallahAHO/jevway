@@ -113,11 +113,20 @@ reading codes from SMS or email (plan 123's inbox is for disposable sign-ups).
 
 ## Done criteria
 
-- [ ] new tests red first, then green; `pnpm release:check` passes
-- [ ] the typed text equals the generated code; no request, summary, trace or run-folder text holds the secret or a code
-- [ ] bad secrets are input errors naming the key, before a tab opens
-- [ ] the tool-list token delta measured and the ceiling raised by exactly that
-- [ ] the live 2FA fixture run recorded in the report
+- [x] new tests red first, then green; `pnpm release:check` passes
+- [x] the typed text equals the generated code; no request, summary, trace or run-folder text holds the secret or a code
+- [x] bad secrets are input errors naming the key, before a tab opens
+- [x] the tool-list token delta measured (2,494 → 2,551, +57) and the ceiling raised by exactly that (2,557)
+- [x] the live 2FA fixture run recorded in the report: `done` in 4 steps, 2.6 s, code accepted in its own period;
+  started 6 s before a period's end, the run waited for the next code and finished in 7.1 s, accepted in its own period
+
+## Deviations
+
+- `src/jev/decide.ts` is untouched: its whole-request scrub sees the secret (passed as the key's value) but not the
+  codes. Codes cannot reach a request anyway: every page is scrubbed as `#observe` reads it, after the code is
+  registered, and a typed code is never put into history (the step names the key).
+- The live check is a script under the ignored `verify/out/` (a local sign-in with a server-side TOTP check, driven
+  through `dist/mcp.js`), not a committed suite.
 
 ## STOP conditions
 
