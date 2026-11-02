@@ -149,14 +149,15 @@
 
 ## Git workflow
 
-Branch `wt/exec-html-pages` from `wt/round13`. Commits:
-1. `docs: add plan 119 readable run and journey pages`
-2. `test: describe the readable run page and journey viewer`
-3. `feat: record what each call was asked`
-4. `feat: tell a run's steps as its story on the run page`
-5. `feat: server-render the journey viewer on the shared design`
-6. `feat: give the suite reports the shared head and summary`
-7. `docs: describe the run page and journey viewer`
+Branch `wt/exec-html-pages` from `wt/round13`. Commits as made (the planned 3–6 became one: the shared design module
+ties the run page, the viewer and the reports together, so no smaller step passed the red tests of commit 2):
+1. `7a36660 docs: add plan 119 readable run and journey pages`
+2. `d0daa94 test: describe the readable run page and journey viewer` (red by design)
+3. `a0ee256 feat: make run and journey pages readable for people and agents`
+4. `42cee7a docs: describe the run page and journey viewer`
+5. `14966af fix: tell the agent report's step captions as the story`
+6. `dac04eb fix: keep printed headings with the section they open`
+7. this record
 
 Lowercase conventional commits. **No AI attribution of any kind.** Do NOT push or merge.
 
@@ -175,12 +176,22 @@ Lowercase conventional commits. **No AI attribution of any kind.** Do NOT push o
 
 ## Done criteria
 
-- [ ] `pnpm release:check` exits 0; the new tests were red first
-- [ ] The run page states goal, outcome and reason, time, cost and start/end address above the video
-- [ ] `#s3` opens step 3; every step links its shot file; the embedded JSON equals `summary.json`
-- [ ] The journey viewer reads fully without JS; QA findings link to their screen
-- [ ] No page scrolls sideways at 390 px; dark mode follows `prefers-color-scheme`
-- [ ] `git diff --stat wt/round13` lists only the in-scope paths and the one approved `run-task.ts` line
+- [x] `pnpm release:check` exits 0; the new tests were red first
+- [x] The run page states goal, outcome and reason, time, cost and start/end address above the video
+- [x] `#s3` opens step 3; every step links its shot file; the embedded JSON equals `summary.json`
+- [x] The journey viewer reads fully without JS; QA findings link to their screen
+- [x] No page scrolls sideways at 390 px (`scrollWidth` 390 on the run page and the viewer); dark mode follows
+      `prefers-color-scheme`
+- [x] `git diff --stat wt/round13` lists only the in-scope paths and the listed deviations
+
+## Checked by eye
+
+Copies under the scratchpad's `html-pages-check/`: a five-call sign-up run (`asked` added to the copy), a phone
+Langfuse run, the same sign-up run without video, and the guided journey of `journeys-2026-10-15T06-52-51-940Z`.
+Each was re-rendered (`pnpm report:render`, the viewer from its `journey.json`) and looked at at 1440 and 390 px, light
+and dark, plus the run page printed to PDF. Fixed on the way: a story entry right-aligned by the grid's `.end` class,
+the browser's default `<ol>` indent, a long `?code=` address wrapping three lines under a step, screen articles aligned
+to the figure's baseline, a targeted screen's marker over its text, and print headings left at a page's foot.
 
 ## STOP conditions
 
