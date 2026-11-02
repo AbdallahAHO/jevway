@@ -1,26 +1,27 @@
+import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { createInterface } from 'node:readline';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import type { McpServerFactory } from '@modelcontextprotocol/server';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { connectChrome } from '../../src/browser/chrome.ts';
 import { createRunner } from '../../src/task/start-task.ts';
 
 // MCP clients start servers before people add a key. With none, the server must still list its tools and answer each
-// call with the fix, without starting or attaching a browser. Only stdio and the browser connection are faked.
-const fakes = vi.hoisted(() => ({ clientEnd: undefined as Transport | undefined }));
+// call with the fix, without starting or attaching a browser. Only stdio and the browser connection are faked here;
+// the last block runs the real server process.
+const fakes = vi.hoisted(() => ({ factory: undefined as McpServerFactory | undefined }));
 
-vi.mock('@modelcontextprotocol/sdk/server/stdio.js', async () => {
-  const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
-  const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair();
-  fakes.clientEnd = clientEnd;
-  return {
-    StdioServerTransport: function StdioServerTransport() {
-      return serverEnd;
-    },
-  };
-});
+vi.mock('@modelcontextprotocol/server/stdio', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@modelcontextprotocol/server/stdio')>()),
+  serveStdio: (factory: McpServerFactory) => {
+    fakes.factory = factory;
+    return { close: async () => undefined };
+  },
+}));
 
 vi.mock('../../src/browser/chrome.ts', () => ({
   connectChrome: vi.fn(async () => {
@@ -29,6 +30,16 @@ vi.mock('../../src/browser/chrome.ts', () => ({
 }));
 
 const client = new Client({ name: 'test', version: '0.0.0' });
+const toolNames = [
+  'jevway_end',
+  'jevway_journey_annotate',
+  'jevway_journey_autopilot',
+  'jevway_journey_finish',
+  'jevway_journey_start',
+  'jevway_journey_step',
+  'jevway_look',
+  'jevway_task',
+];
 const packageVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
 
 beforeAll(async () => {
@@ -40,7 +51,10 @@ beforeAll(async () => {
   // An empty config folder, so a real ~/.config/jevway/env on this machine is never read.
   vi.stubEnv('XDG_CONFIG_HOME', mkdtempSync(join(tmpdir(), 'jevway-cfg-')));
   await import('../../src/mcp.ts');
-  await client.connect(fakes.clientEnd!);
+  const { serveStdio } = await vi.importActual<typeof import('@modelcontextprotocol/server/stdio')>('@modelcontextprotocol/server/stdio');
+  const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair();
+  serveStdio(fakes.factory!, { transport: serverEnd });
+  await client.connect(clientEnd);
 });
 
 describe('without an API key', () => {
@@ -69,16 +83,7 @@ describe('without an API key', () => {
 
   it('the MCP server starts, lists every jevway tool, and reports its package version', async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name).sort()).toEqual([
-      'jevway_end',
-      'jevway_journey_annotate',
-      'jevway_journey_autopilot',
-      'jevway_journey_finish',
-      'jevway_journey_start',
-      'jevway_journey_step',
-      'jevway_look',
-      'jevway_task',
-    ]);
+    expect(tools.map((tool) => tool.name).sort()).toEqual(toolNames);
     expect(client.getServerVersion()).toMatchObject({ name: 'jevway', version: packageVersion });
   });
 
@@ -92,5 +97,65 @@ describe('without an API key', () => {
     expect(journey.isError).toBe(true);
     expect(journey.content[0].text).toMatch(/TYPESAFE_API_KEY/);
     expect(connectChrome).not.toHaveBeenCalled();
+  });
+});
+
+describe('the real jevway-mcp process, without a key', () => {
+  const serverPath = new URL('../../src/mcp.ts', import.meta.url).pathname;
+  const keylessEnv = () => ({
+    ...(process.env as Record<string, string>),
+    TYPESAFE_API_KEY: '',
+    OPENROUTER_API_KEY: '',
+    JEVWAY_MODEL: '',
+    JEVWAY_SCREENSHOTS: '',
+    JEVWAY_BROWSER: 'launch-headless',
+    XDG_CONFIG_HOME: mkdtempSync(join(tmpdir(), 'jevway-cfg-')),
+  });
+
+  it('serves a client that opens with initialize at 2025-06-18 (Codex, Cursor, OpenCode, older Claude Code)', async () => {
+    const server = spawn(process.execPath, [serverPath], { env: keylessEnv(), stdio: ['pipe', 'pipe', 'ignore'] });
+    const replies = new Map<number, (message: any) => void>();
+    createInterface({ input: server.stdout }).on('line', (line) => {
+      const message = JSON.parse(line);
+      replies.get(message.id)?.(message);
+    });
+    const send = (message: object) => server.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
+    const request = (id: number, method: string, params: object) => {
+      const reply = new Promise<any>((resolve) => replies.set(id, resolve));
+      send({ id, method, params });
+      return reply;
+    };
+    try {
+      const initialized = await request(1, 'initialize', {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'raw-2025-06-18', version: '0.0.0' },
+      });
+      expect(initialized.result).toMatchObject({ protocolVersion: '2025-06-18', serverInfo: { name: 'jevway' } });
+      send({ method: 'notifications/initialized' });
+
+      const listed = await request(2, 'tools/list', {});
+      expect(listed.result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual(toolNames);
+
+      const called = await request(3, 'tools/call', { name: 'jevway_task', arguments: { goal: 'Open', url: 'http://fixture/' } });
+      expect(called.result.isError).toBe(true);
+      expect(called.result.content[0].text).toMatch(/TYPESAFE_API_KEY.*jevway doctor/s);
+    } finally {
+      server.kill();
+    }
+  });
+
+  it('serves a 2026-07-28 client: it discovers the server instead of initializing, then lists and calls tools', async () => {
+    const modern = new Client({ name: 'modern', version: '0.0.0' }, { versionNegotiation: { mode: 'auto' } });
+    await modern.connect(new StdioClientTransport({ command: process.execPath, args: [serverPath], env: keylessEnv(), stderr: 'ignore' }));
+    try {
+      expect(modern.getNegotiatedProtocolVersion()).toBe('2026-07-28');
+      expect((await modern.listTools()).tools.map((tool) => tool.name).sort()).toEqual(toolNames);
+      const called: any = await modern.callTool({ name: 'jevway_task', arguments: { goal: 'Open', url: 'http://fixture/' } });
+      expect(called.isError).toBe(true);
+      expect(called.content[0].text).toMatch(/TYPESAFE_API_KEY/);
+    } finally {
+      await modern.close();
+    }
   });
 });
