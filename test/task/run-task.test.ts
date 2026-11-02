@@ -803,6 +803,8 @@ describe('screenshots', () => {
     const recordDir = mkdtempSync(join(tmpdir(), 'jev-record-'));
     const summary = await new BrowserTask(asTab, ask, { goal: 'Open', recordDir }).run();
     expect(summary.status).toBe('done');
+    // The run folder still holds the summary the failed recording never wrote.
+    expect(JSON.parse(readFileSync(join(recordDir, 'summary.json'), 'utf8')).summaries[0].status).toBe('done');
   });
 
   it('holds each video frame until the next, without freezing on idle stretches', () => {
