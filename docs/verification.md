@@ -15,21 +15,22 @@ A gate marked **not met** is a known shortfall. The latest measurement of each:
 
 | Gate | Suite | Target | Latest | Measured |
 | --- | --- | --- | --- | --- |
-| G1 page reader | `pnpm verify:reader` | 100%, no key | 58/58 in 22 s | 2026-10-16 (`1ddc592`) |
-| G3 hard page patterns | `pnpm verify:gotchas` (normal) | ≥ 95% | 30/30 | 2026-11-01 |
-| G4 under stress | `pnpm verify:gotchas` (slow, churn) | ≥ 90%, 0 crashes | 30/30 and 30/30 | 2026-10-16 (`1ddc592`) |
-| G5 bait and injection | `pnpm verify:redteam` | 0 violations | 0 violations | 2026-11-01 |
-| G6 a real app, repeated | `pnpm verify:langfuse` ×10 | ≥ 95% | 160/160 | 2026-10-16 (`1ddc592`) |
-| G7 a second app | `pnpm verify:grafana` | ≥ 80% | 24/24 | 2026-10-16 (`1ddc592`) |
-| R1 writes in a real app | `pnpm verify:forgejo` | ≥ 90%, nothing destructive unconfirmed | 30/33 | 2026-10-16 (`1ddc592`) |
-| R2 sign-up through email | `pnpm verify:signup` | ≥ 90% | 15/15 | 2026-10-16 (`1ddc592`) |
-| R3 checkout to the gate | `pnpm verify:checkout` | ≥ 90%, Finish never clicked unconfirmed | 18/18 | 2026-10-16 (`1ddc592`) |
+| G1 page reader | `pnpm verify:reader` | 100%, no key | 87/87 | 2026-11-02 (0.5.2) |
+| G3 hard page patterns | `pnpm verify:gotchas` (normal) | ≥ 95% | 30/30 | 2026-11-02 (0.5.2) |
+| G4 under stress | `pnpm verify:gotchas` (slow, churn) | ≥ 90%, 0 crashes | 30/30 and 29/30, 0 crashes | 2026-11-02 (0.5.2) |
+| G5 bait and injection | `pnpm verify:redteam` | 0 violations | 0 violations | 2026-11-02 (0.5.2) |
+| G6 a real app, repeated | `pnpm verify:langfuse` | ≥ 95% | **not met:** 45/48 (`off-topic-answer` 0/3: the run doesn't wait out Langfuse's slow search) | 2026-11-02 (0.5.2) |
+| G7 a second app | `pnpm verify:grafana` | ≥ 80% | 24/24 | 2026-11-02 (0.5.2) |
+| R1 writes in a real app | `pnpm verify:forgejo` | ≥ 90%, nothing destructive unconfirmed | 32/33 (the miss is a hand-back), nothing destructive unconfirmed | 2026-11-02 (0.5.2) |
+| R2 sign-up through email | `pnpm verify:signup` | ≥ 90% | 15/15 | 2026-11-02 (0.5.2) |
+| R3 checkout to the gate | `pnpm verify:checkout` | ≥ 90%, Finish never clicked unconfirmed | 18/18 | 2026-11-02 (0.5.2) |
 | R4 a real agent drives it | `pnpm verify:agent` | ≥ 80%, 0 unconfirmed deletions | 26/26 | 2026-10-16 (`1ddc592`) |
-| R5 phones | Langfuse and Grafana on an iPhone 15 layout | ≥ 80% / ≥ 90% | 47/48 and 23/24 | 2026-10-16 (`1ddc592`) |
+| R5 phones | Langfuse and Grafana on an iPhone 15 layout | ≥ 80% / ≥ 90% | 40/48 and 23/24 | 2026-11-02 (0.5.2) |
 | R6 an app nothing was tuned on | `pnpm verify:vikunja` | ≥ 80% on the first ×3 | **not met:** 21/33 | 2026-11-01 |
-| R7 live public sites | `pnpm verify:real` | ≥ 90% of runs with no bot wall | **not met:** 17/21 | 2026-11-01 |
+| R7 live public sites | `pnpm verify:real` | ≥ 90% of runs with no bot wall | **not met:** 29/35 (Booking.com 0/5; npm 5 bot walls) | 2026-11-02 (0.5.2) |
 
-On 2026-11-01, `pnpm verify` passed 12/12 and `pnpm verify:capabilities` 36/36.
+On 2026-11-02, `pnpm verify` passed 12/12, `pnpm verify:capabilities` 42/42, `pnpm verify:mcp` 39/39 and
+`pnpm verify:journeys` 8/8. R4 (`verify:agent`) and R6 (Vikunja, held back) were not re-run.
 
 ## Suites
 
