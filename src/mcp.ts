@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -27,7 +28,8 @@ try {
 const sessions = new Map<string, { task: BrowserTask; ownsTab: boolean; running?: Promise<unknown> }>();
 const journeys = new Map<string, JourneySession>();
 
-const server = new McpServer({ name: 'jevway', version: '0.1.0' });
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+const server = new McpServer({ name: 'jevway', version });
 
 server.registerTool(
   'jevway_task',
