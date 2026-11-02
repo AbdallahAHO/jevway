@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { cliNext } from '../../src/cli/run-command.ts';
+import { cliNext, inCliWords } from '../../src/cli/run-command.ts';
 import { nextFor } from '../../src/task/present.ts';
 import type { TaskStatus } from '../../src/task/run-task.ts';
 import { fakeRunner, gatedAsk, page, scriptedJev } from '../fakes.ts';
@@ -293,5 +293,31 @@ describe('what to do next, in flags', () => {
     expect(cliNext("On Confirm, call again with this session, `confirm_irreversible: true` and `confirm_target` set to the user's own words", 'abc')).toBe(
       "On Confirm, run again with `--session abc`, `--confirm-irreversible` and `--confirm-target` set to the user's own words",
     );
+  });
+});
+
+describe('a one-shot run that stops at a wall', () => {
+  const atWall = (person_can_act: boolean) => ({
+    next: 'Ask the user the `ask_user` question with your ask tool, then call again with this session.',
+    wall: { kind: 'bot_check' as const, origin: 'https://www.google.com', name: 'recaptcha', person_can_act, waited_seconds: 120 },
+    ask_user: {
+      question: 'I waited 120 s: pass the reCAPTCHA check in the Chrome window jevway uses, then choose Done.',
+      header: 'Bot check',
+      options: [{ label: 'Done', description: 'I did it; continue' }, { label: 'Skip', description: 'Leave it; stop here' }],
+      then: 'On Done, call again with this session and the same `goal`; on Skip, tell the user the step was not done.',
+    },
+  });
+
+  it("asks to run again with a session, since a one-shot run's browser has closed", () => {
+    const { ask_user } = inCliWords(atWall(true) as any, undefined);
+    expect(ask_user?.question).toBe('The reCAPTCHA check on https://www.google.com stopped this run, and a one-shot run closes its browser. Run it again with a session, so jevway keeps the tab and waits for you to pass it?');
+    expect(ask_user?.options?.map((option: { label: string }) => option.label)).toEqual(['Run again', 'Skip']);
+    expect(ask_user?.then).toMatch(/`--session new` and a visible `--browser` \(auto or launch\)/);
+  });
+
+  it('leaves the question alone in a session, and for a headless browser (it already offers a visible one)', () => {
+    expect(inCliWords(atWall(true) as any, 'abc').ask_user?.question).toMatch(/^I waited 120 s: pass the reCAPTCHA check/);
+    const headless = { ...atWall(false), ask_user: { ...atWall(false).ask_user, question: 'Run this again in a visible browser?' } };
+    expect(inCliWords(headless as any, undefined).ask_user?.question).toBe('Run this again in a visible browser?');
   });
 });

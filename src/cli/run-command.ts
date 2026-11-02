@@ -9,6 +9,7 @@ import type { CliDeps } from './dispatch.ts';
 import { choiceFlag, intFlag, jsonFlag, listFlag, parseFlags, usageError, type CommandSpec } from './flags.ts';
 import { renderHelp } from './help.ts';
 import { eventPrinter, printDoc } from './output.ts';
+import { BOT_CHECK_NAMES } from '../task/ask-user.ts';
 
 const TEXT_BY_KEY = z.record(z.string(), z.string());
 
@@ -89,12 +90,26 @@ export const cliNext = (next: string, session: string | undefined) => {
   return !session && /un again/.test(text) ? `${text} Pass \`--session new\` to keep the tab between calls.` : text;
 };
 
-/** A presented result in the CLI's words: `next` and the `ask_user` question's `then` name flags. */
-const inCliWords = <T extends Pick<ConciseSummary, 'next' | 'ask_user'>>(result: T, session: string | undefined): T => ({
-  ...result,
-  next: cliNext(result.next, session),
-  ...(result.ask_user && { ask_user: { ...result.ask_user, then: cliNext(result.ask_user.then, session) } }),
+// A one-shot run closes its browser, so "pass it in the Chrome window" can't work any more: offer a session instead.
+const askAgainWithSession = (wall: NonNullable<ConciseSummary['wall']>): NonNullable<ConciseSummary['ask_user']> => ({
+  question: `The ${wall.kind === 'sign_in' ? 'sign-in' : `${(wall.name && BOT_CHECK_NAMES[wall.name]) ?? 'bot'} check`} on ${wall.origin} stopped this run, and a one-shot run closes its browser. Run it again with a session, so jevway keeps the tab and waits for you to ${wall.kind === 'sign_in' ? 'sign in' : 'pass it'}?`,
+  header: wall.kind === 'sign_in' ? 'Sign in' : 'Bot check',
+  options: [
+    { label: 'Run again', description: 'Keep the tab open and wait for me' },
+    { label: 'Skip', description: 'Leave it; stop here' },
+  ],
+  then: 'On Run again, repeat the command with `--session new` and a visible `--browser` (auto or launch): jevway waits up to 120 s for the person; on Skip, tell the user the step was not done.',
 });
+
+/**
+ * A presented result in the CLI's words: `next` and the `ask_user` question's `then` name flags, and a one-shot run
+ * stopped at a wall a person could pass asks to run again with a session.
+ */
+export const inCliWords = <T extends Pick<ConciseSummary, 'next' | 'ask_user' | 'wall'>>(result: T, session: string | undefined): T => {
+  const oneShotWall = !session && result.ask_user && result.wall && result.wall.person_can_act !== false;
+  const ask = oneShotWall ? askAgainWithSession(result.wall!) : result.ask_user && { ...result.ask_user, then: cliNext(result.ask_user.then, session) };
+  return { ...result, next: cliNext(result.next, session), ...(ask && { ask_user: ask }) };
+};
 
 // Today's `--record <dir>` keeps working: a value after --record is the folder.
 const withRecordDir = (argv: string[]) =>
