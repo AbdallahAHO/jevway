@@ -114,8 +114,16 @@ export const confirmSummary = (totals: Totals) =>
 
 // --- the transcript, from the stream
 
-const textOf = (content: unknown) =>
-  typeof content === 'string' ? content : Array.isArray(content) ? content.map((part) => part?.text ?? '').join('') : '';
+/**
+ * A tool result's text as the agent got it. Claude Code relays images and resource links (as text lines) before the
+ * result's own JSON, so the JSON block is picked out when there is one; otherwise the text parts are joined.
+ */
+export const toolResultText = (content: unknown): string => {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  const texts: string[] = content.filter((part) => part?.type === 'text').map((part) => part.text ?? '');
+  return texts.findLast((text) => text.trimStart().startsWith('{')) ?? texts.join('');
+};
 const isEnd = (tool: string) => /_end$/.test(tool);
 const isLook = (tool: string) => /_look$/.test(tool);
 const isTask = (tool: string) => /_task$/.test(tool);
@@ -163,7 +171,7 @@ export const transcriptOf = (stream: string): ToolCall[] => {
     } else if (event.type === 'user') {
       for (const block of blocks.filter((b: any) => b.type === 'tool_result')) {
         const call = byId.get(block.tool_use_id);
-        if (call) Object.assign(call, outcomeOf(call.tool, textOf(block.content), Boolean(block.is_error)));
+        if (call) Object.assign(call, outcomeOf(call.tool, toolResultText(block.content), Boolean(block.is_error)));
       }
     }
   }

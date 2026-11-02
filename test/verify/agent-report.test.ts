@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { renderAgentReport, transcriptOf, type AgentRunRecord, type ChoreRun, type Totals } from '../../verify/agent/report.ts';
+import { renderAgentReport, toolResultText, transcriptOf, type AgentRunRecord, type ChoreRun, type Totals } from '../../verify/agent/report.ts';
 
 // --- fixtures: a stream as `claude -p --output-format stream-json` writes it, and the rows the suite saved
 
@@ -307,5 +307,18 @@ describe('for agents and offline readers', () => {
     expect(data.chores.map((c: { id: string }) => c.id)).toEqual([...new Set(ROWS.map((r) => r.chore))]);
     expect(data.chores[0].runs[0]).toEqual({ run: ROWS[0].run, verdict: ROWS[0].verdict, dir: ROWS[0].dir });
     expect(html).not.toContain('preconnect');
+  });
+});
+
+describe('a tool result as Claude Code relays it', () => {
+  it('reads the JSON block even when the image and resource links come first', () => {
+    const content = [
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: '/9j/' } },
+      { type: 'text', text: '[Resource link: final.jpg] file:///tmp/.jevway/runs/x/final.jpg (The page as this call ended.)' },
+      { type: 'text', text: '{"status":"needs_input","reason":"Blocked: no supplied value for \\"Email\\"","session":"s1"}' },
+    ];
+    expect(JSON.parse(toolResultText(content))).toMatchObject({ status: 'needs_input', session: 's1' });
+    expect(toolResultText('plain error')).toBe('plain error');
+    expect(toolResultText([{ type: 'text', text: 'jevway_task failed: Unknown session' }])).toBe('jevway_task failed: Unknown session');
   });
 });

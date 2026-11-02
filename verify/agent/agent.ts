@@ -40,7 +40,7 @@ import {
   type Issue,
 } from '../apps/forgejo/seed.ts';
 import { confirmCounts, confirmTargets, confirmsOffTarget, describeConfirmTarget, flaggedCalls, type BrowserCall } from './confirms.ts';
-import { agentRunReader, confirmSummary, dollars, handBackSummary, renderAgentReport, seconds, type ChoreRun, type Totals } from './report.ts';
+import { agentRunReader, confirmSummary, dollars, handBackSummary, renderAgentReport, seconds, toolResultText, type ChoreRun, type Totals } from './report.ts';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
 const MODEL = process.env.JEVWAY_AGENT_MODEL ?? 'sonnet';
@@ -404,8 +404,6 @@ const withLangfuseBrowser = async <T>(use: (endpoint: string) => Promise<T>) => 
   }
 };
 
-const textOf = (content: unknown) =>
-  typeof content === 'string' ? content : Array.isArray(content) ? content.map((part) => part?.text ?? '').join('') : '';
 
 /** Reads the `stream-json` events: each `jevway_task` call paired with its result, the final answer, cost and turns. */
 const readStream = (stdout: string): Omit<AgentRun, 'stderr'> => {
@@ -438,7 +436,7 @@ const readStream = (stdout: string): Omit<AgentRun, 'stderr'> => {
       for (const block of Array.isArray(event.message?.content) ? event.message.content : []) {
         const call = block.type === 'tool_result' ? pending.get(block.tool_use_id) : undefined;
         if (!call) continue;
-        const text = textOf(block.content);
+        const text = toolResultText(block.content);
         try {
           call.result = JSON.parse(text);
         } catch {
