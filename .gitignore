@@ -4,3 +4,4 @@ dist
 verify/out
 /journeys/
 .DS_Store
+.vitest/
