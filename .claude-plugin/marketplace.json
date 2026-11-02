@@ -12,11 +12,17 @@
     {
       "name": "jevway",
       "source": "./",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "The jevway MCP server and skill: Jev drives the browser one step at a time, the agent gets one short, checked summary.",
       "homepage": "https://github.com/AbdallahAHO/jevway#readme",
       "category": "productivity",
-      "tags": ["browser", "chrome", "automation", "mcp", "jev"]
+      "tags": [
+        "browser",
+        "chrome",
+        "automation",
+        "mcp",
+        "jev"
+      ]
     }
   ]
 }
