@@ -58,8 +58,9 @@ export const taskResult = (
   result: TaskResult,
   { detail, screenshot, images }: { detail: Detail; screenshot: boolean; images: ImageResponses },
 ) => {
-  const { status, reason, story, next, session, page_text, ...rest } = presentSummary(result, { detail });
-  const out = { status, reason, story, next, session, ...rest, page_text };
+  // presentSummary sets the field order both adapters share: status, reason, story, next, … page_text last.
+  const out = presentSummary(result, { detail });
+  const { status } = out;
   const image: Content[] =
     result.screenshot && attachesEndPage(images, status, screenshot)
       ? [{ type: 'image', data: result.screenshot.toString('base64'), mimeType: 'image/jpeg' }]
