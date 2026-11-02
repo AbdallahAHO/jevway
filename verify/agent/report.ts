@@ -131,7 +131,7 @@ const outcomeOf = (tool: string, text: string, isError: boolean): Partial<ToolCa
   }
   if (isEnd(tool)) return { status: 'ended' };
   if (isLook(tool)) return { status: 'read', title: result?.title, url: result?.url };
-  if (isTask(tool)) return { status: result?.status ?? 'error', reason: result?.reason, actions: result?.steps?.length, url: result?.url };
+  if (isTask(tool)) return { status: result?.status ?? 'error', reason: result?.reason, actions: result?.steps?.length ?? result?.story?.length, url: result?.url };
   return { status: result?.status ?? 'returned', reason: result?.reason };
 };
 
@@ -172,7 +172,7 @@ export const transcriptOf = (stream: string): ToolCall[] => {
 
 // The calls results.json kept (jevway_task only), for a run folder without its stream.
 const savedCalls = (calls: BrowserCall[]): ToolCall[] =>
-  calls.map((call) => ({ tool: 'jevway_task', args: call.args, status: call.result?.status ?? 'error', reason: call.result?.reason, actions: call.result?.steps?.length, error: call.error }));
+  calls.map((call) => ({ tool: 'jevway_task', args: call.args, status: call.result?.status ?? 'error', reason: call.result?.reason, actions: call.result?.steps?.length ?? call.result?.story?.length, error: call.error }));
 
 /**
  * Reads what each run folder of an agent out folder kept: the stream (for the transcript) and a recording, if any.

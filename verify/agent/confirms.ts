@@ -20,7 +20,7 @@ export interface BrowserCall {
     max_steps?: number;
   };
   /** The parsed summary; absent when the tool answered with plain error text. */
-  result?: { status?: string; reason?: string; session?: string; steps?: { description?: string }[] };
+  result?: { status?: string; reason?: string; session?: string; steps?: { description?: string }[]; story?: string[] };
   error?: string;
 }
 

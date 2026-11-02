@@ -74,8 +74,12 @@ const scenario = async (name: string, body: () => Promise<Partial<TaskSummary> |
   }
 };
 
-const brief = (s: Partial<TaskSummary>) =>
-  `${s.status} in ${s.elapsed_ms}ms · ${s.steps?.length} actions · ${s.jev?.requests} Jev requests (median ${s.jev?.median_latency_ms}ms, ${s.jev?.input_tokens} input tokens, ${s.jev?.screenshots} screenshots)`;
+// A concise MCP result carries `story` and no `jev` stats; a full or in-process summary carries both.
+const brief = (s: Partial<TaskSummary> & { story?: string[] }) => {
+  const actions = s.steps?.length ?? s.story?.length;
+  const jev = s.jev ? ` · ${s.jev.requests} Jev requests (median ${s.jev.median_latency_ms}ms, ${s.jev.input_tokens} input tokens, ${s.jev.screenshots} screenshots)` : '';
+  return `${s.status}${s.elapsed_ms === undefined ? '' : ` in ${s.elapsed_ms}ms`} · ${actions} actions${jev}`;
+};
 
 const expectStatus = (summary: TaskSummary, status: TaskSummary['status']) =>
   assert.equal(
