@@ -174,11 +174,20 @@ Tests first in each, red for the right reason. `pnpm release:check` passes at ev
 
 ## Done criteria
 
-- [ ] new tests red first, then green; `pnpm release:check` passes
-- [ ] every CLI path prints one JSON document on stdout (help and version excepted) and NDJSON only on stderr
-- [ ] two CLI invocations continue one session through the daemon; idle, stale socket and version mismatch tested
-- [ ] the live session run, look, sessions, end and stop outputs recorded in the report
-- [ ] `git diff --stat wt/round13` lists only in-scope paths
+- [x] new tests red first, then green; `pnpm release:check` passes
+- [x] every CLI path prints one JSON document on stdout (help and version excepted) and NDJSON only on stderr
+- [x] two CLI invocations continue one session through the daemon; idle, stale socket and version mismatch tested
+- [x] the live session run, look, sessions, end and stop outputs recorded in the report
+- [x] `git diff --stat wt/round13` lists only in-scope paths
+
+## Deviations
+
+- `src/task/present.ts` (outside the scope above), at the coordinator's request: `presentSummary` prints `status`,
+  `reason`, `story`, `next`, `session`, `url`, `title`, … and `page_text` last, the order plan 116's MCP results use,
+  so both adapters share it.
+- Commands that name an existing session (`run --session <id>`, `look --session`, `journey step|…`) never start the
+  daemon: with none running the session is `unknown_session`. Only `run --session new` and `journey start` start it.
+- `serve` prints its start document on one line, so `daemon.log` stays one JSON object per line.
 
 ## STOP conditions
 
