@@ -7,6 +7,7 @@ import { JourneySession, type JourneyOptions } from '../journeys/journey-session
 import { missingKeyMessage } from '../setup/env-file.ts';
 import { hostsFromEnv, narrowHosts, outsideHosts, type HostRules } from './hosts.ts';
 import { BrowserTask, type TaskOptions } from './run-task.ts';
+import { retryingAsk } from '../jev/retry.ts';
 
 export interface StartOptions extends TaskOptions {
   /** Open this URL in a new background tab. */
@@ -88,7 +89,8 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
       const hosts = hostsFromEnv();
       refuseOutside(options.startUrl, hosts);
       const { cdp } = await browser();
-      return JourneySession.start(cdp, decider, {
+      // A journey makes one model call per screen and has no loop-level retry, so a busy API gets two more tries.
+      return JourneySession.start(cdp, retryingAsk(decider, { delaysMs: JOURNEY_RETRY_MS }), {
         newWindow: source === 'auto',
         ...profileOptions(profile),
         ...options,
@@ -105,6 +107,9 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
 
 /** A connected browser and model client that starts tasks, looks at pages and starts journeys: what a session service drives. */
 export type Runner = ReturnType<typeof createRunner>;
+
+// Waits before each retry of a journey's model call after a busy or flaky API answer.
+const JOURNEY_RETRY_MS = [1000, 3000];
 
 /** Throws before a page outside the host rules is opened. */
 const refuseOutside = (url: string, hosts: HostRules) => {

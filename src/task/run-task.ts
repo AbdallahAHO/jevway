@@ -13,6 +13,7 @@ import { writeCall, type RunFiles } from '../output/run-folder.ts';
 import { Recording } from '../recording/recording.ts';
 import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
 import { checkUploadFiles, fileNames } from './upload-files.ts';
+import { isTransientModelError } from '../jev/retry.ts';
 
 export interface TaskOptions {
   goal: string;
@@ -222,7 +223,6 @@ const ESCAPE: PageAction = { id: 'press_escape', kind: 'escape', label: 'Press E
 // Boxes on small targets land a row off (13 px checkboxes); pad before asking whether one covers the chosen control.
 const BOX_PADDING = 16;
 // A model call that fails like this (5xx, 499 "unexpected error", rate limit, network, timeout) is retried once; any other error is final.
-const TRANSIENT_MODEL_ERROR = /^(5\d\d|429|499)\b|timeout|timed out|ECONNRESET|ETIMEDOUT|fetch failed|socket hang up/i;
 // Pause before that one retry, so a rate limit or a restarting upstream has a moment to clear.
 const MODEL_RETRY_MS = 800;
 // Stands in for the page in a summary when the very first observe fails.
@@ -1240,7 +1240,7 @@ export class BrowserTask {
     try {
       return await this.#decide(page);
     } catch (error) {
-      if (!(error instanceof ModelCallError) || !TRANSIENT_MODEL_ERROR.test(error.message)) throw error;
+      if (!(error instanceof ModelCallError) || !isTransientModelError(error)) throw error;
       await (this.#limit?.pause(MODEL_RETRY_MS) ?? new Promise((resolve) => setTimeout(resolve, MODEL_RETRY_MS)));
       return this.#decide(page);
     }
