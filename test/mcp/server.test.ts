@@ -60,7 +60,7 @@ const objectSchemas = (schema: unknown): Record<string, unknown>[] => {
 /** What a client pays to load the tool list, as tokens ≈ characters / 4 of what tools/list sends. */
 const tokensOf = (value: unknown) => Math.round(JSON.stringify(value).length / 4);
 // Measured 2,490 with output schemas (4,515 before plan 116, without them); round 14 adds totp, wait_for_person_seconds, pdf, ask_user and the inbox tools.
-const TOOL_LIST_TOKEN_CEILING = 2_599;
+const TOOL_LIST_TOKEN_CEILING = 2_640;
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -133,7 +133,7 @@ describe('server instructions', () => {
     expect(modern.getInstructions()).toBe(legacy.getInstructions());
   });
 
-  it('say what jevway is for first, then the session pattern, consent, files and the no-model look, in at most 1,500 characters', async () => {
+  it('say what jevway is for first, then the session pattern, consent, ask_user, files and the no-model look, in at most 1,500 characters', async () => {
     const instructions = (await connect(fakeService())).getInstructions()!;
     expect(instructions.length).toBeLessThanOrEqual(1500);
     expect(instructions.slice(0, 200)).toMatch(/browser goal/i);
@@ -142,6 +142,7 @@ describe('server instructions', () => {
       'chrome-devtools',
       '`session`',
       'confirm_irreversible',
+      'ask_user',
       './.jevway/',
       'jevway_look',
       'untrusted',

@@ -32,6 +32,7 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 ## Read the result
 
 - Follow `next`: it names the one thing to do for this status, in the tool's parameter names.
+- When a result has `ask_user`, put it to the person with your ask tool (AskUserQuestion, `request_user_input`…: `options` are the choices, `fields` free-text answers); don't answer it yourself unless the user's request already did. Then do what its `then` says.
 - `story` says what Jev did, one sentence per step ("Typed the \"city\" value into \"Destination\".", "Clicked \"Search\"."). Quote it to the user instead of guessing what happened.
 - On a hand-back (`needs_input`, `needs_confirmation`, `uncertain`, `blocked`) the end page comes back as an image too: look at it before deciding. On `done`, pass `screenshot: true` when you want to see it. Every result also links `final.jpg`, `summary.json` and `manifest.json` in its run folder (`files.run_dir`, under `./.jevway/runs/`).
 - The result is concise. Pass `detail: "full"` when you need the raw steps with confidences, Jev's stats or the `stuck` candidates.

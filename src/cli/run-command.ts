@@ -77,13 +77,24 @@ export const cliNext = (next: string, session: string | undefined) => {
   };
   let text = next
     .replace(/`confirm_irreversible: true`/g, '`--confirm-irreversible`')
-    .replace(/`(values|goal|confirm_target|max_steps|max_seconds)`/g, (_, name: string) => `\`--${name.replace(/_/g, '-')}\``)
+    .replace(/`values\.\w+`(?:, `values\.\w+`)*/g, (run) => {
+      const keys = [...run.matchAll(/`values\.(\w+)`/g)].map(([, key]) => `"${key}"`);
+      return `\`--values\` ${keys.length > 1 ? 'keys' : 'key'} ${keys.join(', ')}`;
+    })
+    .replace(/`(values|goal|confirm_target|max_steps|max_seconds|secret_keys)`/g, (_, name: string) => `\`--${name.replace(/_/g, '-')}\``)
     .replace(/([Cc])all again with this session(, | and )?/g, (_, call: string, joiner?: string) => again(call, joiner));
   text = session
     ? text.replace('end the session when', `end it with \`jevway end ${session}\` when`)
     : text.replace('; end the session when you no longer need its tab', '');
   return !session && /un again/.test(text) ? `${text} Pass \`--session new\` to keep the tab between calls.` : text;
 };
+
+/** A presented result in the CLI's words: `next` and the `ask_user` question's `then` name flags. */
+const inCliWords = <T extends Pick<ConciseSummary, 'next' | 'ask_user'>>(result: T, session: string | undefined): T => ({
+  ...result,
+  next: cliNext(result.next, session),
+  ...(result.ask_user && { ask_user: { ...result.ask_user, then: cliNext(result.ask_user.then, session) } }),
+});
 
 // Today's `--record <dir>` keeps working: a value after --record is the folder.
 const withRecordDir = (argv: string[]) =>
@@ -175,7 +186,7 @@ export const runCommand = async (argv: string[], deps: CliDeps) => {
         },
       },
     );
-    await printDoc(deps.io, { ok: true, ...result, next: cliNext(result.next, result.session) });
+    await printDoc(deps.io, { ok: true, ...inCliWords(result, result.session) });
     return result.status === 'done' ? 0 : 1;
   } finally {
     stopListening();
@@ -199,7 +210,7 @@ const runHere = async (
     if (!keepOpen) await sessions.end(result.session).catch(() => undefined);
     // Nothing is left to continue, so the result names no session.
     const { session: _session, ...presented } = presentSummary(result, { detail });
-    await printDoc(deps.io, { ok: true, ...presented, next: cliNext(presented.next, undefined) });
+    await printDoc(deps.io, { ok: true, ...inCliWords(presented, undefined) });
     return presented.status === 'done' ? 0 : 1;
   } finally {
     stopListening();

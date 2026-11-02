@@ -29,7 +29,10 @@ describe('sessions through the daemon', () => {
     const first = await cli(NEW);
     expect(first.code).toBe(1);
     expect(first.json).toMatchObject({ ok: true, status: 'needs_input', session: expect.stringMatching(UUID) });
-    expect(first.json.next).toBe(`Add the missing values to \`--values\` and run again with \`--session ${first.json.session}\`.`);
+    expect(first.json.next).toBe(
+      `Ask the user the \`ask_user\` question with your ask tool (unless their request already gives these values), then add the answers to \`--values\` and run again with \`--session ${first.json.session}\`.`,
+    );
+    expect(first.json.ask_user.then).toBe(`Run again with \`--session ${first.json.session}\` and the answers in \`--values\` keys "full_name", "email_address".`);
     expect(first.events[0]).toMatchObject({ type: 'daemon', event: 'started', pid: process.pid });
     expect(first.events.slice(1).map((event) => event.type)).toEqual(['started', 'finished']);
 

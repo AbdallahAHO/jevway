@@ -4,7 +4,7 @@ export type ToolSet = 'all' | 'task' | 'journeys';
 const TASK_LINES = [
   'jevway runs a whole browser goal for you: hand it the goal (navigate, search, fill forms, set filters, open a result, submit) and get one checked summary back instead of clicking step by step. TypeSafe Jev picks each step; code types only the values you pass and checks the result.',
   "- jevway_task reaches a page state; chrome-devtools inspects one (console, network, DOM, performance). Both use the same Chrome: select the tab by the result's url.",
-  '- A result has status, reason, story (one sentence per step), next (what to do now), session and files. On a hand-back (needs_input, needs_confirmation, uncertain, blocked, step_budget) follow next and call jevway_task again with `session`, not `url`: tab and history carry over.',
+  '- A result has status, reason, story (one sentence per step), next (what to do now), session and files. On a hand-back (needs_input, needs_confirmation, uncertain, blocked, step_budget) follow next (an ask_user goes to the user via your ask tool) and call jevway_task again with `session`, not `url`: tab and history carry over.',
   "- Consent: set confirm_irreversible only when the user's own request names that action and its target; otherwise ask the user.",
   '- jevway_look reads a page (session, tab or url) with no model call; before repeating a write, use it to see whether the write already happened.',
   '- Files go to ./.jevway/ in the working directory ($JEVWAY_OUT_DIR overrides): runs/<time>_<goal>_<id>/ holds final.jpg, summary.json and manifest.json; record: true adds a video and step shots.',

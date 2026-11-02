@@ -139,8 +139,8 @@ export interface TaskSummary {
   confirm_ignored?: string;
   /** Present when the run ended `blocked` at a wall the caller must get past itself: a bot check a person passes, or a sign-in no supplied value fits. */
   wall?: TaskWall;
-  /** On `needs_input`: each field that wants a value, with its role and the URL pathname it is on. */
-  missing?: { label: string; role?: string; path: string }[];
+  /** On `needs_input`: each field that wants a value, with its role, the URL pathname it is on and the choices the page lists for it. */
+  missing?: { label: string; role?: string; path: string; options?: string[] }[];
   /** Each of the caller's checks with whether it passed on the final page; present when checks were given. */
   checks?: CheckResult[];
   /** On a `done` with `done_when`: the final page's text that shows it, copied word for word from the span Jev chose. */
@@ -1852,13 +1852,28 @@ const controlOf = (decision: Decision, page: PageState): Control => ({
   coordinate: decision.operation === 'CLICK_AT',
 });
 
+// How many of a field's choices a needs_input lists, and how much of each: page text, so kept short.
+const FIELD_CHOICES = 10;
+const FIELD_CHOICE_CHARS = 80;
+
+// The choices the page lists for a field: a select of the same name, or the option rows of its open list (an expanded combobox).
+const choicesFor = (field: Pick<PageAction, 'label' | 'expanded'>, page: PageState) => {
+  const prefix = `${field.label} → `;
+  const selectOptions = page.actions.filter((action) => action.kind === 'select' && action.label.startsWith(prefix)).map((action) => action.label.slice(prefix.length));
+  const openRows = field.expanded === 'true' ? page.actions.filter((action) => action.kind === 'click' && action.role === 'option').map((action) => bareLabel(action.label)) : [];
+  return [...new Set([...selectOptions, ...openRows].map((label) => label.trim().slice(0, FIELD_CHOICE_CHARS)).filter(Boolean))].slice(0, FIELD_CHOICES);
+};
+
 // The fields a needs_input wants: the one Jev chose to type into, or every empty field a BLOCKED found no value for, in page order.
 const missingFields = (decision: Decision, page: PageState) => {
-  const fields: Pick<PageAction, 'label' | 'role'>[] =
+  const fields: Pick<PageAction, 'label' | 'role' | 'expanded'>[] =
     decision.operation === 'TYPE_TEXT' && decision.action
       ? [decision.action]
       : decision.fieldsWithoutValue.map((label) => page.actions.find((action) => action.kind === 'fill' && action.label === label) ?? { label });
-  return fields.map((field) => ({ label: bareLabel(field.label), ...(field.role && { role: field.role }), path: pathnameOf(page.url) }));
+  return fields.map((field) => {
+    const options = choicesFor(field, page);
+    return { label: bareLabel(field.label), ...(field.role && { role: field.role }), path: pathnameOf(page.url), ...(options.length && { options }) };
+  });
 };
 
 const sameControl = (a: Control, b: Control) => a.path === b.path && a.label === b.label && a.coordinate === b.coordinate;

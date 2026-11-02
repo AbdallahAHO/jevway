@@ -73,7 +73,10 @@ tool's `outputSchema`). It is concise unless the call passes `detail: "full"`, a
 ```json
 { "status": "needs_input", "reason": "No supplied value fits the field \"Phone number\"",
   "story": ["Typed the \"name\" value into \"Full name\".", "Typed the \"email\" value into \"Email address\"."],
-  "next": "Add the missing values to `values` and call again with this session.",
+  "next": "Ask the user the `ask_user` question with your ask tool (unless their request already gives these values), then add the answers to `values` and call again with this session.",
+  "ask_user": { "question": "What should I enter for \"Phone number\"?", "header": "Phone number",
+                "fields": [{ "key": "phone_number", "label": "Phone number" }],
+                "then": "Call again with this session and the answer in `values.phone_number`." },
   "session": "3f9a71c2-0b8e-4d6a-9c1e-5a2b7d4e8f10",
   "url": "https://shop.example/checkout/details", "title": "Your details · Shop",
   "missing": [{ "label": "Phone number", "role": "textbox", "path": "/checkout/details" }],
@@ -87,11 +90,12 @@ tool's `outputSchema`). It is concise unless the call passes `detail: "full"`, a
 | --- | --- | --- |
 | `status`, `reason` | always | See [Statuses](#statuses). The reason is one sentence for the caller. |
 | `story` | always | One past-tense sentence per step of this call, in the recording page's words, plus what happened when that was not the plain outcome ("Clicked \"Open in new tab\"; a new tab opened: …"). Secrets show as their marker. |
-| `next` | always | The one thing to do next for this status (and wall), in the tools' parameter names. |
+| `next` | always | The one thing to do next for this status (and wall), in the tools' parameter names. With `ask_user`, it starts from that question. |
+| `ask_user` | a hand-back that needs a person | The question to put to the person with your own ask tool. See [Asking the user](#asking-the-user). |
 | `session` | always | A full UUID. Pass it back to continue. |
 | `url`, `title` | always | The tab in use at the end (a tab the run's click opened, if it followed one). |
-| `missing` | `needs_input` | One `{label, role, path}` per field that wants a value; `path` is the URL pathname. |
-| `wall` | some `blocked` | `{kind: "sign_in", origin}` or `{kind: "bot_check", origin, name}` (an SSO sign-in: `kind: "sign_in"` at the provider's origin, `name` `google`, `apple` or `microsoft`), plus `person_can_act` (false in a headless browser: nobody can pass it there) and `waited_seconds` (when jevway waited for a person who didn't come). |
+| `missing` | `needs_input` | One `{label, role, path, options?}` per field that wants a value; `path` is the URL pathname, `options` the choices the page lists for it (a select of the same name, or an open list's rows: at most 10, 80 characters each). |
+| `wall` | some `blocked` | `{kind: "sign_in", origin}` or `{kind: "bot_check", origin, name}`. |
 | `checks` | `checks` given | Each check with `pass` and `detail`. |
 | `evidence` | `done` with `done_when` | See [Evidence](#evidence). |
 | `confirm_ignored` | a dropped confirmation | Consent the caller gave that jevway did not use, and why. |
@@ -151,6 +155,39 @@ A run ends `blocked` when:
 
 Cancelling the MCP request, or Ctrl-C in the CLI, stops the run before its next step. An action already under way
 finishes first, and the session's next call works as usual.
+
+### Asking the user
+
+jevway can't call your ask tool (Claude Code's AskUserQuestion, Codex's `request_user_input`, …), so a hand-back that
+needs a person carries the question ready to pass on, in the shape those tools take:
+
+```json
+"ask_user": { "question": "Click \"Delete this repository\" on \"ada/scratch · Settings\"?", "header": "Confirm",
+  "options": [{ "label": "Confirm", "description": "Do it: allows this one click" },
+              { "label": "Don't", "description": "Stop here; nothing is clicked" }],
+  "then": "On Confirm, call again with this session, `confirm_irreversible: true` and `confirm_target` set to the user's own words naming the target (never the page's); on Don't, tell the user it was not done." }
+```
+
+| Field | What it holds |
+| --- | --- |
+| `question` | One sentence for the person. |
+| `header` | A short tag, at most 12 characters. |
+| `options` | 2–4 choices `{label, description}`, in the order to offer them; your tool's free-text "Other" covers the rest. |
+| `fields` | Free-text answers: `{key, label, options?, secret?}`, each the `values` key the answer goes under. `secret: true` marks a field whose label looks secret (password, token, PIN, card number…): list its key in `secret_keys`. |
+| `then` | What to do with the answer, in parameter names (in flags from the CLI). |
+
+| Status | Question | Answers |
+| --- | --- | --- |
+| `needs_input` (with `missing`) | `What should I enter for "<label>"?`, every missing field in one question | `fields`; with one field and 2–4 choices on the page, those choices as `options` too |
+| `needs_confirmation` | `Click "<control>" on "<page title>"?` | `Confirm` / `Don't` (neither marked recommended: consent is the person's) |
+| `uncertain` (2+ distinct candidates) | `Which one should I click on "<page title>"?` | Jev's candidates, at most 4 |
+| `blocked` at a sign-in wall | `Sign in to <origin> in the Chrome window jevway uses, then choose Done.` | `Done` / `Skip` |
+| `blocked` at a bot check | `Pass the <Cloudflare, reCAPTCHA…> check in the Chrome window jevway uses, then choose Done.` | `Done` / `Skip` |
+
+`done`, `step_budget`, any other `blocked` and a `needs_input` with no named field carry none: you decide. Put the
+question to the person unless their own request already answers it, then do what `then` says. It quotes only control
+labels, the page title and the address (one line, at most 60 characters, no backticks or double quotes), never page
+prose, and a secret only as its `[secret:<key>]` marker.
 
 ### Confirming an irreversible click
 
@@ -495,7 +532,8 @@ jevway stop
 
 The result is the [concise summary](#concise-and-full-results) (`--detail full` adds the raw steps) with `ok: true`.
 `files` holds absolute paths. `next` names flags, not MCP parameters, and the session to pass
-("Add the missing values to `--values` and run again with `--session <id>`."). A one-shot result names no session.
+("…add the answers to `--values` and run again with `--session <id>`."), and so does `ask_user.then`. A one-shot result
+names no session.
 
 **Exit codes.** 0: the status is `done`, or the command did what it says. 1: a hand-back (`needs_input`,
 `needs_confirmation`, `uncertain`, `step_budget`, `blocked`) or a tool error. 2: bad usage, or the model's key is

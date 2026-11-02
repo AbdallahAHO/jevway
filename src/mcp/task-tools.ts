@@ -79,13 +79,14 @@ const TASK_INPUT = z.object({
   screenshot: z.boolean().optional().describe('Inline the final screenshot on done too.'),
 });
 
-// The fields every result has, plus `files`; the rest (missing, wall, checks, evidence, and with detail "full" steps, jev,
-// stuck) are open, so a field a later version adds never fails a client's check.
+// The fields every result has, plus `files` and `ask_user`; the rest (missing, wall, checks, evidence, and with detail
+// "full" steps, jev, stuck) are open, so a field a later version adds never fails a client's check.
 const TASK_OUTPUT = z.looseObject({
   status: z.enum(STATUSES),
   reason: z.string(),
   story: z.array(z.string()),
   next: z.string(),
+  ask_user: z.looseObject({ question: z.string(), then: z.string() }).optional(),
   session: z.string(),
   url: z.string(),
   title: z.string(),

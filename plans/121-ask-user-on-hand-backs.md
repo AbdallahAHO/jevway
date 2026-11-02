@@ -102,7 +102,12 @@ guards.
    (e.g. needs_input: `Put `ask_user` to the user with your ask tool unless their request already answers it, then add
    the answers to `values` and call again with this session.`). The bot-check line keeps "never try to get past it".
 10. **Placement and adapters**: `ask_user` right after `next` in concise and full results; the MCP output schema adds
-    it as an open object (question, header, then strings); the CLI prints it with `then` rewritten by `cliNext`.
+    it as an open object with `question` and `then` (adding `header` too cost 9 more tokens of every tool list; the
+    field is open, so `header`, `options` and `fields` still validate). The tool list grew 39 tokens (2,494 → 2,533),
+    so the ceiling in `test/mcp/server.test.ts` rose from 2,500 to 2,539. The CLI prints it with `then` rewritten by
+    `cliNext` (`` `values.<key>` `` → `` `--values` key "<key>" ``, `secret_keys` → `--secret-keys`).
+11. **Server instructions** stay under their 1,500-character test: a separate line pushed them to 1,584, so the
+    hand-back line gains a parenthesis instead ("an ask_user goes to the user via your ask tool"), 1,478 in all.
 
 ## Deviations from the owned-files list
 
