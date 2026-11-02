@@ -1084,6 +1084,32 @@ const checks: Check[] = [
     },
   },
   {
+    name: 'a drop zone with no file input is listed only with declared files, on its marker, and takes a dropped file',
+    file: 'dropzone.html',
+    run: async (tab) => {
+      assert.ok(!(await listed(tab)).some((action) => action.kind === 'upload'), 'a drop zone listed without files');
+      tab.want([], { files: true });
+      const page = await tab.observe();
+      const zones = page.actions.filter((action) => action.kind === 'upload');
+      assert.deepEqual(zones.map((zone) => [zone.label, zone.drop]), [['Drag and drop your CV here (drop zone)', true]], labelsOf(page.actions));
+      await tab.upload(zones[0], page, new URL('./fixture/capabilities/cv.pdf', import.meta.url).pathname);
+      assert.equal((await fixtureState(tab)).dropped, 'cv.pdf');
+    },
+  },
+  {
+    name: 'with declared files, a file field in a cross-origin iframe is listed in its frame and takes the file there',
+    file: 'upload-frame.html',
+    run: async (tab) => {
+      tab.want([], { files: true });
+      const page = await tab.observe();
+      const field = page.actions.find((action) => action.kind === 'upload');
+      assert.ok(field?.frame, `no file field in the frame: ${labelsOf(page.actions)}`);
+      await tab.upload(field, page, new URL('./fixture/capabilities/cv.pdf', import.meta.url).pathname);
+      for (let waited = 0; waited < 1000 && !(await fixtureState(tab)).attached; waited += 50) await pause(50);
+      assert.equal((await fixtureState(tab)).attached, 'cv.pdf');
+    },
+  },
+  {
     name: 'a same-origin iframe is read: its controls sit inside the frame, take typed text and clicks',
     file: 'iframe-same-origin.html',
     run: async (tab) => {

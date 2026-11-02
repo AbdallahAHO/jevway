@@ -49,6 +49,7 @@ interface CapabilityTask {
 
 const fixtureDir = new URL('./fixture/capabilities/', import.meta.url);
 const AVATAR = new URL('avatar.png', fixtureDir).pathname;
+const CV = new URL('cv.pdf', fixtureDir).pathname;
 
 const TASKS: CapabilityTask[] = [
   {
@@ -105,6 +106,32 @@ const TASKS: CapabilityTask[] = [
       files.items.add(new File(['png'], 'avatar.png', { type: 'image/png' }));
       picker.files = files.files;
       picker.dispatchEvent(new Event('change'));
+    })()`,
+  },
+  {
+    id: 'upload-frame',
+    kind: 'capability',
+    path: '/upload-frame.html',
+    goal: 'Attach my CV (the file in cv) to the application form.',
+    files: { cv: CV },
+    doneWhen: 'The application form says cv.pdf is attached.',
+    expect: ['done'],
+    passes: `window.__fixture.attached === 'cv.pdf'`,
+    solve: `new Promise((resolve) => { window.postMessage({ attached: 'cv.pdf' }, '*'); setTimeout(resolve, 50); })`,
+  },
+  {
+    id: 'dropzone',
+    kind: 'capability',
+    path: '/dropzone.html',
+    goal: 'Attach my CV (the file in cv) to the application.',
+    files: { cv: CV },
+    doneWhen: 'The page says the CV cv.pdf is attached.',
+    expect: ['done'],
+    passes: `window.__fixture.dropped === 'cv.pdf'`,
+    solve: `(() => {
+      const files = new DataTransfer();
+      files.items.add(new File(['%PDF'], 'cv.pdf', { type: 'application/pdf' }));
+      document.getElementById('zone').dispatchEvent(new DragEvent('drop', { dataTransfer: files, bubbles: true, cancelable: true }));
     })()`,
   },
   {
@@ -240,7 +267,11 @@ const serve = (main: boolean) =>
   createServer((request, response) => {
     const { pathname } = new URL(request.url ?? '/', 'http://localhost');
     const html = (body: Buffer | string, status = 200) => response.writeHead(status, { 'content-type': 'text/html' }).end(body);
-    if (!main) return pathname === '/settings-frame.html' ? html(read('settings-frame.html')) : html('not found', 404);
+    if (!main) return ['/settings-frame.html', '/upload-frame-form.html'].includes(pathname) ? html(read(pathname.slice(1))) : html('not found', 404);
+    if (pathname === '/upload-frame.html') return html(String(read('upload-frame.html')).replace('__FRAME_ORIGIN__', frameOrigin));
+    if (pathname === '/invoice-1042.pdf') {
+      return response.writeHead(200, { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="invoice-1042.pdf"' }).end(read('cv.pdf'));
+    }
     if (pathname === '/iframe-same.html') return html(String(read('iframe-same.html')).replace('__FRAME_ORIGIN__', ''));
     if (pathname === '/iframe-cross.html') return html(String(read('iframe-same.html')).replace('__FRAME_ORIGIN__', frameOrigin));
     if (pathname === '/avatar.png') return response.writeHead(404).end();

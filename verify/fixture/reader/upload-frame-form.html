@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Application form</title>
+<style>
+  body { margin: 0; padding: 12px; font: 14px system-ui, sans-serif; }
+  #cv { display: none; }
+</style>
+</head>
+<body>
+<div class="field">
+  <input type="file" id="cv">
+  <button type="button" id="choose">Attach your CV</button>
+</div>
+<script>
+  const input = document.getElementById('cv');
+  document.getElementById('choose').addEventListener('click', () => input.click());
+  input.addEventListener('change', () => parent.postMessage({ fixture: { attached: input.files[0]?.name } }, '*'));
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Upload in a cross-origin iframe</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  iframe { display: block; margin: 20px 0 0 80px; width: 380px; height: 160px; border: 1px solid #888; }
+</style>
+</head>
+<body>
+<p>Apply</p>
+<iframe src="{{CROSS_ORIGIN}}/upload-frame-form.html" title="Application form"></iframe>
+<script>
+  window.__fixture = {};
+  addEventListener('message', (event) => Object.assign(window.__fixture, event.data?.fixture));
+</script>
+</body>
+</html>

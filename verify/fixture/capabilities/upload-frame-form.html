@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Application form</title>
+<style>
+  body { margin: 0; padding: 16px; font: 15px/1.5 system-ui, sans-serif; background: #fafafa; }
+  #cv { display: none; }
+  .choose { padding: 8px 14px; border: 1px solid #6d28d9; border-radius: 6px; background: #fff; color: #6d28d9; }
+</style>
+</head>
+<body>
+<div class="field">
+  <p>Your CV (PDF)</p>
+  <input type="file" id="cv" accept="application/pdf">
+  <button type="button" class="choose" id="choose">Attach your CV</button>
+  <p id="status">No file chosen</p>
+</div>
+<script>
+  // The embedding page records what was attached, so ground truth stays on the top page.
+  const input = document.getElementById('cv');
+  document.getElementById('choose').addEventListener('click', () => input.click());
+  input.addEventListener('change', () => {
+    const file = input.files[0];
+    if (!file) return;
+    document.getElementById('status').textContent = `Attached: ${file.name}`;
+    parent.postMessage({ attached: file.name }, '*');
+  });
+</script>
+</body>
+</html>

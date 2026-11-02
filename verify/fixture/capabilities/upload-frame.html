@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Apply · Careers</title>
+<style>
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; }
+  header { padding: 14px 24px; background: #6d28d9; color: #fff; font-weight: 600; }
+  main { max-width: 640px; margin: 24px auto; padding: 0 16px; }
+  iframe { width: 100%; height: 180px; border: 1px solid #ddd; border-radius: 8px; }
+</style>
+</head>
+<body>
+<header>Careers</header>
+<main>
+  <h1>Apply for Frontend Engineer</h1>
+  <p>The application form is hosted by our recruiting partner.</p>
+  <iframe title="Application form" src="__FRAME_ORIGIN__/upload-frame-form.html"></iframe>
+</main>
+<script>
+  // Independent ground truth for verification; the agent never reads this object.
+  window.__fixture = { attached: null };
+  addEventListener('message', (event) => {
+    if (typeof event.data?.attached === 'string') window.__fixture.attached = event.data.attached;
+  });
+</script>
+</body>
+</html>

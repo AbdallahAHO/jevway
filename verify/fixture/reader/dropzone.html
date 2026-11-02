@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Drop zone</title>
+<style>
+  body { margin: 16px; font: 14px system-ui, sans-serif; }
+  .zone { display: grid; place-items: center; width: 420px; height: 140px; border: 2px dashed #888; }
+</style>
+</head>
+<body>
+<p>Prices drop here every Friday.</p>
+<div class="dropdown"><button type="button">Sort by</button></div>
+<div class="zone" id="zone"><p>Drag and drop your CV here</p></div>
+<script>
+  window.__fixture = {};
+  const zone = document.getElementById('zone');
+  zone.addEventListener('dragover', (event) => event.preventDefault());
+  zone.addEventListener('drop', (event) => {
+    event.preventDefault();
+    window.__fixture.dropped = event.dataTransfer.files[0]?.name;
+  });
+</script>
+</body>
+</html>
