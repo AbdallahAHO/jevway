@@ -13,6 +13,8 @@ inside, see [how-it-works.md](how-it-works.md). For the journey tools, see [jour
   - [Secret values](#secret-values)
   - [Hosts](#hosts)
   - [Recording](#recording)
+- [Output folder](#output-folder)
+  - [Concise and full results](#concise-and-full-results)
 - [`jevway_look`](#jevway_look)
 - [`jevway_end`](#jevway_end)
 - [Tool hints](#tool-hints)
@@ -47,7 +49,7 @@ Runs a browser goal to the end, or until it needs the caller, and returns one su
 | `allowed_hosts` | string[] | Hosts the run may be on. See [Hosts](#hosts). |
 | `blocked_hosts` | string[] | Hosts the run must never be on. |
 | `allow_coordinate_clicks` | boolean | New session only, opt-in. When Jev is stuck and a screenshot box matches no listed element (a canvas, a skipped frame), click the box centre after a hit-test. Needs Jev 1.14 on the TypeSafe API. |
-| `record_dir` | string | New session only. Saves a record for people. See [Recording](#recording). |
+| `record_dir` | string | New session only. Saves a record for people in this folder. See [Recording](#recording). |
 
 ### The summary
 
@@ -162,8 +164,8 @@ text that shows `done_when` is true.
 `secret_keys` names keys of `values` that are secrets: an API token, a one-time code, a card number.
 
 - Jev sees `[secret:<key>]` in place of the value and never reads it. The value is typed as given.
-- Wherever the page echoes it, `page_text`, `steps`, reasons, traces, and `record_dir`'s `summary.json` and
-  `index.html` show the marker instead.
+- Wherever the page echoes it, `page_text`, `steps`, `story`, reasons, traces, and the run folder's `summary.json`,
+  `index.html`, `manifest.json` and file and folder names show the marker instead (`secret-<key>` in a name).
 - Recorded screenshots and video are pixels of the page and are **not** masked.
 - Every occurrence of the value is replaced, even inside other words, so mark only real secrets.
 - Password fields are never listed, typed or sent: the request says only whether each visible one is filled or empty.
@@ -186,15 +188,68 @@ text that shows `done_when` is true.
 
 ### Recording
 
-`record_dir` (CLI `--record <dir>`) saves a record of the run for people:
+`record_dir` (CLI `--record <dir>`) saves a record of the run for people in that folder:
 
 - `run.mp4`, a screencast (needs `ffmpeg` on the PATH; skipped otherwise);
-- a 2× JPEG before every action with its target outlined, and the final page;
+- `steps/01-type-destination.jpg`, `steps/02-select-2-guests.jpg`, …: a 2× JPEG before every action with its target
+  outlined, named for the action, and `steps/NN-finished-<status>.jpg`, the final page of each call;
+- `final.jpg` (the page as the latest call ended, at most 1280 px wide) and `calls/NN-<status>.jpg` (each call's);
 - `summary.json`;
 - `index.html`, which opens on the video with its steps on a timeline and a strip kept in sync, then the run's calls,
-  reason, address and cost.
+  reason, address and cost;
+- `manifest.json`, every file with its path, kind and a one-line description.
 
-These images never reach the model, which gets its own 1024 px screenshots. The video stays on the first tab.
+These images never reach the model, which gets its own 1024 px screenshots. The video stays on the first tab. Through
+the session service (below), `record: true` keeps the same record in the session's run folder, and `record_dir` stays
+an override.
+
+## Output folder
+
+The session service (`src/session/session-service.ts`), which the MCP server and the CLI daemon adopt next, gives
+every session a folder, whether or not it records:
+
+```
+.jevway/                                        ($JEVWAY_OUT_DIR overrides; holds a .gitignore of "*")
+  runs/2026-11-02_0905_book-a-stay-in-lisbon_3f9a/
+    final.jpg  calls/01-needs-input.jpg  calls/02-done.jpg  summary.json  manifest.json
+    index.html  run.mp4  steps/01-type-destination.jpg …       (only with record)
+  journeys/2026-11-02_0910_stays.example_8c21/
+    index.html  journey.json  manifest.json  screens/s01-home.png  screens/s02-search-results.png …
+```
+
+- Folder names are local start time, a slug (the goal, or the journey's host) and the first 4 characters of the
+  session id. A slug is lowercase ASCII and hyphens, at most 40 characters, and never holds a secret value.
+- `final.jpg` is the viewport as the latest call ended: JPEG, at most 1280 px wide. It is pixels, so a secret typed into
+  a visible field shows in it.
+- `manifest.json` lists every file with its `path` (relative), `kind` and a one-line `description`, e.g.
+  `steps/01-type-destination.jpg`, `step`, "Before step 1, its target outlined: Type the "destination" value into
+  "Destination"". Kinds: `page`, `summary`, `video`, `screenshot`, `step`, `screen`, `journey`, `manifest`, `file`.
+- `JEVWAY_JOURNEYS_DIR` replaces `.jevway/journeys` as the journeys root; a journey's `out_dir` is the exact folder.
+- Session ids are full UUIDs. A session the service no longer holds answers: Unknown session "…". Sessions end
+  when the server restarts (or after the daemon's idle time); start a new one with `url` (or `tab`).
+
+### Concise and full results
+
+A result through the session service is concise by default (`presentSummary` in `src/task/present.ts`):
+
+```json
+{ "session": "3f9a71c2-0b8e-4d6a-9c1e-5a2b7d4e8f10", "status": "needs_input",
+  "reason": "No supplied value fits the field \"Phone number\"",
+  "next": "Add the missing values to `values` and call again with this session.",
+  "story": ["Typed the \"name\" value into \"Full name\".", "Typed the \"email\" value into \"Email address\"."],
+  "url": "…", "title": "…", "page_text": "…",
+  "missing": [{ "label": "Phone number", "role": "textbox", "path": "/checkout/details" }],
+  "files": { "run_dir": "/abs/.jevway/runs/…_3f9a", "screenshot": "/abs/…/final.jpg", "manifest": "/abs/…/manifest.json" } }
+```
+
+- Concise: `session`, `status`, `reason`, `next`, `story`, `url`, `title`, `page_text`, and when present `missing`,
+  `wall`, `checks`, `evidence`, `confirm_ignored` and `files` (`run_dir`, `screenshot`, `page`, `video`, `manifest`;
+  absolute paths).
+- `detail: "full"` adds `steps` (with confidences), `jev`, `stuck`, `elapsed_ms` and `done_probability`.
+- `story` has one sentence per step of the call, in the recording page's words, plus what happened when that was not
+  the plain outcome ("Clicked \"Open in new tab\"; a new tab opened: …").
+- Progress events while a call runs: `{ "type": "started" }`, `{ "type": "step", "n", "story", "url" }` per step, and
+  `{ "type": "finished", "status" }`, each with its `session`.
 
 ## `jevway_look`
 
@@ -274,7 +329,8 @@ file fills only variables the environment lacks, and only the keys, `CHROME_PATH
 | `JEVWAY_MODEL` | `jev` | The decision model. See [Models](#models). |
 | `JEVWAY_SCREENSHOTS` | per model | `always`, `fallback` or `off`. |
 | `JEVWAY_ALLOWED_HOSTS`, `JEVWAY_BLOCKED_HOSTS` | — | Server-wide host lists, comma-separated. |
-| `JEVWAY_JOURNEYS_DIR` | `./journeys` | Where journey maps are written. |
+| `JEVWAY_OUT_DIR` | `./.jevway` | The session service's output root: `runs/` and `journeys/`. See [Output folder](#output-folder). |
+| `JEVWAY_JOURNEYS_DIR` | `./journeys` (MCP today), `<JEVWAY_OUT_DIR>/journeys` (session service) | Where journey maps are written. |
 | `JEVWAY_REPLAY`, `JEVWAY_REPLAY_DIR` | — | `record` or `replay` Jev answers in that folder (development; the folder is required). See [CONTRIBUTING.md](../CONTRIBUTING.md#live-suites). |
 | `CHROME_PATH` | the usual install path | The Chrome `launch` starts. |
 

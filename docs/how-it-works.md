@@ -65,7 +65,7 @@ Terms used throughout:
 - **Commit risk**: a Noul score for "this click would commit an irreversible real-world effect" (pay, send, delete, submit). At 0.5 or above a click is held for confirmation.
 - **Box**: Jev 1.14's box questions over a screenshot, available only on the direct TypeSafe route (section 10).
 
-A **session** is one `BrowserTask`, starting on one tab, kept by `src/mcp.ts` under an 8-character id. Each `jevway_task` call on it runs the loop once (`run()`); history, values and confirmation state carry over between calls.
+A **session** is one `BrowserTask`, starting on one tab. Each `jevway_task` call on it runs the loop once (`run()`); history, values and confirmation state carry over between calls. `src/mcp.ts` keeps them under an 8-character id today; the transport-free session service (`src/session/session-service.ts`) keeps them under a full UUID with a run folder each, and is what the MCP server and the CLI daemon move to (section 13).
 
 ## 2. One step, end to end
 
@@ -435,18 +435,28 @@ Output tokens are not priced. The token count covers every request of the call, 
   - It stops at an auth screen (type `auth` or `auth_wall` ≥ 0.6), at a reached intent (Jev `DONE`), or, with an intent, at a tap with risk ≥ 0.5. While exploring it skips risky taps.
   - A tap that lands outside `stay_within` (default the start page's origin) is backed out of.
 
-Output: `journey.json`, `screens/*.png` and an `index.html` viewer in the journey folder.
+Output: `journey.json`, `screens/s01-home.png` … (id and screen type), an `index.html` viewer and `manifest.json` in the journey folder.
 
 ## 13. Recording and replay
 
-**Recording** (`src/recording/recording.ts`). With `record_dir` (CLI `--record`) a session writes, for people only:
+**Output folders** (`src/output/`). A `BrowserTask` given `output: { dir }` leaves, after every call, in that run folder (`src/output/run-folder.ts`):
+
+- `final.jpg`: the viewport as the call ended, JPEG quality 70, at most 1280 px wide (`#endPage`); `calls/NN-<status>.jpg` keeps each call's. A failed capture leaves it out (and removes an older `final.jpg`) and never changes the outcome. The bytes also come back in `task.lastCall`, for an adapter to inline;
+- `summary.json` (`{ summaries }`; the recording's own when recording);
+- `manifest.json`: a walk of the folder, each file with its relative path, kind and one-line description (`src/output/manifest.ts`; step shots described from `summary.json`, journey screens from `journey.json`).
+
+Without `output` the task writes nothing. `src/output/layout.ts` names the folders: the root is `$JEVWAY_OUT_DIR` or `./.jevway` (with a `.gitignore` of `*`, written once), runs go to `runs/<YYYY-MM-DD_HHMM>_<goal-slug>_<id4>/` and journeys to `journeys/<YYYY-MM-DD_HHMM>_<host>_<id4>/` (local time; `id4` is the session id's first 4 characters). A slug is lowercase ASCII and hyphens, at most 40 characters, and is made from text already scrubbed of secret values, then scrubbed again, so a secret never names a file.
+
+**Recording** (`src/recording/recording.ts`). With `output.record` (`record_dir`, CLI `--record`, which is a run folder with the recording on) a session also writes, for people only:
 
 - a screencast `run.mp4` (needs `ffmpeg`, otherwise skipped), re-encoded after each call;
-- `01.jpg`, `02.jpg`, … before every action: a 2× JPEG at quality 90 with the target outlined and a one-sentence description;
-- a final-page shot per call;
+- `steps/01-type-destination.jpg`, `steps/02-select-2-guests.jpg`, … before every action: a 2× JPEG at quality 90 with the target outlined and a one-sentence description (the name is the verb and what it acts on; a shot whose action never ran is deleted with its step);
+- a final-page shot per call (`steps/NN-finished-<status>.jpg`);
 - `summary.json` (every call's summary, the steps, the video name, the viewport) and `index.html`.
 
-The text files are scrubbed of secrets; the images and video are not. Recorded shots never go into a request.
+The text files and every file name are scrubbed of secrets; the images and video are not. Recorded shots never go into a request.
+
+**Session service** (`src/session/session-service.ts`). `createSessionService(runner, options)` holds task sessions and journeys by `randomUUID()`, makes each one's folder, and waits for a session's still-running call before its next one. Its errors say what to do next (`UnknownSession`, `code: 'unknown_session'`). `onEvent` hears `started`, one `step` per step (`n`, the story sentence, the URL) and `finished`. `presentSummary` (`src/task/present.ts`) turns a result into the concise form (status, reason, `next`, `story`, page, `files`) or, with `detail: 'full'`, adds the raw steps, Jev's stats and the stuck candidates. The story is `describeStep`'s wording in the past tense plus what happened (a new tab, a dialog, a scroll that moved nothing, a field that did not keep its text), built from the scrubbed steps.
 
 **Replay** (`src/jev/replay.ts`). `JEVWAY_REPLAY=record` wraps the live client and appends each answer to one JSONL file per process in `JEVWAY_REPLAY_DIR`, which is required whenever `JEVWAY_REPLAY` is set (`pnpm verify:replay` sets it per suite): a header with the profile, model id, route and screenshot mode, then `{ key, model, request, answer }` lines. The key is the sha256 of the model id plus the canonical request: keys sorted at every depth, every image replaced by `<image>`, and `127.0.0.1:<port>` / `localhost:<port>` normalised.
 
@@ -459,6 +469,9 @@ An unrecorded request is a miss: it throws `ReplayMiss` naming the goal, step an
 | File | Responsibility |
 | --- | --- |
 | `src/mcp.ts` | MCP server: tool schemas, sessions, cancellation wiring, journey tools. |
+| `src/session/session-service.ts` | Transport-free sessions and journeys: ids, folders, waiting on a running call, events, errors. |
+| `src/output/` | The output root, folder and file names, slugs, `manifest.json`, what a call leaves in its run folder. |
+| `src/task/present.ts` | A summary as the caller reads it: `story`, `next`, concise or full. |
 | `src/cli.ts` | CLI entry: flags, one task, exit code 0 only on `done`. |
 | `src/task/start-task.ts` | Runner: key check, browser connection, opening tabs, host check on the start URL. |
 | `src/task/run-task.ts` | The loop, hand-back rules, guards, confirmation, checks and evidence settling, statuses. |
