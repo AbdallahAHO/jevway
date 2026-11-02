@@ -1,11 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as chrome from '../src/browser/chrome.ts';
+import * as model from '../src/jev/model.ts';
 import type { PageAction, PageState } from '../src/browser/tab.ts';
 import { buildActionSpace } from '../src/jev/action-space.ts';
 import type { Decision } from '../src/jev/decide.ts';
 import { buildFlows, hotspotOf, type JourneyStep } from '../src/journeys/journey-doc.ts';
+import { JourneySession } from '../src/journeys/journey-session.ts';
 import { pickNextMove } from '../src/journeys/pick-next-move.ts';
 import { readScreenBoxes } from '../src/journeys/screen-boxes.ts';
 import { qaFindings, readScreenJudgments, type ScreenJudgments } from '../src/journeys/screen-judgments.ts';
+import { createRunner } from '../src/task/start-task.ts';
 
 const actions: PageAction[] = [
   { id: 'e1', kind: 'click', node: 1, role: 'button', label: 'Where to?', rect: { x: 16, y: 80, w: 361, h: 52 } },
@@ -235,5 +239,24 @@ describe('screen boxes', () => {
     expect(known.finding).toBeUndefined();
     const unsure = readScreenBoxes({ unlisted_control: { noul: 0.3 }, unlisted_control_box: box(0.05, 0.1, 0.2, 0.15) }, page);
     expect(unsure.finding).toBeUndefined();
+  });
+});
+
+describe('a journey and the server hosts', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("never starts on a url the server's hosts rule out", async () => {
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-key');
+    vi.stubEnv('JEVWAY_BLOCKED_HOSTS', 'fixture');
+    vi.spyOn(model, 'createAsk').mockReturnValue(vi.fn());
+    vi.spyOn(chrome, 'connectChrome').mockResolvedValue({ cdp: {} } as chrome.ChromeHandle);
+    const start = vi.spyOn(JourneySession, 'start');
+    await expect(createRunner('launch-headless').startJourney({ startUrl: 'http://fixture/stays', outDir: '/tmp/j' })).rejects.toThrow(
+      'Not opened: fixture is a blocked host',
+    );
+    expect(start).not.toHaveBeenCalled();
   });
 });

@@ -67,7 +67,10 @@ describe('a look at the page', () => {
 });
 
 describe('a look through the runner', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
 
   const fakeTab = () => {
     const tab = { observed: 0, closed: 0, observe: async () => (tab.observed++, page()), close: async () => void tab.closed++ };
@@ -85,6 +88,16 @@ describe('a look through the runner', () => {
     expect(state.title).toBe('Staylist');
     expect(tab).toMatchObject({ observed: 1, closed: 1 });
     expect(ask).not.toHaveBeenCalled();
+  });
+
+  it("never opens a url outside the server's hosts", async () => {
+    vi.stubEnv('JEVWAY_ALLOWED_HOSTS', 'docs.example.com');
+    vi.spyOn(chrome, 'connectChrome').mockResolvedValue({ cdp: {} } as chrome.ChromeHandle);
+    const open = vi.spyOn(Tab, 'open');
+    await expect(createRunner('launch-headless').look({ url: 'http://fixture/stays' })).rejects.toThrow(
+      'Not opened: fixture is outside the allowed hosts (docs.example.com)',
+    );
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('reads an open tab and leaves it open', async () => {

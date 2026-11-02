@@ -5,7 +5,7 @@ import { createAsk, profileOptions, resolveModel } from '../jev/model.ts';
 import { replayMode } from '../jev/replay.ts';
 import { JourneySession, type JourneyOptions } from '../journeys/journey-session.ts';
 import { missingKeyMessage } from '../setup/env-file.ts';
-import { hostsFromEnv, narrowHosts, outsideHosts } from './hosts.ts';
+import { hostsFromEnv, narrowHosts, outsideHosts, type HostRules } from './hosts.ts';
 import { BrowserTask, type TaskOptions } from './run-task.ts';
 
 export interface StartOptions extends TaskOptions {
@@ -55,8 +55,7 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
       const decider = ask();
       // The server's lists, narrowed by the call; a start URL outside them is never opened.
       const hosts = narrowHosts(hostsFromEnv(), { allowed: allowedHosts, blocked: blockedHosts });
-      const outside = url ? outsideHosts(url, hosts) : undefined;
-      if (outside) throw new Error(`Not opened: ${outside}`);
+      if (url) refuseOutside(url, hosts);
       const { cdp } = await browser();
       if (!url && !tab) throw new Error('Pass `url` to open a new tab or `tab` to reuse an open one.');
       const page = url ? await Tab.open(cdp, url) : await Tab.find(cdp, tab!);
@@ -71,8 +70,9 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
     },
     /** Reads a page with no model call and no input: an open tab by URL part, or a URL in a background tab closed again. */
     async look({ url, tab }: { url?: string; tab?: string }) {
-      const { cdp } = await browser();
       if (!url && !tab) throw new Error('Pass `url` to open a page or `tab` to read an open one.');
+      if (url) refuseOutside(url, hostsFromEnv());
+      const { cdp } = await browser();
       const page = url ? await Tab.open(cdp, url) : await Tab.find(cdp, tab!);
       try {
         return await page.observe();
@@ -83,11 +83,16 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
     /** Mobile journey mapping; in the user's own Chrome it opens a separate window so screenshots keep rendering. */
     async startJourney(options: JourneyOptions) {
       const decider = ask();
+      // The server's host lists hold for journeys too: a start page outside them is never opened, and a step that
+      // lands outside them is refused before Jev is asked about the page.
+      const hosts = hostsFromEnv();
+      refuseOutside(options.startUrl, hosts);
       const { cdp } = await browser();
       return JourneySession.start(cdp, decider, {
         newWindow: source === 'auto',
         ...profileOptions(profile),
         ...options,
+        hosts,
         screenshots: options.screenshots ?? screenshots,
       });
     },
@@ -96,6 +101,12 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
       chrome = undefined;
     },
   };
+};
+
+/** Throws before a page outside the host rules is opened. */
+const refuseOutside = (url: string, hosts: HostRules) => {
+  const outside = outsideHosts(url, hosts);
+  if (outside) throw new Error(`Not opened: ${outside}`);
 };
 
 // Optional MCP/CLI arguments arrive as explicit undefined; they must not erase profile settings.

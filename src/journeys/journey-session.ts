@@ -19,6 +19,7 @@ import {
   type ScreenJudgments,
   type VisitedScreen,
 } from './screen-judgments.ts';
+import { outsideHosts, type HostRules } from '../task/hosts.ts';
 
 const EXPLORE_GOAL = `Explore this site the way a first-time mobile visitor would, one screen at a time.
 Open the next screen that matters most for the site's core user journeys: discovering, searching, comparing,
@@ -45,6 +46,8 @@ export interface JourneyOptions {
   imageTransport?: ImageTransport;
   /** With screenshots: Box the screen's primary action (viewer hotspot) and controls missing from the DOM (QA). */
   box?: boolean;
+  /** The server's host lists: a screen outside them is never judged, and autopilot backs out of it. */
+  hosts?: HostRules;
 }
 
 export interface StepInput {
@@ -278,7 +281,8 @@ export class JourneySession {
         continue;
       }
       const scope = this.#options.stayWithin ?? new URL(this.#options.startUrl).origin;
-      if (!(await this.#tab.observe()).url.startsWith(scope)) {
+      const landed = (await this.#tab.observe()).url;
+      if (!landed.startsWith(scope) || this.#outsideHosts(landed)) {
         await this.#goBack();
         this.#logMove('left_scope', move.action.label);
         continue;
@@ -351,9 +355,15 @@ export class JourneySession {
   }
 
   // Observe → one Jev request (next step + screen understanding) → dedupe → screenshot → QA → save.
+  #outsideHosts(url: string) {
+    return this.#options.hosts && outsideHosts(url, this.#options.hosts);
+  }
+
   async #capture(arrival: Omit<JourneyStep, 'to'> | null) {
     await this.#diagnostics.waitForIdle();
     const page = await this.#settledPage();
+    const outside = this.#outsideHosts(page.url);
+    if (outside) throw new Error(`The page is outside the server's hosts: ${outside}. Take \`back\` to return.`);
     const seesScreen = (this.#options.screenshots ?? 'off') !== 'off';
     const boxed = seesScreen && Boolean(this.#options.box);
     const decision = await decide(this.#ask, {
