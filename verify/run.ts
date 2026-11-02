@@ -10,8 +10,8 @@ import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { connectChrome, type BrowserSource } from '../src/browser/chrome.ts';
 import { Tab } from '../src/browser/tab.ts';
 import { createAsk, profileOptions, resolveModel } from '../src/jev/model.ts';
@@ -340,7 +340,7 @@ await scenario('MCP stdio: a cancelled jevway_task stops acting (session continu
     }),
   );
   const call = async (args: Record<string, unknown>, signal?: AbortSignal) => {
-    const response: any = await client.callTool({ name: 'jevway_task', arguments: args }, undefined, signal && { signal });
+    const response: any = await client.callTool({ name: 'jevway_task', arguments: args }, signal && { signal });
     assert.ok(!response.isError, response.content[0].text);
     return JSON.parse(response.content[0].text);
   };
@@ -404,8 +404,9 @@ await scenario('MCP stdio: a cancelled jevway_task stops acting (session continu
 
 await chrome.close();
 
-await scenario('MCP stdio: tools list + jevway_task + jevway_end', async () => {
-  const client = new Client({ name: 'jevway-verify', version: '0.0.0' });
+await scenario('MCP stdio (2026-07-28): tools list + jevway_task + jevway_end', async () => {
+  // This client discovers the server instead of initializing; the cancel scenario above speaks the 2025 protocol.
+  const client = new Client({ name: 'jevway-verify', version: '0.0.0' }, { versionNegotiation: { mode: 'auto' } });
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,
@@ -415,6 +416,7 @@ await scenario('MCP stdio: tools list + jevway_task + jevway_end', async () => {
     }),
   );
   try {
+    assert.equal(client.getNegotiatedProtocolVersion(), '2026-07-28');
     const { tools } = await client.listTools();
     const names = tools.map((tool) => tool.name);
     assert.ok(['jevway_task', 'jevway_end', 'jevway_look'].every((name) => names.includes(name)), names.join(', '));
