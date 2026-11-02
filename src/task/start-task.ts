@@ -103,6 +103,9 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
   };
 };
 
+/** A connected browser and model client that starts tasks, looks at pages and starts journeys: what a session service drives. */
+export type Runner = ReturnType<typeof createRunner>;
+
 /** Throws before a page outside the host rules is opened. */
 const refuseOutside = (url: string, hosts: HostRules) => {
   const outside = outsideHosts(url, hosts);
