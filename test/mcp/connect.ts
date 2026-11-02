@@ -13,9 +13,23 @@ import { page } from '../fakes.ts';
 /** The bytes a fake task's end page captures as; an image block carries them base64. */
 export const END_PAGE = Buffer.from('end page jpeg');
 
-const JEV = { requests: 3, input_tokens: 7534, median_latency_ms: 284, screenshots: 0, model: 'jev-1.14.0', est_cost_usd: 0.000316 };
+const JEV = {
+  requests: 3,
+  input_tokens: 7534,
+  median_latency_ms: 284,
+  screenshots: 0,
+  model: 'jev-1.14.0',
+  est_cost_usd: 0.000316,
+};
 const STEPS = [
-  { operation: 'TYPE_TEXT', element: 'Where are you going?', value_key: 'city', page_changed: true, value_kept: true, confidence: 0.97 },
+  {
+    operation: 'TYPE_TEXT',
+    element: 'Where are you going?',
+    value_key: 'city',
+    page_changed: true,
+    value_kept: true,
+    confidence: 0.97,
+  },
   { operation: 'CLICK', element: 'Search', page_changed: true, confidence: 0.95 },
 ];
 
@@ -41,26 +55,41 @@ export const summaryFor = (status: TaskStatus): TaskSummary => {
         checks: [{ type: 'url_contains', text: 'Lisbon', pass: true, detail: base.url }],
       };
     case 'needs_input':
-      return { ...base, reason: 'No supplied value fits the field "Email"', stuck, missing: [{ label: 'Email', role: 'textbox', path: '/search' }] };
+      return {
+        ...base,
+        reason: 'No supplied value fits the field "Email"',
+        stuck,
+        missing: [{ label: 'Email', role: 'textbox', path: '/search' }],
+      };
     case 'needs_confirmation':
       return { ...base, reason: 'Clicking "Pay €412" looks irreversible (risk 0.92)', stuck };
     case 'uncertain':
       return { ...base, reason: 'Jev was unsure of the next step (confidence 0.21)', stuck };
     case 'blocked':
-      return { ...base, reason: 'The page is a sign-in screen', stuck, wall: { kind: 'sign_in', origin: 'https://stays.example' } };
+      return {
+        ...base,
+        reason: 'The page is a sign-in screen',
+        stuck,
+        wall: { kind: 'sign_in', origin: 'https://stays.example' },
+      };
     case 'step_budget':
       return { ...base, reason: 'The step budget (2 steps) ran out' };
   }
 };
 
 /** How one call of a fake task runs: what it tells the step listener and the summary it returns. */
-export type FakeRun = (context: { signal?: AbortSignal; onStep?: (step: any, n: number, url: string) => void }) => Promise<TaskSummary>;
+export type FakeRun = (context: {
+  signal?: AbortSignal;
+  onStep?: (step: any, n: number, url: string) => void;
+}) => Promise<TaskSummary>;
 
 /** Tells each step of the summary, then returns it. */
-export const runTo = (summary: TaskSummary): FakeRun => async ({ onStep }) => {
-  summary.steps.forEach((step, index) => onStep?.(step, index + 1, summary.url));
-  return summary;
-};
+export const runTo =
+  (summary: TaskSummary): FakeRun =>
+  async ({ onStep }) => {
+    summary.steps.forEach((step, index) => onStep?.(step, index + 1, summary.url));
+    return summary;
+  };
 
 /**
  * A runner whose tasks answer from a queue of runs (a `done` when it is empty) and leave a run folder's files and end
@@ -102,7 +131,9 @@ export const fakeRunner = () => {
         },
       };
     }),
-    look: vi.fn(async ({ url, tab }: { url?: string; tab?: string }) => page({ url: url ?? `http://fixture/${tab}`, text: 'Looked at' })),
+    look: vi.fn(async ({ url, tab }: { url?: string; tab?: string }) =>
+      page({ url: url ?? `http://fixture/${tab}`, text: 'Looked at' }),
+    ),
     startJourney: vi.fn(async (options: { outDir: string; startUrl: string }) => ({
       report: () => ({ screen: { id: 's01', url: options.startUrl } }),
       preview: async () => END_PAGE.toString('base64'),
@@ -140,7 +171,10 @@ export const connect = async ({
   versionNegotiation?: Negotiation;
 }) => {
   const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair();
-  serveStdio(createMcpServer({ service, version: '9.9.9', env }), { transport: serverEnd, onerror: (error) => console.error(error) });
+  serveStdio(createMcpServer({ service, version: '9.9.9', env }), {
+    transport: serverEnd,
+    onerror: (error) => console.error(error),
+  });
   const client = new Client({ name: 'test', version: '0.0.0' }, { versionNegotiation });
   await client.connect(clientEnd);
   return client;

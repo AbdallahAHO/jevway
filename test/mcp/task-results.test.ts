@@ -18,7 +18,10 @@ const setUp = async (env: Record<string, string> = {}) => {
   const client = await connect({ ...fake, env });
   await client.listTools();
   const task = async (args: Record<string, unknown>, options?: Parameters<Client['callTool']>[1]) =>
-    (await client.callTool({ name: 'jevway_task', arguments: { goal: 'Find stays in Lisbon', ...args } }, options)) as any;
+    (await client.callTool(
+      { name: 'jevway_task', arguments: { goal: 'Find stays in Lisbon', ...args } },
+      options,
+    )) as any;
   return { ...fake, client, task };
 };
 
@@ -27,41 +30,59 @@ const imagesOf = (result: any) => result.content.filter((block: any) => block.ty
 const linksOf = (result: any) => result.content.filter((block: any) => block.type === 'resource_link');
 
 describe('jevway_task results', () => {
-  it.each(STATUSES)('a %s result is one JSON object in both the text block and structuredContent, leading with status, reason, story and next', async (status) => {
-    const { task, runs } = await setUp();
-    runs.push(runTo(summaryFor(status)));
-    const result = await task({ url: 'http://fixture/stays' });
+  it.each(STATUSES)(
+    'a %s result is one JSON object in both the text block and structuredContent, leading with status, reason, story and next',
+    async (status) => {
+      const { task, runs } = await setUp();
+      runs.push(runTo(summaryFor(status)));
+      const result = await task({ url: 'http://fixture/stays' });
 
-    expect(result.isError).toBeFalsy();
-    expect(result.content[0].type).toBe('text');
-    expect(JSON.parse(result.content[0].text)).toEqual(result.structuredContent);
-    const out = result.structuredContent;
-    expect(Object.keys(out).slice(0, 5)).toEqual(['status', 'reason', 'story', 'next', 'session']);
-    expect(Object.keys(out).at(-1)).toBe('page_text');
-    expect(out).toMatchObject({
-      status,
-      story: ['Typed the "city" value into "Where are you going?".', 'Clicked "Search".'],
-      next: expect.any(String),
-      files: { run_dir: expect.stringContaining('.jevway/runs/'), manifest: expect.stringMatching(/manifest\.json$/) },
-    });
-    expect(out).not.toHaveProperty('steps');
-    expect(out).not.toHaveProperty('jev');
-  });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].type).toBe('text');
+      expect(JSON.parse(result.content[0].text)).toEqual(result.structuredContent);
+      const out = result.structuredContent;
+      expect(Object.keys(out).slice(0, 5)).toEqual(['status', 'reason', 'story', 'next', 'session']);
+      expect(Object.keys(out).at(-1)).toBe('page_text');
+      expect(out).toMatchObject({
+        status,
+        story: ['Typed the "city" value into "Where are you going?".', 'Clicked "Search".'],
+        next: expect.any(String),
+        files: {
+          run_dir: expect.stringContaining('.jevway/runs/'),
+          manifest: expect.stringMatching(/manifest\.json$/),
+        },
+      });
+      expect(out).not.toHaveProperty('steps');
+      expect(out).not.toHaveProperty('jev');
+    },
+  );
 
-  it.each(STATUSES)('a %s result with detail "full" adds the raw steps, Jev stats and the stuck candidates', async (status) => {
-    const { task, runs } = await setUp();
-    runs.push(runTo(summaryFor(status)));
-    const result = await task({ url: 'http://fixture/stays', detail: 'full' });
-    expect(result.isError).toBeFalsy();
-    expect(result.structuredContent).toMatchObject({ status, steps: [{ confidence: 0.97 }, { confidence: 0.95 }], jev: { requests: 3 } });
-    if (status !== 'done' && status !== 'step_budget') expect(result.structuredContent.stuck).toBeDefined();
-  });
+  it.each(STATUSES)(
+    'a %s result with detail "full" adds the raw steps, Jev stats and the stuck candidates',
+    async (status) => {
+      const { task, runs } = await setUp();
+      runs.push(runTo(summaryFor(status)));
+      const result = await task({ url: 'http://fixture/stays', detail: 'full' });
+      expect(result.isError).toBeFalsy();
+      expect(result.structuredContent).toMatchObject({
+        status,
+        steps: [{ confidence: 0.97 }, { confidence: 0.95 }],
+        jev: { requests: 3 },
+      });
+      if (status !== 'done' && status !== 'step_budget') expect(result.structuredContent.stuck).toBeDefined();
+    },
+  );
 
   it('carries what each hand-back needs: missing fields, the wall, the checks and evidence', async () => {
     const { task, runs } = await setUp();
     runs.push(runTo(summaryFor('needs_input')), runTo(summaryFor('blocked')), runTo(summaryFor('done')));
-    expect((await task({ url: 'http://fixture/stays' })).structuredContent.missing).toEqual([{ label: 'Email', role: 'textbox', path: '/search' }]);
-    expect((await task({ url: 'http://fixture/stays' })).structuredContent.wall).toEqual({ kind: 'sign_in', origin: 'https://stays.example' });
+    expect((await task({ url: 'http://fixture/stays' })).structuredContent.missing).toEqual([
+      { label: 'Email', role: 'textbox', path: '/search' },
+    ]);
+    expect((await task({ url: 'http://fixture/stays' })).structuredContent.wall).toEqual({
+      kind: 'sign_in',
+      origin: 'https://stays.example',
+    });
     const done = (await task({ url: 'http://fixture/stays' })).structuredContent;
     expect(done.evidence).toMatchObject({ quote: 'Stays in Lisbon' });
     expect(done.checks).toEqual([expect.objectContaining({ type: 'url_contains', pass: true })]);
@@ -72,9 +93,21 @@ describe('jevway_task results', () => {
     const result = await task({ url: 'http://fixture/stays' });
     const runDir = result.structuredContent.files.run_dir;
     expect(linksOf(result)).toEqual([
-      expect.objectContaining({ uri: pathToFileURL(join(runDir, 'final.jpg')).href, name: 'final.jpg', mimeType: 'image/jpeg' }),
-      expect.objectContaining({ uri: pathToFileURL(join(runDir, 'summary.json')).href, name: 'summary.json', mimeType: 'application/json' }),
-      expect.objectContaining({ uri: pathToFileURL(join(runDir, 'manifest.json')).href, name: 'manifest.json', mimeType: 'application/json' }),
+      expect.objectContaining({
+        uri: pathToFileURL(join(runDir, 'final.jpg')).href,
+        name: 'final.jpg',
+        mimeType: 'image/jpeg',
+      }),
+      expect.objectContaining({
+        uri: pathToFileURL(join(runDir, 'summary.json')).href,
+        name: 'summary.json',
+        mimeType: 'application/json',
+      }),
+      expect.objectContaining({
+        uri: pathToFileURL(join(runDir, 'manifest.json')).href,
+        name: 'manifest.json',
+        mimeType: 'application/json',
+      }),
     ]);
     for (const link of linksOf(result)) expect(link.description).toEqual(expect.any(String));
   });
@@ -83,7 +116,13 @@ describe('jevway_task results', () => {
     const { task, started } = await setUp();
     const result = await task({ url: 'http://fixture/stays', record: true });
     expect(started[0].output).toMatchObject({ record: true, dir: result.structuredContent.files.run_dir });
-    expect(linksOf(result).map((link: any) => link.name)).toEqual(['final.jpg', 'index.html', 'run.mp4', 'summary.json', 'manifest.json']);
+    expect(linksOf(result).map((link: any) => link.name)).toEqual([
+      'final.jpg',
+      'index.html',
+      'run.mp4',
+      'summary.json',
+      'manifest.json',
+    ]);
     expect(linksOf(result).find((link: any) => link.name === 'run.mp4').mimeType).toBe('video/mp4');
   });
 
@@ -103,14 +142,22 @@ describe('the end page inline (JEVWAY_IMAGE_RESPONSES)', () => {
     return imagesOf(await task({ url: 'http://fixture/stays', ...args }));
   };
 
-  it.each(HAND_BACKS)('auto (the default) attaches it on a %s hand-back, where the agent decides next', async (status) => {
-    expect(await imageCase({}, status)).toEqual([{ type: 'image', data: END_PAGE.toString('base64'), mimeType: 'image/jpeg' }]);
-  });
+  it.each(HAND_BACKS)(
+    'auto (the default) attaches it on a %s hand-back, where the agent decides next',
+    async (status) => {
+      expect(await imageCase({}, status)).toEqual([
+        { type: 'image', data: END_PAGE.toString('base64'), mimeType: 'image/jpeg' },
+      ]);
+    },
+  );
 
-  it.each(['done', 'step_budget'] as TaskStatus[])('auto leaves it out on %s unless the call asks with screenshot: true', async (status) => {
-    expect(await imageCase({}, status)).toEqual([]);
-    expect(await imageCase({}, status, { screenshot: true })).toHaveLength(1);
-  });
+  it.each(['done', 'step_budget'] as TaskStatus[])(
+    'auto leaves it out on %s unless the call asks with screenshot: true',
+    async (status) => {
+      expect(await imageCase({}, status)).toEqual([]);
+      expect(await imageCase({}, status, { screenshot: true })).toHaveLength(1);
+    },
+  );
 
   it('always attaches it on every status', async () => {
     expect(await imageCase({ JEVWAY_IMAGE_RESPONSES: 'always' }, 'done')).toHaveLength(1);
@@ -138,7 +185,10 @@ describe('progress while a call runs', () => {
   it('sends one notification per step, in order, with the step as a sentence and max_steps as the total, before the result', async () => {
     const { task } = await setUp();
     const heard: { progress: number; total?: number; message?: string }[] = [];
-    const result = await task({ url: 'http://fixture/stays', max_steps: 5 }, { onprogress: (progress) => heard.push(progress) });
+    const result = await task(
+      { url: 'http://fixture/stays', max_steps: 5 },
+      { onprogress: (progress) => heard.push(progress) },
+    );
     expect(result.isError).toBeFalsy();
     expect(heard).toEqual([
       { progress: 1, total: 5, message: 'Step 1: Typed the "city" value into "Where are you going?".' },
@@ -177,7 +227,9 @@ describe('continuing and ending a session', () => {
     runs.push(async (context) => {
       signal = context.signal;
       events.push('start cancelled');
-      await new Promise((resolve) => context.signal?.addEventListener('abort', () => setTimeout(resolve, 100), { once: true }));
+      await new Promise((resolve) =>
+        context.signal?.addEventListener('abort', () => setTimeout(resolve, 100), { once: true }),
+      );
       events.push('end cancelled');
       return { ...summaryFor('blocked'), reason: 'Cancelled by the caller' };
     });
@@ -207,12 +259,17 @@ describe('errors that say what to do', () => {
     const { client } = await setUp();
     const result: any = await client.callTool({ name, arguments: args });
     expect(result.isError).toBe(true);
-    expect(textOf(result)).toContain(`Unknown session "${UNKNOWN}". Sessions end when the server restarts; start a new one with \`url\` (or \`tab\`).`);
+    expect(textOf(result)).toContain(
+      `Unknown session "${UNKNOWN}". Sessions end when the server restarts; start a new one with \`url\` (or \`tab\`).`,
+    );
   });
 
   it('an unknown journey says to start a new one', async () => {
     const { client } = await setUp();
-    const result: any = await client.callTool({ name: 'jevway_journey_step', arguments: { journey: UNKNOWN, next: 1 } });
+    const result: any = await client.callTool({
+      name: 'jevway_journey_step',
+      arguments: { journey: UNKNOWN, next: 1 },
+    });
     expect(result.isError).toBe(true);
     expect(textOf(result)).toContain(`Unknown journey "${UNKNOWN}"`);
   });
@@ -240,7 +297,10 @@ describe('errors that say what to do', () => {
     const noGoal: any = await client.callTool({ name: 'jevway_task', arguments: { url: 'http://fixture/' } });
     expect(noGoal.isError).toBe(true);
     expect(textOf(noGoal)).toMatch(/goal.*e\.g\./s);
-    const badValues: any = await client.callTool({ name: 'jevway_task', arguments: { goal: 'Open', url: 'http://fixture/', values: { guests: 2 } } });
+    const badValues: any = await client.callTool({
+      name: 'jevway_task',
+      arguments: { goal: 'Open', url: 'http://fixture/', values: { guests: 2 } },
+    });
     expect(badValues.isError).toBe(true);
     expect(textOf(badValues)).toMatch(/values.*\{"city":"Lisbon"\}/s);
   });
@@ -252,7 +312,12 @@ describe('jevway_look', () => {
     const result: any = await client.callTool({ name: 'jevway_look', arguments: { url: 'http://fixture/stays' } });
     expect(result.isError).toBeFalsy();
     expect(JSON.parse(result.content[0].text)).toEqual(result.structuredContent);
-    expect(result.structuredContent).toMatchObject({ url: 'http://fixture/stays', title: 'Staylist', page_text: 'Looked at', elements: expect.any(Array) });
+    expect(result.structuredContent).toMatchObject({
+      url: 'http://fixture/stays',
+      title: 'Staylist',
+      page_text: 'Looked at',
+      elements: expect.any(Array),
+    });
   });
 
   it('asks for exactly one of session, tab or url, with an example', async () => {
@@ -274,11 +339,18 @@ describe('journey replies', () => {
 
     const stepped: any = await client.callTool({ name: 'jevway_journey_step', arguments: { journey, next: 1 } });
     expect(stepped.content[1].type).toBe('image');
-    const annotated: any = await client.callTool({ name: 'jevway_journey_annotate', arguments: { journey, screen: 's02', description: 'Results' } });
+    const annotated: any = await client.callTool({
+      name: 'jevway_journey_annotate',
+      arguments: { journey, screen: 's02', description: 'Results' },
+    });
     expect(annotated.isError).toBeFalsy();
 
     const finished: any = await client.callTool({ name: 'jevway_journey_finish', arguments: { journey } });
-    expect(finished.structuredContent).toMatchObject({ screens: 3, viewer: expect.stringMatching(/index\.html$/), flows: [{ name: 'Explore' }] });
+    expect(finished.structuredContent).toMatchObject({
+      screens: 3,
+      viewer: expect.stringMatching(/index\.html$/),
+      flows: [{ name: 'Explore' }],
+    });
     expect(linksOf(finished).map((link: any) => link.name)).toEqual(['index.html', 'journey.json', 'manifest.json']);
   });
 });

@@ -5,7 +5,13 @@ import { connect, fakeService } from './connect.ts';
 // instructions on both protocol eras, and a tool list small enough to load on every turn.
 
 const TASK_TOOLS = ['jevway_task', 'jevway_look', 'jevway_end'];
-const JOURNEY_TOOLS = ['jevway_journey_start', 'jevway_journey_step', 'jevway_journey_autopilot', 'jevway_journey_annotate', 'jevway_journey_finish'];
+const JOURNEY_TOOLS = [
+  'jevway_journey_start',
+  'jevway_journey_step',
+  'jevway_journey_autopilot',
+  'jevway_journey_annotate',
+  'jevway_journey_finish',
+];
 
 const expectedHints = {
   jevway_task: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -30,7 +36,13 @@ const expectedInputs = {
   jevway_journey_finish: 'journey! keep_tab',
 };
 
-type ListedTool = { name: string; description?: string; annotations?: object; inputSchema: { properties?: object; required?: string[] }; outputSchema?: object };
+type ListedTool = {
+  name: string;
+  description?: string;
+  annotations?: object;
+  inputSchema: { properties?: object; required?: string[] };
+  outputSchema?: object;
+};
 
 const inputsOf = ({ inputSchema }: ListedTool) =>
   Object.keys(inputSchema.properties ?? {})
@@ -47,7 +59,7 @@ const objectSchemas = (schema: unknown): Record<string, unknown>[] => {
 
 /** What a client pays to load the tool list, as tokens ≈ characters / 4 of what tools/list sends. */
 const tokensOf = (value: unknown) => Math.round(JSON.stringify(value).length / 4);
-// Measured with this server's tools/list (was 4,515 before plan 116, without output schemas).
+// Measured 2,490 with output schemas (4,515 before plan 116, without them).
 const TOOL_LIST_TOKEN_CEILING = 2_500;
 
 afterEach(() => vi.restoreAllMocks());
@@ -80,7 +92,8 @@ describe('tools/list', () => {
     const task = tools.find((tool) => tool.name === 'jevway_task')!.outputSchema as any;
     expect(task.required).toEqual(expect.arrayContaining(['status', 'reason', 'story', 'next', 'session']));
     for (const tool of tools) {
-      for (const schema of objectSchemas(tool.outputSchema)) expect(schema.additionalProperties, tool.name).not.toBe(false);
+      for (const schema of objectSchemas(tool.outputSchema))
+        expect(schema.additionalProperties, tool.name).not.toBe(false);
     }
   });
 
@@ -124,7 +137,16 @@ describe('server instructions', () => {
     const instructions = (await connect(fakeService())).getInstructions()!;
     expect(instructions.length).toBeLessThanOrEqual(1500);
     expect(instructions.slice(0, 200)).toMatch(/browser goal/i);
-    for (const words of ['jevway_task', 'chrome-devtools', '`session`', 'confirm_irreversible', './.jevway/', 'jevway_look', 'untrusted', 'jevway_journey_']) {
+    for (const words of [
+      'jevway_task',
+      'chrome-devtools',
+      '`session`',
+      'confirm_irreversible',
+      './.jevway/',
+      'jevway_look',
+      'untrusted',
+      'jevway_journey_',
+    ]) {
       expect(instructions, words).toContain(words);
     }
   });
@@ -144,7 +166,10 @@ describe('a 2026-07-28 client (no initialize, the protocol version on every requ
     expect(modern.getServerVersion()).toMatchObject({ name: 'jevway', version: '9.9.9' });
     const { tools } = await modern.listTools();
     expect(Object.fromEntries(tools.map((tool) => [tool.name, inputsOf(tool as ListedTool)]))).toEqual(expectedInputs);
-    const result: any = await modern.callTool({ name: 'jevway_task', arguments: { goal: 'Open', url: 'http://fixture/' } });
+    const result: any = await modern.callTool({
+      name: 'jevway_task',
+      arguments: { goal: 'Open', url: 'http://fixture/' },
+    });
     expect(result.isError).toBeFalsy();
     expect(result.structuredContent).toMatchObject({ status: 'done', session: expect.any(String) });
   });
