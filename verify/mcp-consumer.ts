@@ -64,7 +64,6 @@ check('server instructions are present and under 4,096 chars', instructions.leng
 const { tools } = await client.listTools();
 check('10 tools in a fixed order', tools.map((t) => t.name).join(',') === 'jevway_task,jevway_look,jevway_end,jevway_journey_start,jevway_journey_step,jevway_journey_autopilot,jevway_journey_annotate,jevway_journey_finish,jevway_inbox_create,jevway_inbox_wait', tools.map((t) => t.name));
 const listTokens = Math.round(JSON.stringify(tools).length / 4);
-// 2,600 before the two inbox tools (plan 123: +305).
 check('tool list ≤ 2,960 tokens', listTokens <= 2960, listTokens);
 check('jevway_task declares an output schema', Boolean(tools.find((t) => t.name === 'jevway_task')?.outputSchema));
 

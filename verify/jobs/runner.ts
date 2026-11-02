@@ -158,7 +158,7 @@ export interface RunJobsOptions {
   before?: (tab: Tab, job: Job) => Promise<void>;
   /** Puts the app back in its seeded state before each run (write suites). A throw aborts the whole suite, like `before`. */
   reset?: (job: Job, run: number) => Promise<void>;
-  /** The caller's checks (plan 099) to pass with a job's calls, by job id: what a calling agent would check. Judging is unchanged. */
+  /** The caller's checks to pass with a job's calls, by job id: what a calling agent would check. Judging is unchanged. */
   checks?: Record<string, Check[]>;
 }
 

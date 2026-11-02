@@ -2,8 +2,7 @@
 
 What other open-source projects that put Jev behind a browser do, and which of their ideas jevway should take.
 This is a dated review of ten repositories, read at the commits below; each idea was checked against jevway's own
-code at `4c7f34d`. The candidate plans that come out of it are listed in
-[plans/README.md](../plans/README.md#backlog-from-the-prior-art-review-2026-11-01).
+code at `4c7f34d`. [Status](#status) says which ideas have landed since.
 
 ## Sources
 
@@ -37,12 +36,12 @@ DOM changes and `screenshot --if-changed` (v0.38).
 
 ## Status
 
-As of 0.1.2 (2026-11-02). Plan numbers refer to [plans/README.md](../plans/README.md).
+As of 0.4.0.
 
 | State | Ideas |
 | --- | --- |
-| Landed | [S1](#s1) (plan 088), [S2](#s2) (089), [S3](#s3) (090), [S4](#s4) and [K3](#k3) (091), [S5](#s5) (092), [K7](#k7) (093), [V1](#v1) (094), [C1](#c1) (095), [C2](#c2) (096), [C3](#c3) (097), [C4](#c4) (098), [K1](#k1) (099), [K2](#k2) (100), [K6](#k6) (101), [J2](#j2) (103), [J3](#j3) (105, recorded in traces only), [K5](#k5) (107), [V3](#v3) (111), [D1](#d1) to [D4](#d4) (113; published to npm as `jevway`), [D5](#d5) (the skill's "Before calling again") |
-| Rejected after measuring | [J1](#j1) (102: no measured gain), [J4](#j4) (104: no gain, 1.5–6.7% more input tokens) |
+| Landed | [S1](#s1), [S2](#s2), [S3](#s3), [S4](#s4), [K3](#k3), [S5](#s5), [K7](#k7), [V1](#v1), [C1](#c1), [C2](#c2), [C3](#c3), [C4](#c4), [K1](#k1), [K2](#k2), [K6](#k6), [J2](#j2), [J3](#j3) (recorded in traces only), [K5](#k5), [V3](#v3), [D1](#d1) to [D4](#d4) (published to npm as `jevway`), [D5](#d5) (the skill's "Before calling again") |
+| Rejected after measuring | [J1](#j1) (no measured gain), [J4](#j4) (no gain, 1.5–6.7% more input tokens) |
 | Open | [V2](#v2), [S6](#s6), [S7](#s7), [S8](#s8), [J5](#j5), [K4](#k4), [D6](#d6), [L1](#l1), [L2](#l2) |
 
 ## How to read the entries
@@ -132,7 +131,7 @@ As of 0.1.2 (2026-11-02). Plan numbers refer to [plans/README.md](../plans/READM
   `server/browser_tools.py:446-451`; wingman `src/core/page-scripts.ts:406-460` (with decoy fixtures). fastbrowse asks
   Jev instead (`crates/fastbrowse-agent/src/policy.rs:755-771`).
 - **Today**: only the harness detects walls (`verify/real-world.ts`), and its whole-body regex misread Hacker News
-  comments as a wall (plans/LOG.md, 2026-10-18). The run spends its steps before stopping.
+  comments as a wall (2026-10-18). The run spends its steps before stopping.
 - **Invariants**: none if reported as a `blocked` reason; keep the status set, which every suite matches on. Leave
   sign-in pages out (see [J2](#j2)): a hard login stop would break `verify:signup`.
 - **Jev request**: no (the DOM rule, not fastbrowse's questions). **Value**: high. **Effort**: ~3 h plus fixtures.
@@ -361,7 +360,7 @@ Vikunja.
   report cold and warm prompt-cache runs apart, cost with cache writes priced at the read rate, and Jev's spend added to
   the agent's. Hash the run config and refuse a baseline from a different one.
 - **Seen in**: wingman `README.md:9-17`, `:277-287`, `bench/run.ts:870-875`, `bench/CLAUDE.md`.
-- **Today**: `verify/agent.ts` records `total_cost_usd` only.
+- **Today**: `verify/agent/agent.ts` records `total_cost_usd` only.
 - **Value**: high (the number that says whether jevway pays off). **Effort**: 1 day.
 
 <a id="v3"></a>
@@ -470,7 +469,7 @@ Vikunja.
 | Tab groups | MaciejWiatr, nexibeo | Cosmetic, needs an extension |
 | WebMCP page tools | Ying-Kai-Liao `src/webmcp.mjs` | Page JavaScript skips the input-delivery check; the consent rule checks page text, not what a tool does; their shim fakes `modelContext` |
 | Jev decides whether to accept a confirm dialog | Ying-Kai-Liao `src/session.mjs:665-677` | Weaker than ours: OK only for the confirmed click's own dialog naming the target |
-| Auto-click a close control on a covering overlay | Ying-Kai-Liao `src/page-model.mjs:15-24` | Escape, the outside press and naming the covering layer's controls (plan 087) cover it without clicking on our own |
+| Auto-click a close control on a covering overlay | Ying-Kai-Liao `src/page-model.mjs:15-24` | Escape, the outside press and naming the covering layer's controls cover it without clicking on our own |
 | Wait for network idle | Ying-Kai-Liao `src/session.mjs:187-198` | Slower than the placeholder and change waits |
 | Two-stage selection on big pages | Ying-Kai-Liao `src/session.mjs:412-430`; fastbrowse `docs/jev.md:143-159` | On-screen listing keeps us far under the option limit |
 | `likely_done` bands, "needs verification" results | Ying-Kai-Liao `src/session.mjs:705-724`; wy-coliney | `done_when` plus the screenshot look already gate done |

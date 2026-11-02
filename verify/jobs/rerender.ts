@@ -98,7 +98,7 @@ export const renderFolder = (dir: string) => {
 };
 
 /**
- * Rebuilds a folder's page in place and returns its path. A run folder recorded before plan 115 also gets the
+ * Rebuilds a folder's page in place and returns its path. A run folder recorded before manifests existed also gets the
  * `manifest.json` its page links.
  *
  * @example

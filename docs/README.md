@@ -12,6 +12,3 @@
 | compare it with other Jev browser projects | [prior-art.md](prior-art.md) |
 | build, test or release it | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | report a security issue | [SECURITY.md](../SECURITY.md) |
-
-[plans/](../plans/README.md) holds the numbered work plans behind each change and the release gates. It's the project's
-history, not a specification: where a plan and these docs disagree, the docs and the code are current.

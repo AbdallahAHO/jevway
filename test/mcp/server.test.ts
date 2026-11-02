@@ -64,8 +64,7 @@ const objectSchemas = (schema: unknown): Record<string, unknown>[] => {
 
 /** What a client pays to load the tool list, as tokens ≈ characters / 4 of what tools/list sends. */
 const tokensOf = (value: unknown) => Math.round(JSON.stringify(value).length / 4);
-// Measured 2,957 with output schemas: 2,490 after plan 116 (4,515 before), then round 14's totp, wait_for_person_seconds,
-// look pdf, ask_user and the two inbox tools (+305, on by default by the owner's choice).
+// Measured 2,957 with output schemas.
 const TOOL_LIST_TOKEN_CEILING = 2_960;
 
 afterEach(() => vi.restoreAllMocks());
@@ -141,7 +140,6 @@ describe('server instructions', () => {
 
   it('say what jevway is for first, then the session pattern, consent, ask_user, files and the no-model look, in at most 1,610 characters', async () => {
     const instructions = (await connect(fakeService())).getInstructions()!;
-    // 1,429 measured before plan 123's inbox line (+130).
     expect(instructions.length).toBeLessThanOrEqual(1610);
     expect(instructions.slice(0, 200)).toMatch(/browser goal/i);
     for (const words of [

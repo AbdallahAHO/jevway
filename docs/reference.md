@@ -543,8 +543,8 @@ Every tool carries MCP annotations for clients that ask before a call:
 - **Errors say what to do.** Every failure is an `isError` result naming the fix: a missing key names
   `~/.config/jevway/env` and `jevway doctor`; a `jevway_task` with none of `url`, `tab` and `session` lists them with an
   example call; a schema error names the field with an example (`values holds text only, e.g. {"city":"Lisbon"}`).
-- **Tasks** (the 2026-07-28 long-running call extension) are not served yet: the SDK does not implement them
-  (plan 120). Progress notifications keep a client's idle timeout from firing during a long run.
+- **Tasks** (the 2026-07-28 long-running call extension) are not served yet: the MCP SDK jevway builds on does not
+  implement them. Progress notifications keep a client's idle timeout from firing during a long run.
 
 ## CLI
 

@@ -127,7 +127,7 @@ export type ModelName = keyof typeof MODELS;
  */
 const INPUT_USD_PER_MILLION = new Map<string, number>([
   // Jev's published rate, input $0.042 per 1M tokens and output free, as written for jev-1.12 in jkudish/jev-browser
-  // src/lib.ts:207 (docs/prior-art.md K5); plans 100 and 102 priced runs at it. Applied to 1.14 as an estimate, not billing.
+  // src/lib.ts:207 (docs/prior-art.md K5). Applied to 1.14 as an estimate, not billing.
   // Jev through OpenRouter (typesafe/jev-1.14) gets the same rate: OpenRouter passes a provider's price through, but
   // any margin it adds is unchecked, so this is an estimate too.
   ['jev-1.14.0', 0.042],

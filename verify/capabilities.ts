@@ -143,7 +143,7 @@ const TASKS: CapabilityTask[] = [
     doneWhen: 'The embedded profile form says "Saved: Ada".',
     expect: ['done'],
     passes: `window.__fixture.saved === 'Ada'`,
-    gap: 'plan 098',
+    gap: 'frame reading',
     solve: `new Promise((resolve) => {
       const frame = document.querySelector('iframe').contentDocument;
       frame.getElementById('display-name').value = 'Ada';
@@ -160,7 +160,7 @@ const TASKS: CapabilityTask[] = [
     doneWhen: 'The embedded profile form says "Saved: Ada".',
     expect: ['done'],
     passes: `window.__fixture.saved === 'Ada'`,
-    gap: 'plan 098',
+    gap: 'frame reading',
     solve: `new Promise((resolve) => { window.postMessage({ saved: 'Ada' }, '*'); setTimeout(resolve, 50); })`,
   },
   {

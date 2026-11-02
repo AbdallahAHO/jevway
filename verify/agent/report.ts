@@ -65,7 +65,7 @@ export interface Totals {
   confirmCalls: number;
   /** ...of which jevway honoured, took but did not use (handed back on a different control), or ignored (a flag outside a first call or an answer is a no-op). */
   confirmCallsHonoured: number;
-  /** Absent in a results.json saved before plan 110, whose ignored count also held these. */
+  /** Absent in a results.json saved before not-used calls were counted apart, whose ignored count also held these. */
   confirmCallsNotUsed?: number;
   confirmCallsIgnored: number;
   confirmsWithoutTarget: number;

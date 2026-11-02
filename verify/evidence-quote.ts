@@ -1,5 +1,5 @@
 /**
- * How the fixture suite judges a done's evidence quote (plan 100). The 0.6 bar makes a quote rare, so a done without one
+ * How the fixture suite judges a done's evidence quote. The 0.6 bar makes a quote rare, so a done without one
  * is only reported; a quote that is given must be the final page's own text, word for word (spacing aside), or it fails.
  *
  * @example

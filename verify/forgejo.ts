@@ -222,7 +222,7 @@ if (!(await stackIsUp())) {
   process.exit(1);
 }
 
-// JEVWAY_FORGEJO_CHECKS=1: pass the caller's checks (plan 099) where a job's own ground truth shows on its final page, as a
+// JEVWAY_FORGEJO_CHECKS=1: pass the caller's checks where a job's own ground truth shows on its final page, as a
 // calling agent would. The jobs and their judging stay as they are. Left out: description and wiki-off (they end on the
 // repository page or its settings, which show the change differently), protect-main (the rule's page doesn't name it as
 // saved), and the jobs that must hand back (checks never change a hand-back).

@@ -179,7 +179,7 @@ const SEEN_LINES_PER_PATH = 4000;
 
 const DEFAULTS = {
   maxSteps: 40,
-  // 5× the longest call measured over every verify run to 2026-10-18 (59.6 s of 26 164): a backstop, never a pace (plan 088).
+  // 5× the longest call measured over every verify run to 2026-10-18 (59.6 s of 26 164): a backstop, never a pace.
   maxSeconds: 300,
   minConfidence: 0.3,
   screenshots: 'off' as ScreenshotMode,
@@ -239,7 +239,7 @@ const COVERED_OVERLAP_BELOW = 0.1;
 const DONE_EVIDENT = 0.9;
 // The last look before a loop guard hands back accepts the goal as met at this done check: the same bar a DONE needs.
 const LAST_LOOK_DONE = 0.5;
-// Jev's page-error and sign-in-wall answers end the run from these scores, set from recorded runs (plans/103): real
+// Jev's page-error and sign-in-wall answers end the run from these scores, set from recorded runs: real
 // rejections scored 0.98–1.00 and no other page above 0.75; sign-in walls 0.70–0.98 and no other page above 0.21.
 const PAGE_ERROR_STOP = 0.8;
 const SIGN_IN_WALL_STOP = 0.7;
@@ -247,7 +247,7 @@ const SIGN_IN_WALL_STOP = 0.7;
 const HEAD_DISAGREES = 0.6;
 // The screenshot look confirms the spike at the same bar a DONE needs.
 const SPIKE_CONFIRMED = LAST_LOOK_DONE;
-// An evidence span Jev chose less surely than this is no quote. Measured (plan 100): right spans scored 0.67–0.96 in runs,
+// An evidence span Jev chose less surely than this is no quote. Measured: right spans scored 0.67–0.96 in runs,
 // Wikipedia's "Edit" 0.57, and unsure picks ("| comments", "10 results returned.") 0.30–0.44.
 const EVIDENCE_SURE = 0.6;
 // Enter is offered only after typing into a search or filter field (a filtered list often updates only on Enter); elsewhere it could submit a form.

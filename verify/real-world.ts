@@ -136,7 +136,7 @@ interface RunResult {
   botWall?: string;
   url: string;
   summary?: Partial<TaskSummary>;
-  /** A done's quote (plan 100), whether the page's own text holds it, and what the extra request cost. */
+  /** A done's quote, whether the page's own text holds it, and what the extra request cost. */
   evidence?: EvidenceCheck;
   error?: string;
 }

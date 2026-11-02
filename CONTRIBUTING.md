@@ -42,7 +42,6 @@ For anything that calls Jev, copy `.env.example` to `.env` and add `TYPESAFE_API
 | `verify/` | live suites against fixtures, real apps in Docker (`verify/apps/`), and public sites; the shared jobs runner (`verify/jobs/`) and the agent suite (`verify/agent/`) |
 | `skill/jevway/` | the skill agents load |
 | `release/` | the release scripts |
-| `plans/` | the maintainer's numbered work plans and their results; history, not specs |
 
 [docs/how-it-works.md](docs/how-it-works.md) explains how the pieces fit. [AGENTS.md](AGENTS.md) holds the rules the
 code must keep, in short form; read its "Invariants" before changing the loop, the reader or what Jev is asked.

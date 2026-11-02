@@ -155,7 +155,7 @@ await runJobs({
   },
   // The shop keeps the sign-in in a cookie, which the runner's per-run storage clearing leaves alone: drop it, then set it again.
   // Only the locked-out run signs in on the login page; for the others that page's move to the product list can leave the
-  // tab dropping CDP input (plan 048), and a calling agent that signed in hands over a signed-in shop anyway.
+  // tab dropping CDP input, and a calling agent that signed in hands over a signed-in shop anyway.
   before: async (tab) => {
     await tab.evaluate("document.cookie = 'session-username=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'");
     const account = ACCOUNT_BY_JOB[jobInRun] ?? SHOPPER_ACCOUNT;

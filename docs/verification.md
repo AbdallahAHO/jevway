@@ -9,7 +9,8 @@ can't fake (the fixture's own state, the app's API, the URL), never by the statu
 
 ## Latest results
 
-The release gates and their history live in [plans/README.md](../plans/README.md). The latest measurement of each:
+The gates a release is held to: each names a suite and the share of runs it must pass, judged against ground truth.
+A gate marked **not met** is a known shortfall. The latest measurement of each:
 
 | Gate | Suite | Target | Latest | Measured |
 | --- | --- | --- | --- | --- |

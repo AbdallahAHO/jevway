@@ -186,7 +186,7 @@ if (profile.box && screenshots !== 'off') {
   });
 }
 
-// The caller's checks (plan 099) confirm a done and overturn one the page doesn't show; the done's quote (plan 100) is the page's own text.
+// The caller's checks confirm a done and overturn one the page doesn't show; the done's quote is the page's own text.
 await scenario('fixture: caller checks confirm a done, and any quote it gives is on the page', async () => {
   const tab = await Tab.open(chrome.cdp, fixtureUrl);
   const options = {
