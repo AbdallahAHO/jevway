@@ -178,3 +178,12 @@ short loose object" came out as none.
   one with \`url\` (or \`tab\`).`), not a new MCP-only wording: one message shared with the CLI daemon, which adds its idle
   time.
 - `jevway_end`'s output schema declares `session` and `run_dir`; `ended: true` is sent but left undeclared (open object).
+- Progress `total` is the call's `max_steps` only when the call passes one, not the default 40: a step budget is a
+  ceiling, not the expected count, and a continued session's budget is not visible to the adapter. `started` and
+  `finished` send no progress (the result is the finish).
+- Journey tools declare no `outputSchema` (each would cost ~42 tokens for an id); they still send `structuredContent`.
+- Concise by default removes `steps` and `jev` from MCP results. Two readers outside this plan's files still read them:
+  `verify/run.ts` `brief()` prints `undefined` for the two MCP scenarios (cosmetic), and `verify/agent/report.ts:161`
+  counts `call.result?.steps?.length` as each call's actions. Their owners pass `detail: "full"` or count `story`.
+- The lead key order (`status, reason, story, next, session`, `page_text` last) lives in `src/mcp/results.ts`
+  `taskResult`, not in `presentSummary`; the CLI (plan 117) should move it into `present.ts` if it wants the same.
