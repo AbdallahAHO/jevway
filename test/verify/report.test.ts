@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { renderReport, wilson, type JobResult, type RunResult } from '../verify/jobs/report.ts';
-import { renderFolder, reportFromResults } from '../verify/jobs/rerender.ts';
-import { HASH_TARGET, SCRIPT } from '../verify/jobs/report-page.ts';
-import type { RecordedStep } from '../src/recording/recording.ts';
-import type { TaskStatus, TaskSummary } from '../src/task/run-task.ts';
+import { renderReport, wilson, type JobResult, type RunResult } from '../../verify/jobs/report.ts';
+import { renderFolder, reportFromResults } from '../../verify/jobs/rerender.ts';
+import { HASH_TARGET, SCRIPT } from '../../verify/jobs/report-page.ts';
+import type { RecordedStep } from '../../src/recording/recording.ts';
+import type { TaskStatus, TaskSummary } from '../../src/task/run-task.ts';
 
 // --- fixtures: a suite as the runner hands it over, and the recordings its run folders hold
 

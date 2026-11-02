@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { connectChrome, stopChrome } from '../src/browser/chrome.ts';
+import { connectChrome, stopChrome } from '../../src/browser/chrome.ts';
 
 const spawnNode = (script: string) => spawn(process.execPath, ['-e', script], { stdio: ['ignore', 'pipe', 'ignore'] });
 

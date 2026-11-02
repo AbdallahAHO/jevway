@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { estimateCostUsd, profileOptions, resolveModel } from '../src/jev/model.ts';
+import { estimateCostUsd, profileOptions, resolveModel } from '../../src/jev/model.ts';
 
 describe('the estimated cost of a run', () => {
   it("prices Jev's input tokens at its published rate, rounded to 6 decimals", () => {

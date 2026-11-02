@@ -7,8 +7,8 @@ import {
   mergeFrames,
   placeFrameActions,
   type FrameSnapshot,
-} from '../src/browser/frames.ts';
-import type { PageAction } from '../src/browser/tab.ts';
+} from '../../src/browser/frames.ts';
+import type { PageAction } from '../../src/browser/tab.ts';
 
 const click = (node: number, label: string, rect = { x: 10, y: 10, w: 80, h: 20 }): PageAction => ({
   id: `e${node}`,

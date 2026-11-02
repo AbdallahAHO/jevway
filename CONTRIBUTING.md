@@ -37,7 +37,7 @@ For anything that calls Jev, copy `.env.example` to `.env` and add `TYPESAFE_API
 | `src/journeys/` | the journey-map tools |
 | `src/setup/` | the env file and `jevway doctor` |
 | `src/mcp.ts`, `src/cli.ts` | the two entry points |
-| `test/` | offline tests (vitest) |
+| `test/` | offline tests (vitest), in folders that mirror the source folders |
 | `verify/` | live suites against fixtures, real apps in Docker (`verify/apps/`), and public sites; the shared jobs runner (`verify/jobs/`) and the agent suite (`verify/agent/`) |
 | `skill/jevway/` | the skill agents load |
 | `release/` | the release scripts |
@@ -67,7 +67,7 @@ rules, the report pages. It needs no key and no network, and must pass without o
 
 - Write the test first and watch it fail.
 - Test what a caller sees (a status, a reason, a summary field), not internals.
-- Use the fake tab and scripted Jev helpers in `test/jev-browse.test.ts` instead of a real browser where you can.
+- Use the fake tab and scripted Jev helpers in `test/fakes.ts` instead of a real browser where you can.
 
 ## Live suites
 

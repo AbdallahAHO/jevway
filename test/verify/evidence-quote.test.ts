@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { judgeQuote } from '../verify/evidence-quote.ts';
+import { judgeQuote } from '../../verify/evidence-quote.ts';
 
 const PAGE = 'Staylist\n2 stays in Lisbon\nfor 2 guest(s)\nCasa Flora · €206/night';
 

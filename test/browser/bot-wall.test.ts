@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectBotWall, findBotWall } from '../src/browser/bot-wall.ts';
+import { detectBotWall, findBotWall } from '../../src/browser/bot-wall.ts';
 
 // npm's challenge as headless Chrome saw it (verify/out/real-2026-10-18T08-24-16-820Z/npm-1.json).
 const NPM_CHALLENGE = {

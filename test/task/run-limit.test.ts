@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RunStopped, startRunLimit } from '../src/task/run-limit.ts';
+import { RunStopped, startRunLimit } from '../../src/task/run-limit.ts';
 
 describe('the run limit', () => {
   it('handles a request that fails after the run was already stopped, so it never surfaces as an unhandled rejection', async () => {

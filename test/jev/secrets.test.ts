@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scrubberFor, shownValues } from '../src/jev/secrets.ts';
+import { scrubberFor, shownValues } from '../../src/jev/secrets.ts';
 
 describe('scrubbing secret values', () => {
   it('replaces the value as typed, upper-cased and URL-encoded with its key\'s marker', () => {

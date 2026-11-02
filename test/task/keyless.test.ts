@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { connectChrome } from '../src/browser/chrome.ts';
-import { createRunner } from '../src/task/start-task.ts';
+import { connectChrome } from '../../src/browser/chrome.ts';
+import { createRunner } from '../../src/task/start-task.ts';
 
 // MCP clients start servers before people add a key. With none, the server must still list its tools and answer each
 // call with the fix, without starting or attaching a browser. Only stdio and the browser connection are faked.
@@ -22,14 +22,14 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', async () => {
   };
 });
 
-vi.mock('../src/browser/chrome.ts', () => ({
+vi.mock('../../src/browser/chrome.ts', () => ({
   connectChrome: vi.fn(async () => {
     throw new Error('no browser in this test');
   }),
 }));
 
 const client = new Client({ name: 'test', version: '0.0.0' });
-const packageVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+const packageVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
 
 beforeAll(async () => {
   vi.stubEnv('TYPESAFE_API_KEY', '');
@@ -39,7 +39,7 @@ beforeAll(async () => {
   vi.stubEnv('JEVWAY_BROWSER', 'launch-headless');
   // An empty config folder, so a real ~/.config/jevway/env on this machine is never read.
   vi.stubEnv('XDG_CONFIG_HOME', mkdtempSync(join(tmpdir(), 'jevway-cfg-')));
-  await import('../src/mcp.ts');
+  await import('../../src/mcp.ts');
   await client.connect(fakes.clientEnd!);
 });
 

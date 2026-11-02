@@ -1,6 +1,6 @@
 import { createServer, type Socket } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CdpConnection } from '../src/browser/cdp.ts';
+import { CdpConnection } from '../../src/browser/cdp.ts';
 
 /** Just enough of a WebSocket for the client: records what it sends and lets a test play the browser's side. */
 const fakeSocket = () => {

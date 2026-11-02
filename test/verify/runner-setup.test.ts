@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { StalePage } from '../src/browser/tab.ts';
-import { clearStorageWhenSettled } from '../verify/jobs/runner.ts';
+import { StalePage } from '../../src/browser/tab.ts';
+import { clearStorageWhenSettled } from '../../verify/jobs/runner.ts';
 
 const START = 'http://localhost:3312/';
 const cleared = { cleared: true, at: START };

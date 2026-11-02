@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PageAction, PageState } from '../../src/browser/tab.ts';
 import { BrowserTask } from '../../src/task/run-task.ts';
-import { STAYLIST, page, clickTargetOf, scriptedJev, fakeTab } from '../fakes.ts';
+import { clickTargetOf, fakeTab, page, scriptedJev, STAYLIST } from '../fakes.ts';
 
 describe('DONE right after an unsaved edit', () => {
   const NOT_ACCEPTED = 'not accepted: the last step changed a field and nothing was saved or submitted since';

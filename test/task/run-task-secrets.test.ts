@@ -9,7 +9,7 @@ import { buildRequest, decide } from '../../src/jev/decide.ts';
 import * as model from '../../src/jev/model.ts';
 import { BrowserTask } from '../../src/task/run-task.ts';
 import { createRunner } from '../../src/task/start-task.ts';
-import { page, scriptedJev, fakeTab } from '../fakes.ts';
+import { fakeTab, page, scriptedJev } from '../fakes.ts';
 
 describe('values the caller marks secret', () => {
   // A token with a space and a slash, so its URL encodings differ from it.

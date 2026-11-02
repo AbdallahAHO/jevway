@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Ask } from '../src/jev/decide.ts';
-import { diagnose, exitCode, liveCheck, planSteps, render, type Finding, type Probes } from '../src/setup/doctor.ts';
+import type { Ask } from '../../src/jev/decide.ts';
+import { diagnose, exitCode, liveCheck, planSteps, render, type Finding, type Probes } from '../../src/setup/doctor.ts';
 
 // A machine where everything is in place; each test breaks one thing.
 const healthy = (overrides: Partial<Probes> = {}): Probes => ({

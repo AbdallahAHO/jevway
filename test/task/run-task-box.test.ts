@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PageState } from '../../src/browser/tab.ts';
 import { BrowserTask } from '../../src/task/run-task.ts';
-import { NAME_RECT, PAY_RECT, STAYLIST, bookingActions, page, boxAt, scriptedJev, fakeTab } from '../fakes.ts';
+import { bookingActions, boxAt, fakeTab, NAME_RECT, page, PAY_RECT, scriptedJev, STAYLIST } from '../fakes.ts';
 
 describe('Box in the task loop', () => {
   const boxed = { goal: 'Pay', screenshots: 'always' as const, imageTransport: 'assets' as const, box: true };

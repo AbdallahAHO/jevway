@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deepLink, MAX_SPANS, quoteSpans, type Span } from '../src/task/evidence.ts';
+import { deepLink, MAX_SPANS, quoteSpans, type Span } from '../../src/task/evidence.ts';
 
 const decoded = (link: string) => decodeURIComponent(link.split(':~:text=')[1]);
 const oneLine = (text: string): Span => ({ text, lines: [text] });

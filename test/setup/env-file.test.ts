@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { envFilePath, loadEnvFile } from '../src/setup/env-file.ts';
+import { envFilePath, loadEnvFile } from '../../src/setup/env-file.ts';
 
 const fileWith = (text: string) => {
   const path = join(mkdtempSync(join(tmpdir(), 'jevway-env-')), 'env');

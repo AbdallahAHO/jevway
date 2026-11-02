@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { PageAction, PageState } from '../src/browser/tab.ts';
-import { CHECKS, runChecks, type Check } from '../src/task/checks.ts';
+import type { PageAction, PageState } from '../../src/browser/tab.ts';
+import { CHECKS, runChecks, type Check } from '../../src/task/checks.ts';
 
 const actions: PageAction[] = [
   { id: 'e1', kind: 'fill', node: 1, role: 'textbox', label: 'Full name', value: 'Ada Lovelace' },

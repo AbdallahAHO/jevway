@@ -4,7 +4,7 @@ import { buildActionSpace } from '../../src/jev/action-space.ts';
 import { PAGE_ERROR, SIGN_IN_WALL, STUCK, STUCK_MEANING } from '../../src/jev/instructions.ts';
 import { buildRequest, decide, foldedFavourite, NO_SUPPLIED_VALUE, overflowFolds, readDecision, validChoice, type Ask } from '../../src/jev/decide.ts';
 import { BrowserTask } from '../../src/task/run-task.ts';
-import { PAY_RECT, bookingActions, page, foldedPage, clickTargetOf, overflowChip, overflowPage, answer, boxAt, scriptedJev, fakeTab } from '../fakes.ts';
+import { answer, bookingActions, boxAt, clickTargetOf, fakeTab, foldedPage, overflowChip, overflowPage, page, PAY_RECT, scriptedJev } from '../fakes.ts';
 
 describe('Jev request', () => {
   const input = { page: page(), goal: 'Book it', history: [], checkCommitRisk: true };

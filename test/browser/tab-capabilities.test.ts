@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { CdpConnection } from '../src/browser/cdp.ts';
-import { DEVICES } from '../src/browser/devices.ts';
-import { FRAME_ID_STRIDE } from '../src/browser/frames.ts';
-import { StalePage, Tab, TargetUnreachable, type PageAction, type PageState } from '../src/browser/tab.ts';
+import type { CdpConnection } from '../../src/browser/cdp.ts';
+import { DEVICES } from '../../src/browser/devices.ts';
+import { FRAME_ID_STRIDE } from '../../src/browser/frames.ts';
+import { StalePage, Tab, TargetUnreachable, type PageAction, type PageState } from '../../src/browser/tab.ts';
 
 /**
  * A CDP connection for one tab: `Runtime.evaluate` answers the freshness marker with 'M' and each scroll-offset read with

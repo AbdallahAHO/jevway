@@ -2,9 +2,9 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { checkUploadFiles } from '../src/task/upload-files.ts';
+import { checkUploadFiles } from '../../src/task/upload-files.ts';
 
-const AVATAR = new URL('../verify/fixture/capabilities/avatar.png', import.meta.url).pathname;
+const AVATAR = new URL('../../verify/fixture/capabilities/avatar.png', import.meta.url).pathname;
 
 describe('files the caller declares for upload', () => {
   it('passes a map of absolute, readable files through', () => {

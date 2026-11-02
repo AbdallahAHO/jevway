@@ -11,7 +11,7 @@ import * as model from '../../src/jev/model.ts';
 import { describeStep, frameDurations, videoOffset } from '../../src/recording/recording.ts';
 import { BrowserTask } from '../../src/task/run-task.ts';
 import { createRunner } from '../../src/task/start-task.ts';
-import { STAYLIST, bookingActions, page, answer, scriptedJev, fakeTab } from '../fakes.ts';
+import { answer, bookingActions, fakeTab, page, scriptedJev, STAYLIST } from '../fakes.ts';
 
 describe('BrowserTask', () => {
   it('types only the supplied value Jev selects for the chosen field', async () => {

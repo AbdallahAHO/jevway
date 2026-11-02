@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareVersions, nextPatch, nextStep, releaseAsProblem, versionFromTitle, type ReleaseState } from '../release/state.ts';
+import { compareVersions, nextPatch, nextStep, releaseAsProblem, versionFromTitle, type ReleaseState } from '../../release/state.ts';
 
 const HEAD = 'abc1234def';
 const green = { status: 'completed', conclusion: 'success', headSha: HEAD, url: 'https://ci/1' };

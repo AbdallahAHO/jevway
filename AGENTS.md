@@ -39,7 +39,7 @@ Each spends credits and needs a key in `.env`; the full description of each (job
 - `src/recording/`: `recording.ts` writes the optional human record (`recordDir`: screencast `run.mp4` via ffmpeg, step shots, `summary.json` with the `viewport`, `index.html`); `recording-page.ts` is the design all recording pages share (tokens, grid, the synced player) with `verify/jobs/report-page.ts` and `verify/agent/report.ts`
 - `src/journeys/`: journey mapping; `screen-boxes.ts` adds Box primary-action hotspots and missing-from-DOM QA
 - `src/mcp.ts`, `src/cli.ts`: entry points; `src/setup/`: `~/.config/jevway/env` loading (fills only unset keys, `CHROME_PATH` and `JEVWAY_*`) and `jevway doctor`; `.claude-plugin/`: the Claude Code plugin (npx server + `skill/jevway`); `skill/`: the agent-facing skill; `verify/`: live e2e plus the fixture; `verify/jobs/`: the shared jobs runner and its report (`report.ts` markup, `report-page.ts` style and script, `rerender.ts`)
-- `release/`: `state.ts` decides the next release step from main, npm, CI and the release PR (pure, tested in `test/release.test.ts`); `release.ts` is the `pnpm release*` CLI over `gh`, `git` and `npm`
+- `release/`: `state.ts` decides the next release step from main, npm, CI and the release PR (pure, tested in `test/release/release.test.ts`); `release.ts` is the `pnpm release*` CLI over `gh`, `git` and `npm`
 
 ## Invariants
 

@@ -1,6 +1,6 @@
 import vm from 'node:vm';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { renderAgentReport, transcriptOf, type AgentRunRecord, type ChoreRun, type Totals } from '../verify/agent/report.ts';
+import { renderAgentReport, transcriptOf, type AgentRunRecord, type ChoreRun, type Totals } from '../../verify/agent/report.ts';
 
 // --- fixtures: a stream as `claude -p --output-format stream-json` writes it, and the rows the suite saved
 

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PageAction } from '../../src/browser/tab.ts';
 import { NO_SUPPLIED_VALUE, type Ask } from '../../src/jev/decide.ts';
 import { BrowserTask } from '../../src/task/run-task.ts';
-import { STAYLIST, bookingActions, page, foldedPage, clickTargetOf, overflowChip, overflowPage, scriptedJev, fakeTab } from '../fakes.ts';
+import { bookingActions, clickTargetOf, fakeTab, foldedPage, overflowChip, overflowPage, page, scriptedJev, STAYLIST } from '../fakes.ts';
 
 const SOURCE_LINK: PageAction = { id: 'source', kind: 'click', node: 40, role: 'link', label: 'View source observation' };
 

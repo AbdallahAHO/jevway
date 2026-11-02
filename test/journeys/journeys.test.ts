@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import * as chrome from '../src/browser/chrome.ts';
-import * as model from '../src/jev/model.ts';
-import type { PageAction, PageState } from '../src/browser/tab.ts';
-import { buildActionSpace } from '../src/jev/action-space.ts';
-import type { Decision } from '../src/jev/decide.ts';
-import { buildFlows, hotspotOf, type JourneyStep } from '../src/journeys/journey-doc.ts';
-import { JourneySession } from '../src/journeys/journey-session.ts';
-import { pickNextMove } from '../src/journeys/pick-next-move.ts';
-import { readScreenBoxes } from '../src/journeys/screen-boxes.ts';
-import { qaFindings, readScreenJudgments, type ScreenJudgments } from '../src/journeys/screen-judgments.ts';
-import { createRunner } from '../src/task/start-task.ts';
+import * as chrome from '../../src/browser/chrome.ts';
+import * as model from '../../src/jev/model.ts';
+import type { PageAction, PageState } from '../../src/browser/tab.ts';
+import { buildActionSpace } from '../../src/jev/action-space.ts';
+import type { Decision } from '../../src/jev/decide.ts';
+import { buildFlows, hotspotOf, type JourneyStep } from '../../src/journeys/journey-doc.ts';
+import { JourneySession } from '../../src/journeys/journey-session.ts';
+import { pickNextMove } from '../../src/journeys/pick-next-move.ts';
+import { readScreenBoxes } from '../../src/journeys/screen-boxes.ts';
+import { qaFindings, readScreenJudgments, type ScreenJudgments } from '../../src/journeys/screen-judgments.ts';
+import { createRunner } from '../../src/task/start-task.ts';
 
 const actions: PageAction[] = [
   { id: 'e1', kind: 'click', node: 1, role: 'button', label: 'Where to?', rect: { x: 16, y: 80, w: 361, h: 52 } },

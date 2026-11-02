@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ANY_HOST, hostsFromEnv, narrowHosts, outsideHosts, parseHostPatterns } from '../src/task/hosts.ts';
+import { ANY_HOST, hostsFromEnv, narrowHosts, outsideHosts, parseHostPatterns } from '../../src/task/hosts.ts';
 
 const allowing = (...allowed: string[]) => narrowHosts(ANY_HOST, { allowed });
 const blocking = (...blocked: string[]) => narrowHosts(ANY_HOST, { blocked });

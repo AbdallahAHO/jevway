@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import * as chrome from '../src/browser/chrome.ts';
-import { Tab, type PageAction, type PageState } from '../src/browser/tab.ts';
-import * as model from '../src/jev/model.ts';
-import { lookAt } from '../src/task/look.ts';
-import { BrowserTask } from '../src/task/run-task.ts';
-import { createRunner } from '../src/task/start-task.ts';
+import * as chrome from '../../src/browser/chrome.ts';
+import { Tab, type PageAction, type PageState } from '../../src/browser/tab.ts';
+import * as model from '../../src/jev/model.ts';
+import { lookAt } from '../../src/task/look.ts';
+import { BrowserTask } from '../../src/task/run-task.ts';
+import { createRunner } from '../../src/task/start-task.ts';
 
 const actions: PageAction[] = [
   { id: 'e1', kind: 'fill', node: 1, role: 'textbox', label: 'Destination', value: 'Lisbon', rect: { x: 1, y: 2, w: 3, h: 4 } },
