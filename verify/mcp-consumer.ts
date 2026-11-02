@@ -62,9 +62,10 @@ check('negotiated the 2026-07-28 protocol', (client as any).getNegotiatedProtoco
 const instructions = client.getInstructions() ?? '';
 check('server instructions are present and under 4,096 chars', instructions.length > 200 && instructions.length < 4096, instructions.length);
 const { tools } = await client.listTools();
-check('8 tools in a fixed order', tools.map((t) => t.name).join(',') === 'jevway_task,jevway_look,jevway_end,jevway_journey_start,jevway_journey_step,jevway_journey_autopilot,jevway_journey_annotate,jevway_journey_finish', tools.map((t) => t.name));
+check('10 tools in a fixed order', tools.map((t) => t.name).join(',') === 'jevway_task,jevway_look,jevway_end,jevway_journey_start,jevway_journey_step,jevway_journey_autopilot,jevway_journey_annotate,jevway_journey_finish,jevway_inbox_create,jevway_inbox_wait', tools.map((t) => t.name));
 const listTokens = Math.round(JSON.stringify(tools).length / 4);
-check('tool list ≤ 2,600 tokens', listTokens <= 2600, listTokens);
+// 2,600 before the two inbox tools (plan 123: +305).
+check('tool list ≤ 2,905 tokens', listTokens <= 2905, listTokens);
 check('jevway_task declares an output schema', Boolean(tools.find((t) => t.name === 'jevway_task')?.outputSchema));
 
 // 2. A recorded task that should end done
