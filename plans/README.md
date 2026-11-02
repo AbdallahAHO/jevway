@@ -199,6 +199,7 @@ for automation, with throwaway data; never on a third-party production account.
 | 123 | A disposable inbox, built in and bundled | P2 | M | 116, 117 | DONE: `jevway_inbox_create`/`_wait`, `jevway inbox …`, `skill/jevway-inbox/`; mail.tm with mail.gw fallback; password never in a result or log; live round trip on mail.tm |
 | 124 | 2FA codes the model never sees | P2 | S | — | DONE: `totp` (base32 or otpauth URI), RFC 6238 at typing time, waits out a code with < 8 s left; live sign-in accepted, no secret or code in any output |
 | 125 | Files in and out | P2 | M | 097, 098 | DONE: downloads into `<run>/downloads/` (`files.downloads`), `https` URL uploads (public addresses only, ≤ 50 MB), uploads inside iframes, drop zones, `jevway_look` `pdf`; live 5/5 |
+| 126 | Codes split into one-character boxes | P2 | S | 124 | DONE: 4–8 one-character boxes read as one field (`<name> (N boxes)`), typed per box with the usual checks, joined value verified (`value_kept`); secret codes masked per box; dates, phone numbers and password PINs left alone; live TOTP into 6 auto-advancing boxes `done` in 2.9 s |
 
 Round 2 (planned at `bbfae1d`, 2026-10-16): 015–017 come from the follow-ups below and touch disjoint files, so
 they run in parallel. After merging, the gates are re-confirmed on the merged commit.

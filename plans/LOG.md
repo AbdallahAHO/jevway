@@ -2,6 +2,15 @@
 
 Newest first. Each entry: what changed, why, and the measured effect. Numbers come from runs, not estimates.
 
+## 2026-11-02 — Plan 126: codes split into boxes
+
+- A verification code split into 4–8 one-character inputs is one field for Jev ("Authentication code (6 boxes)"),
+  typed one character per box through `Tab.act`, with the joined value checked. A wrong-length code is fed back once,
+  then `needs_input`. Secret and TOTP codes are masked in every box afterwards.
+- Reader suite 83 → 87 checks (including split dates, phone numbers and password PINs that stay separate); tests
+  1,160 → 1,193; tool list unchanged. Live: a TOTP code into six auto-advancing boxes, `done` in 2.9 s, no run of 3+
+  code digits in any output.
+
 ## 2026-11-02 — Round 14: autonomy without losing the person (plans 121–125)
 
 - **121 `ask_user`**: hand-backs carry the question for the agent's own ask tool (no MCP elicitation).
