@@ -22,7 +22,7 @@ Each spends credits and needs a key in `.env`; the full description of each (job
 - `verify:checkout`, `verify:real`, `verify:langfuse`, `verify:grafana` (Langfuse and Grafana need a signed-in Chrome on a debugging port)
 - `verify:agent` (a real calling agent over MCP; spends that agent's usage too), `verify:journeys`
 - `pnpm verify:replay [--record] <dir>`: record Jev's answers once, replay the fixture suites offline with no key
-- `pnpm report:render <verify/out/folder>`: rebuild a suite's `report.html` or a run's `index.html`, offline
+- `pnpm report:render <verify/out/folder>`: rebuild a suite's `report.html` or a run's `index.html` (adding the `manifest.json` an old run folder lacks), offline
 - Vikunja is the held-back app for R6: never change a job after a run. The next release gate needs a new held-back app
 
 ### CI and releases
@@ -40,7 +40,7 @@ Each spends credits and needs a key in `.env`; the full description of each (job
 - `src/task/`: `run-task.ts` loop and hand-back rules (incl. Box stops, rescue, Enter after search typing); `start-task.ts` connects the browser; `checks.ts`, `evidence.ts`, `hosts.ts`, `look.ts` are the caller-facing extras; `present.ts` turns a summary into what the caller reads (`story`, `next`, concise or full)
 - `src/session/`: `session-service.ts`, the transport-free sessions and journeys (UUID ids, folders, waiting on a running call, step events, `UnknownSession`) that the MCP server and the CLI daemon adapt
 - `src/output/`: the output root (`./.jevway` or `JEVWAY_OUT_DIR`, with a `.gitignore` of `*`), folder and file names and slugs (`layout.ts`), `manifest.json` (`manifest.ts`), and what a call leaves in its run folder (`run-folder.ts`: `final.jpg`, `calls/NN-<status>.jpg`, `summary.json`)
-- `src/recording/`: `recording.ts` writes the optional human record (`output.record`, or `recordDir`: screencast `run.mp4` via ffmpeg, `steps/NN-<what>.jpg` shots, `summary.json` with the `viewport`, `index.html`) and holds `describeStep`, the step wording the run page and a summary's `story` share; `recording-page.ts` is the design all recording pages share (tokens, grid, the synced player) with `verify/jobs/report-page.ts` and `verify/agent/report.ts`
+- `src/recording/`: `recording.ts` writes the optional human record (`output.record`, or `recordDir`: screencast `run.mp4` via ffmpeg, `steps/NN-<what>.jpg` shots, `summary.json` with the `viewport` and `asked`, `index.html`); `describe-step.ts` is the step wording the run page and a summary's `story` share; `run-page.ts` renders a run's `index.html` (goal and outcome first, the story with each step's shot and video time, `#s<n>` links, `summary.json` embedded as `#jevway-summary`); `recording-page.ts` is the design every page shares (tokens, grid, print, the synced player, `storyOfRecording`, the generator meta and embedded JSON) with `src/journeys/render-viewer.ts`, `verify/jobs/report-page.ts` and `verify/agent/report.ts`
 - `src/journeys/`: journey mapping; `screen-boxes.ts` adds Box primary-action hotspots and missing-from-DOM QA
 - `src/mcp.ts`, `src/cli/main.ts`: the two entry points
 - `src/mcp/`: the MCP adapter over the session service (`server.ts` tool set, order and instructions; `task-tools.ts`, `journey-tools.ts`; `results.ts` result JSON, the image rule and `resource_link`s)

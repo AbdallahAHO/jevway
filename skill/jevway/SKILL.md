@@ -69,7 +69,7 @@ End with `jevway_end` when finished (it closes the tab it opened, and any tab it
 
 ## Show what happened
 
-Every session has a run folder, `./.jevway/runs/<time>_<goal>_<id>/`, with the end page (`final.jpg`), `summary.json` and `manifest.json` (each file and what it is). Pass `record: true` on a new session to also keep a record for people there: a screencast video (`run.mp4`, needs ffmpeg), a sharp 2× screenshot before every action with its target outlined (`steps/01-type-destination.jpg` …) and an `index.html` viewer (`files.page`; `open` it). `record_dir` puts the whole folder somewhere else. These shots never reach the model; they and `final.jpg` are pixels, so a secret typed into a visible field shows in them.
+Every session has a run folder, `./.jevway/runs/<time>_<goal>_<id>/`, with the end page (`final.jpg`), `summary.json` and `manifest.json` (each file and what it is). Pass `record: true` on a new session to also keep a record for people there: a screencast video (`run.mp4`, needs ffmpeg), a sharp 2× screenshot before every action with its target outlined (`steps/01-type-destination.jpg` …) and an `index.html` page (`files.page`; `open` it). The page embeds the summary as `<script type="application/json" id="jevway-summary">`, so you can read it without scraping. `record_dir` puts the whole folder somewhere else. These shots never reach the model; they and `final.jpg` are pixels, so a secret typed into a visible field shows in them.
 
 ## Run without permission prompts
 

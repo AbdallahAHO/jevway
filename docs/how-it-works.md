@@ -462,7 +462,7 @@ Without `output` the task writes nothing. `src/output/layout.ts` names the folde
 - a screencast `run.mp4` (needs `ffmpeg`, otherwise skipped), re-encoded after each call;
 - `steps/01-type-destination.jpg`, `steps/02-select-2-guests.jpg`, … before every action: a 2× JPEG at quality 90 with the target outlined and a one-sentence description (the name is the verb and what it acts on; a shot whose action never ran is deleted with its step);
 - a final-page shot per call (`steps/NN-finished-<status>.jpg`);
-- `summary.json` (every call's summary, the steps, the video name, the viewport) and `index.html`.
+- `summary.json` (every call's summary, what each call was asked, the steps, the video name, the viewport) and `index.html` (`src/recording/run-page.ts`): the goal, the outcome and its reason, then the video, then each step told as the summary's story (`storyOfRecording` matches each shot to its summary step, in order) with its shot file and video time, and `summary.json` embedded as `#jevway-summary`.
 
 The text files and every file name are scrubbed of secrets; the images and video are not. Recorded shots never go into a request.
 

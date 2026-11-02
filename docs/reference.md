@@ -230,9 +230,13 @@ for people in the run folder:
 - `steps/01-type-destination.jpg`, `steps/02-select-2-guests.jpg`, …: a 2× JPEG before every action with its target
   outlined, named for the action, and `steps/NN-finished-<status>.jpg`, the final page of each call;
 - `final.jpg` (the page as the latest call ended, at most 1280 px wide) and `calls/NN-<status>.jpg` (each call's);
-- `summary.json`;
-- `index.html`, which opens on the video with its steps on a timeline and a strip kept in sync, then the run's calls,
-  reason, address and cost;
+- `summary.json` (with `asked`: each call's goal and `done_when`, secrets masked);
+- `index.html`: first what was asked, how the run ended and why (a plain word: Done, Needs input, Blocked …), when,
+  how long, the estimated cost and the start and end page; then the video with its steps on a timeline and a strip kept
+  in sync; then each call's steps as the summary's `story` sentences, every step linking its shot file and its time in
+  the video (`index.html#s3` opens step 3); then the details and the folder's files. It works offline and without JS,
+  follows the reader's light or dark scheme, and carries `summary.json` itself as
+  `<script type="application/json" id="jevway-summary">` and `<meta name="generator" content="jevway <version>">`;
 - `manifest.json`, every file with its path, kind and a one-line description.
 
 These images never reach the model, which gets its own 1024 px screenshots. The video stays on the first tab.
@@ -250,6 +254,11 @@ every session a folder, whether or not it records:
   journeys/2026-11-02_0910_stays.example_8c21/
     index.html  journey.json  manifest.json  screens/s01-home.png  screens/s02-search-results.png …
 ```
+
+A journey's `index.html` reads without JS: each flow as a sequence of screens and the actions between them, every
+screen named by its type (`#s03`, with its description, insight, patterns, findings and how it was reached), and the QA
+findings by severity, each linking its screen. It embeds `journey.json` as `<script type="application/json"
+id="jevway-journey">`.
 
 - Folder names are local start time, a slug (the goal, or the journey's host) and the first 4 characters of the
   session id. A slug is lowercase ASCII and hyphens, at most 40 characters, and never holds a secret value.

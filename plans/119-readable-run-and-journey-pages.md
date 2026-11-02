@@ -55,8 +55,9 @@
 ## Scope
 
 **In scope:**
-- `src/recording/run-page.ts` (new): the run page (`renderRunPage`); `recording.ts` keeps `Recording` and the step
-  wording and calls it; `renderSteps` stays as a thin source-compatible wrapper.
+- `src/recording/run-page.ts` (new): the run page (`renderRunPage(record)`, taking the `summary.json` record);
+  `recording.ts` keeps `Recording` and calls it. `renderSteps` goes: its only callers were `Recording.finish`,
+  `verify/jobs/rerender.ts` and its test, all updated.
 - `src/recording/recording-page.ts`: shared head pieces (non-blocking font link, generator meta, embedded JSON),
   print styles, contrast-safe tokens, the story of recorded steps, step ids and file names on cards.
 - `src/recording/recording.ts`: `finish(tab, summary, asked?)` records `asked` (scrubbed) in `summary.json`.
@@ -74,6 +75,8 @@
 **Deviations:**
 - Approved by the reviewer: one line in `src/task/run-task.ts`, the `this.#recording?.finish(…)` call in `run()`,
   gains `{ goal, doneWhen }` so the recording can name what was asked. Nothing else in that file changes.
+- `src/journeys/journey-doc.ts`: `describeAction` is exported (unchanged), so a screen says how it was reached in the
+  flows' own words.
 - One import line in `src/task/present.ts`: `describeStep` from `../recording/describe-step.ts` instead of
   `../recording/recording.ts` (same function), to keep the page modules free of an import cycle.
 
