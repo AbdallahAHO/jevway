@@ -381,6 +381,8 @@ Not checked: frames and the page's own requests.
 
 `scrubberFor` replaces the value (as typed, trimmed, URL-encoded, form-encoded, any case, longest form first) with the marker in every string of every request, in every page the run reads (`jevway_look` on a session included, through `BrowserTask.look`), in summaries (checks and evidence included), in `task.trace` and in the recording's text. Image parts are left alone, and recorded screenshots and video are pixels, so they are not masked. With no secret keys, requests are unchanged.
 
+**Authenticator codes.** `totp` (key → base32 secret or `otpauth://totp/` URI) is parsed and checked by `src/task/totp.ts` before a tab opens, and kept apart from `values`: only `#decide` adds each key to the values Jev gets (as a secret key, so it shows `[secret:<key>]`), and `tab.want` and every other reader of `values` never see it. When Jev's TYPE_TEXT picks such a key, `#textFor` in `src/task/run-task.ts` computes the RFC 6238 code at that moment (HMAC through Node `crypto`); with under 8 s left in its period (a third of a short one) it pauses on the run's stop signal and types the next period's code. The code joins the scrubber's extra entries (`scrubberFor`'s third argument, with the secret as given and as base32) before the step is recorded or typed, so the page read right after typing, a page that echoes the code, and every output above are already masked, and `value_kept` compares marker to marker. Codes stay in the list for the session.
+
 ### 9.3 Bot walls
 
 `src/browser/bot-wall.ts` judges the page alone, never with a model, from the title and the first 600 characters of text. A wall is any of:

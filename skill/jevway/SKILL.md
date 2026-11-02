@@ -27,6 +27,7 @@ You stay in charge of intent, missing values, irreversible actions, and inspecti
 7. Uploads: pass `files` with an absolute path per key (`{"cv":"/Users/ada/cv.pdf"}`), only for files the user asked to upload. Jev picks the file field and key; it never sees the path. A needs_input naming a file field means no declared file fits it.
 8. In the user's own signed-in Chrome, pass `allowed_hosts` with the sites the task belongs to (e.g. `["github.com"]`, `["*.atlassian.net"]`; `*.x.com` excludes `x.com` itself). A click or redirect elsewhere ends the call `blocked`, naming the host; decide yourself whether going there is part of the task.
 9. Passwords: jevway never sees or types password fields. Type them yourself (chrome-devtools `fill`), then say so in the goal: "I typed the password; sign in." A typed field jevway can't see only counts once you mention it.
+10. 2FA on the user's own account: when the user gave you the account's authenticator secret (the base32 text behind the QR code, or its `otpauth://totp/` URI), pass it as `totp` (`{"github_otp":"JBSWY3DPEHPK3PXP"}`). Jev sees only the key; code types the current code when Jev picks that field, and every result shows `[secret:github_otp]`. Never ask the user to read you a code when a secret was given, and never put a secret or a code in `goal`. Without a secret, a 2FA field comes back `needs_input`: ask the user for the code and pass it in `values` with its key in `secret_keys`.
 
 ## Read the result
 

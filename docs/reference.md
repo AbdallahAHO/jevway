@@ -11,6 +11,7 @@ inside, see [how-it-works.md](how-it-works.md). For the journey tools, see [jour
   - [Checks](#checks)
   - [Evidence](#evidence)
   - [Secret values](#secret-values)
+  - [Authenticator codes](#authenticator-codes)
   - [Hosts](#hosts)
   - [Recording](#recording)
 - [Output folder](#output-folder)
@@ -43,6 +44,7 @@ settings carry over.
 | `values` | object | Text values Jev may type, by descriptive key: `{"city":"Lisbon","email":"ada@example.com"}`. Jev types nothing else. |
 | `secret_keys` | string[] | Keys of `values` that hold secrets. See [Secret values](#secret-values). |
 | `files` | object | Files Jev may upload, key → absolute path. Checked before the run. Jev sees each key and file name, never the path. |
+| `totp` | object | 2FA on the user's own account: key → authenticator secret (base32 or `otpauth://totp/` URI). See [Authenticator codes](#authenticator-codes). |
 | `done_when` | string | Visible evidence of success on the page the call ends on. `done` needs this check to pass. On a continuing session it stays for the same goal; a call with a new `goal` and no `done_when` drops it. |
 | `checks` | object[] | Facts code checks on the final page. See [Checks](#checks). |
 | `confirm_irreversible` | boolean | Allows one click flagged as irreversible. See [Confirming](#confirming-an-irreversible-click). |
@@ -205,6 +207,28 @@ text that shows `done_when` is true.
 - Every occurrence of the value is replaced, even inside other words, so mark only real secrets.
 - Password fields are never listed, typed or sent: the request says only whether each visible one is filled or empty.
   Type a password yourself, then say so in the goal ("I typed the password; sign in").
+
+### Authenticator codes
+
+`totp` (CLI `--totp '<json>'`) gives jevway the authenticator secret of the user's own account, so a 2FA step needs no
+person: `{"github_otp": "JBSWY3DPEHPK3PXP"}`.
+
+- The secret is base32 as authenticator apps print it (any case, spaces, hyphens and `=` padding ignored; SHA1, 6
+  digits, 30 s), or an `otpauth://totp/…?secret=…` URI whose `digits` (6–8), `period` (1–300 s) and `algorithm` (SHA1,
+  SHA256, SHA512) are honoured. Counter-based `otpauth://hotp/` is not supported.
+- Jev sees the key as `[secret:<key>]`, like a [secret value](#secret-values), and may choose it for a field. The code is
+  computed by code (RFC 6238) at the moment it is typed, never by the model, and typed as it is.
+- With under 8 s left in the code's period (a third of a shorter period), the run waits for the next code and types that
+  one, so the submit that follows is not sent with an expired code. A cancel or `max_seconds` still stops it first.
+- The secret (as given and as base32) and every code typed are masked everywhere a secret value is: requests,
+  `page_text`, `steps`, `story`, reasons, traces, `summary.json`, `index.html`, `manifest.json`, file names and the
+  daemon log. A 6-digit number on the page equal to a code typed this session reads as the marker too. Recorded
+  screenshots, `final.jpg` and video are pixels, so a typed code shows there.
+- A bad secret (not base32, under 16 characters (80 bits), a wrong URI or parameter) and a key also given in `values`
+  are input errors naming the key (`totp.<key>: …`), before any tab opens; the message never repeats the secret. The CLI
+  exits 2.
+- The key stays for the session. A later call's `totp` replaces it; a later `values` for the same key replaces it with a
+  plain value, which stays secret.
 
 ### Hosts
 
@@ -374,6 +398,7 @@ jevway stop
 | `--goal`, `--url`, `--tab`, `--session <id\|new>` | `goal`, `url`, `tab`, `session` |
 | `--values '<json>'`, `--files '<json>'`, `--checks '<json>'` | `values`, `files`, `checks` |
 | `--secret-keys a,b` | `secret_keys` |
+| `--totp '<json>'` | `totp` |
 | `--done-when` | `done_when` |
 | `--confirm-irreversible`, `--confirm-target` | `confirm_irreversible`, `confirm_target` |
 | `--max-steps`, `--max-seconds` | `max_steps`, `max_seconds` |
