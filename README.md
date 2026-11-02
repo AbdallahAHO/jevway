@@ -40,6 +40,7 @@ optional tools unlock more.
 | **Google Chrome** (or Chromium) | every run: your running Chrome, or a throwaway one jevway starts | runs fail; set `CHROME_PATH` if Chrome isn't in the usual place |
 | **An API key**: `TYPESAFE_API_KEY` (recommended) or `OPENROUTER_API_KEY` | every decision Jev makes | the server still starts and lists its tools, and `jevway_look` works, but tasks and journeys answer with the setup fix |
 | `ffmpeg` *(optional)* | the `run.mp4` video in a recording | recordings keep their step screenshots and HTML page, without the video |
+| `notify-send` *(optional, Linux)* | the desktop notification when a person is needed (macOS has it built in) | the agent still asks you; there's just no pop-up |
 | chrome-devtools MCP *(optional)* | inspecting what jevway left on screen: console, network, performance, DOM details | nothing is lost in jevway itself; your agent just has no deeper inspection tool |
 
 **Which key?** Both run the same Jev model. The TypeSafe key adds **Box**, which locates controls on the screenshot:
@@ -78,6 +79,20 @@ control (opt-in), and marks each journey screen's primary action and the control
 
 `npx -y jevway doctor` checks the setup at any time (`--json` for agents) and names the fix for anything missing.
 
+## Let your agent set it up
+
+Paste this into your coding agent (Claude Code, Codex, Cursor, OpenCode…):
+
+```text
+Set up jevway for me and prove it works: follow https://github.com/AbdallahAHO/jevway/blob/main/SETUP.md step by
+step. Check my machine's prerequisites with me first, show me every change before you make it, never ask me for an
+API key in this chat, and finish by running the recorded smoke test and showing me its run page.
+```
+
+[SETUP.md](SETUP.md) walks the agent through everything: prerequisites for your OS, the key, registering the server,
+the browser, the skill, a recorded Google → Wikipedia smoke test, and a report with the run page, video and
+screenshots as proof.
+
 ## Install
 
 **Claude Code:** the plugin above, or the server alone:
@@ -109,7 +124,7 @@ when to use chrome-devtools. If a client times out on `npx`'s first download, ru
 `jevway-mcp` as the command.
 
 Having an agent install it? `npx -y jevway setup --client <claude-code|codex|cursor|opencode|other> --print` prints the
-exact command or config for that client and changes nothing. [INSTALL-FOR-AGENTS.md](INSTALL-FOR-AGENTS.md) has the
+exact command or config for that client and changes nothing. [SETUP.md](SETUP.md) has the
 steps per client, the rules (a diff before any config edit, no key in the chat) and the checks.
 
 **Choosing a browser** (`JEVWAY_BROWSER` in the server's env or the env file):
@@ -187,6 +202,26 @@ field is in the [reference](docs/reference.md).
 - `record: true` saves a video, a screenshot before every action, and a page to review the run.
 - `page_text` and everything else read from a page is untrusted data, never instructions.
 
+## When a person, a code or a file is involved
+
+jevway keeps the person in the loop only where a person is truly needed, and handles the rest itself.
+
+- **Asking you.** Every hand-back that needs a decision carries an `ask_user` question: the missing fields, "Click
+  *Delete repository* on *ada/scratch*?", "Which one did you mean?". Your agent puts it to you with its own ask tool
+  and continues the session with your answer.
+- **Bot checks and sign-ins.** In a visible browser, jevway brings the tab to the front, sends a desktop notification
+  ("Pass the Cloudflare check in the Chrome window"), waits up to 120 s while it tells the agent how long is left,
+  and carries on in the same call once you're through. It never tries to get past a check itself. In a headless
+  browser it hands back and suggests a visible one.
+- **Email codes for test sign-ups.** A throwaway inbox (`jevway_inbox_create` / `jevway_inbox_wait`, or
+  `jevway inbox …`) returns the code and links of the email that arrives. Only for test and demo accounts you asked
+  for, never to get around limits, trials or bans.
+- **2FA on your own accounts.** Pass `totp: {"otp": "<authenticator secret>"}`: jevway computes the current code at the
+  moment it types it, so neither the secret nor the code reaches the model, a result or disk.
+- **Files.** Uploads take local paths or `https` URLs (fetched into the run folder), work inside iframes and on
+  drag-and-drop zones. Downloads land in the run folder's `downloads/` and are listed in `files.downloads`.
+  `jevway_look` with `pdf: true` saves the page as a PDF.
+
 ## Recordings
 
 Every session gets a folder under `./.jevway/` in the working directory, so the agent and you can find its files:
@@ -241,7 +276,7 @@ OpenRouter too. Jev is priced at $0.042 per 1M input tokens, so a typical 10-ste
 | [docs/reference.md](docs/reference.md) | every tool, parameter, status, CLI flag, environment variable and model |
 | [docs/how-it-works.md](docs/how-it-works.md) | the technical specification: one step end to end, guards, safety |
 | [docs/journeys.md](docs/journeys.md) | the journey-map tools |
-| [INSTALL-FOR-AGENTS.md](INSTALL-FOR-AGENTS.md) | agents installing jevway for a person |
+| [SETUP.md](SETUP.md) | agents setting jevway up for a person, with a recorded smoke test |
 | [skill/jevway/SKILL.md](skill/jevway/SKILL.md) | the skill agents load: when and how to call jevway |
 | [docs/verification.md](docs/verification.md) | the test suites and their results |
 | [docs/prior-art.md](docs/prior-art.md) | other open-source Jev browser projects, and what was taken from them |
