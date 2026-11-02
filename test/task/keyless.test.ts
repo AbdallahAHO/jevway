@@ -143,7 +143,7 @@ describe('the real jevway-mcp process, without a key', () => {
     } finally {
       server.kill();
     }
-  });
+  }, 15_000);
 
   it('serves a 2026-07-28 client: it discovers the server instead of initializing, then lists and calls tools', async () => {
     const modern = new Client({ name: 'modern', version: '0.0.0' }, { versionNegotiation: { mode: 'auto' } });
@@ -157,5 +157,6 @@ describe('the real jevway-mcp process, without a key', () => {
     } finally {
       await modern.close();
     }
-  });
+    // `auto` spawns a short-lived probe process before the real one.
+  }, 15_000);
 });
