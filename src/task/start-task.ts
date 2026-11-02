@@ -8,6 +8,8 @@ import { missingKeyMessage } from '../setup/env-file.ts';
 import { hostsFromEnv, narrowHosts, outsideHosts, type HostRules } from './hosts.ts';
 import { BrowserTask, type TaskOptions } from './run-task.ts';
 import { retryingAsk } from '../jev/retry.ts';
+import { desktopNotifier } from '../notify/desktop.ts';
+import type { CdpConnection } from '../browser/cdp.ts';
 
 export interface StartOptions extends TaskOptions {
   /** Open this URL in a new background tab. */
@@ -46,6 +48,7 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
   };
   let chrome: Promise<ChromeHandle> | undefined;
   const browser = () => (chrome ??= connectChrome(source));
+  let shown: Promise<boolean> | undefined;
 
   return {
     /** Throws the missing-key message, so the CLI can report it as a usage error before any browser starts. */
@@ -60,11 +63,14 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
       const { cdp } = await browser();
       if (!url && !tab) throw new Error('Pass `url` to open a new tab or `tab` to reuse an open one.');
       const page = url ? await Tab.open(cdp, url) : await Tab.find(cdp, tab!);
+      const visible = await (shown ??= browserShown(source, cdp));
       const task = new BrowserTask(page, decider, {
         ...profileOptions(profile),
         ...definedOnly(options),
         hosts,
         screenshots: options.screenshots ?? screenshots,
+        waitForPersonSeconds: personWaitSeconds(options.waitForPersonSeconds),
+        person: { visible, notify: desktopNotifier() },
       });
       task.update({ confirmIrreversible, confirmTarget });
       return task;
@@ -101,6 +107,7 @@ export const createRunner = (source: BrowserSource, choice: { model?: string; sc
     async close() {
       if (chrome) await (await chrome).close();
       chrome = undefined;
+      shown = undefined;
     },
   };
 };
@@ -110,6 +117,32 @@ export type Runner = ReturnType<typeof createRunner>;
 
 // Waits before each retry of a journey's model call after a busy or flaky API answer.
 const JOURNEY_RETRY_MS = [1000, 3000];
+
+// Waits for a person at a wall this long, in seconds, when the call names no wait and JEVWAY_PERSON_WAIT_SECONDS is unset.
+const PERSON_WAIT_SECONDS = 120;
+
+/**
+ * The call's wait for a person, else `JEVWAY_PERSON_WAIT_SECONDS` (whole seconds), else 120. A headless browser waits 0
+ * whatever this says (the task knows whether a person can see it).
+ *
+ * @example
+ * personWaitSeconds(undefined, { JEVWAY_PERSON_WAIT_SECONDS: '60' }) // 60
+ */
+export const personWaitSeconds = (call: number | undefined, env: Record<string, string | undefined> = process.env) => {
+  const raw = env.JEVWAY_PERSON_WAIT_SECONDS?.trim();
+  return call ?? (raw && /^\d+$/.test(raw) ? Number(raw) : PERSON_WAIT_SECONDS);
+};
+
+/** Whether a person can see this browser: never `launch-headless`, nor a headless Chrome behind a port or `auto`. */
+const browserShown = async (source: BrowserSource, cdp: CdpConnection) => {
+  if (source === 'launch-headless') return false;
+  try {
+    const { userAgent } = await cdp.send('Browser.getVersion');
+    return !/HeadlessChrome/.test(String(userAgent));
+  } catch {
+    return true;
+  }
+};
 
 /** Throws before a page outside the host rules is opened. */
 const refuseOutside = (url: string, hosts: HostRules) => {

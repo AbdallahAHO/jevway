@@ -26,7 +26,7 @@ const expectedHints = {
 /** Each tool's inputs, sorted: every field it accepts, required ones marked with `!`. Every earlier input is still here. */
 const expectedInputs = {
   jevway_task:
-    'allow_coordinate_clicks allowed_hosts blocked_hosts checks confirm_irreversible confirm_target detail done_when files goal! max_seconds max_steps record record_dir screenshot secret_keys session tab totp url values',
+    'allow_coordinate_clicks allowed_hosts blocked_hosts checks confirm_irreversible confirm_target detail done_when files goal! max_seconds max_steps record record_dir screenshot secret_keys session tab totp url values wait_for_person_seconds',
   jevway_look: 'session tab url',
   jevway_end: 'keep_tab session!',
   jevway_journey_start: 'device intent out_dir stay_within url! values',
@@ -59,8 +59,8 @@ const objectSchemas = (schema: unknown): Record<string, unknown>[] => {
 
 /** What a client pays to load the tool list, as tokens ≈ characters / 4 of what tools/list sends. */
 const tokensOf = (value: unknown) => Math.round(JSON.stringify(value).length / 4);
-// Measured 2,490 with output schemas (4,515 before plan 116, without them).
-const TOOL_LIST_TOKEN_CEILING = 2_557;
+// Measured 2,490 with output schemas (4,515 before plan 116, without them); round 14 adds totp, wait_for_person_seconds, pdf, ask_user and the inbox tools.
+const TOOL_LIST_TOKEN_CEILING = 2_599;
 
 afterEach(() => vi.restoreAllMocks());
 

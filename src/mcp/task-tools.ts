@@ -63,6 +63,7 @@ const TASK_INPUT = z.object({
     .describe('The user\'s words naming the target ("ada/scratch"); the page must show them.'),
   max_steps: z.number().int().positive().max(100).optional().describe('Default 40.'),
   max_seconds: z.number().int().positive().max(3600).optional().describe('Default 300.'),
+  wait_for_person_seconds: z.number().int().min(0).max(600).optional().describe('Wait for the user at a bot check or sign-in; default 120, 0 off.'),
   allowed_hosts: z
     .array(z.string())
     .optional()
@@ -139,6 +140,9 @@ export const taskTools = (service: SessionService, { images }: { images: ImageRe
           // Each step as progress, in order, all sent before the result: a client shows them and resets its idle timeout.
           const token = ctx.mcpReq._meta?.progressToken;
           let told: Promise<unknown> = Promise.resolve();
+          // A wait for a person ticks between steps: progress must keep rising, so each tick takes a fraction of the next step.
+          let lastStep = 0;
+          let ticks = 0;
           const result = await service.task(
             {
               goal: input.goal,
@@ -155,6 +159,7 @@ export const taskTools = (service: SessionService, { images }: { images: ImageRe
               confirmTarget: input.confirm_target,
               maxSteps: input.max_steps,
               maxSeconds: input.max_seconds,
+              waitForPersonSeconds: input.wait_for_person_seconds,
               allowedHosts: input.allowed_hosts,
               blockedHosts: input.blocked_hosts,
               allowCoordinateClicks: input.allow_coordinate_clicks,
@@ -165,12 +170,14 @@ export const taskTools = (service: SessionService, { images }: { images: ImageRe
               // A client that cancels (or disconnects) stops the run instead of leaving it clicking.
               signal: ctx.mcpReq.signal,
               onEvent: (event) => {
-                if (token === undefined || event.type !== 'step') return;
+                if (token === undefined || (event.type !== 'step' && event.type !== 'waiting')) return;
+                if (event.type === 'step') [lastStep, ticks] = [event.n, 0];
+                else ticks++;
                 const params = {
                   progressToken: token,
-                  progress: event.n,
+                  progress: event.type === 'step' ? event.n : lastStep + ticks / (ticks + 1),
                   ...(input.max_steps && { total: input.max_steps }),
-                  message: `Step ${event.n}: ${event.story}`,
+                  message: event.type === 'step' ? `Step ${event.n}: ${event.story}` : event.message,
                 };
                 told = told
                   .then(() => ctx.mcpReq.notify({ method: 'notifications/progress', params }))

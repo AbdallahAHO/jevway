@@ -1738,7 +1738,7 @@ describe('a bot wall', () => {
     expect(summary.status).toBe('blocked');
     expect(summary.reason).toContain('bot check (Cloudflare;');
     expect(summary.reason).toContain('jevway never tries to get past one');
-    expect(summary.wall).toEqual({ kind: 'bot_check', origin: 'https://www.npmjs.com', name: 'cloudflare' });
+    expect(summary.wall).toEqual({ kind: 'bot_check', origin: 'https://www.npmjs.com', name: 'cloudflare', person_can_act: true });
     expect(summary.page_text).toContain('Performing security verification');
     expect(requests).toHaveLength(0);
     expect(acted).toEqual([]);

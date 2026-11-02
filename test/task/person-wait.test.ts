@@ -64,7 +64,7 @@ describe('waiting for a person at a bot check', () => {
   it('goes on in the same call once a person passed it, having told them once and brought the tab forward', async () => {
     const { ask, requests } = scriptedJev([{ operation: 'DONE', done_check: 0.9 }]);
     const { tab, asTab, acted } = fakeTab([wallPage('w1'), wallPage('w2'), wallPage('w3'), realPage()]);
-    const send = vi.fn(async (_method: string, _params?: object) => ({}));
+    const send = vi.fn(async (..._args: unknown[]) => ({}));
     tab.send = send;
     const { notify, person } = visible();
     const summary = await new BrowserTask(asTab, ask, { ...base, goal: 'Open zod', waitForPersonSeconds: 5, person }).run();
@@ -90,7 +90,7 @@ describe('waiting for a person at a bot check', () => {
     expect(summary.reason).toBe(
       'The page is a bot check (Cloudflare; seen: title "just a moment...", "ray id:", "performance and security by cloudflare", "performing security verification") that did not clear by itself, and nobody passed it in the 1 s jevway waited with the tab in front; jevway never tries to get past one. A person can pass it in this tab, then continue the session.',
     );
-    expect(summary.wall).toEqual({ kind: 'bot_check', origin: 'https://www.npmjs.com', name: 'cloudflare' });
+    expect(summary.wall).toEqual({ kind: 'bot_check', origin: 'https://www.npmjs.com', name: 'cloudflare', person_can_act: true, waited_seconds: 1 });
     expect(summary.steps).toEqual([]);
     expect(requests).toHaveLength(0);
   });
@@ -109,11 +109,19 @@ describe('waiting for a person at a bot check', () => {
     const off = visible();
     const zero = await runOnce({ waitForPersonSeconds: 0, person: off.person });
     for (const run of [hidden, zero]) {
-      expect(run.summary.reason).toBe(before.summary.reason);
-      expect(run.summary.wall).toEqual(before.summary.wall);
       expect(run.ms).toBeLessThan(500);
       expect(run.send).not.toHaveBeenCalledWith('Page.bringToFront', expect.anything());
     }
+    expect(zero.summary.reason).toBe(before.summary.reason);
+    expect(zero.summary.wall).toEqual({ kind: 'bot_check', origin: 'https://www.npmjs.com', name: 'cloudflare', person_can_act: true });
+    // Nobody can pass a check in a headless browser: the result says so, for the agent's question to the user.
+    expect(hidden.summary.reason).toBe(
+      before.summary.reason.replace(
+        'A person can pass it in this tab, then continue the session.',
+        'This browser is headless, so nobody can pass it here: a visible browser is needed (JEVWAY_BROWSER=auto or launch).',
+      ),
+    );
+    expect(hidden.summary.wall).toEqual({ kind: 'bot_check', origin: 'https://www.npmjs.com', name: 'cloudflare', person_can_act: false });
     expect(headless.notify).not.toHaveBeenCalled();
     expect(off.notify).not.toHaveBeenCalled();
   });
@@ -200,7 +208,7 @@ describe('waiting for a person at a sign-in wall', () => {
 
   it('goes on once the person signed in and the page left the sign-in form', async () => {
     const { ask, requests } = scriptedJev([{ operation: 'BLOCKED', sign_in_wall: SIGN_IN_WALL }, { operation: 'DONE', done_check: 0.95 }]);
-    // Typing, then a password typed but not sent, then a blank mid-redirect read, then the page behind it.
+    // Typing, then a password typed but not sent, then the page behind it, read twice before it counts.
     const { asTab } = fakeTab([loginPage(), loginPage('ada'), loginPage('ada', true), dashboard('in1'), dashboard('in2')]);
     const { notify, person } = visible();
     const summary = await new BrowserTask(asTab, ask, { ...base, goal: 'Create a repository', waitForPersonSeconds: 5, person }).run();
@@ -218,15 +226,25 @@ describe('waiting for a person at a sign-in wall', () => {
       status: 'blocked',
       reason:
         'The page asks to sign in at http://fixture and no supplied value fits its fields, and nobody signed in during the 1 s jevway waited with the tab in front; sign in there (or pass the values), then call again.',
-      wall: { kind: 'sign_in', origin: 'http://fixture' },
+      wall: { kind: 'sign_in', origin: 'http://fixture', person_can_act: true, waited_seconds: 1 },
     });
   });
 
-  it('hands back exactly as before without a wait', async () => {
-    const { ask } = scriptedJev([{ operation: 'BLOCKED', sign_in_wall: SIGN_IN_WALL }]);
-    const { asTab } = fakeTab([loginPage()]);
-    const summary = await new BrowserTask(asTab, ask, { ...base, goal: 'Create a repository', waitForPersonSeconds: 120, person: { ...visible().person, visible: false } }).run();
-    expect(summary.reason).toBe('The page asks to sign in at http://fixture and no supplied value fits its fields; sign in there (or pass the values), then call again.');
+  it('hands back as before without a wait, and says when the browser is headless', async () => {
+    const handBack = async (person: { visible: boolean }) => {
+      const { asTab } = fakeTab([loginPage()]);
+      const ask = scriptedJev([{ operation: 'BLOCKED', sign_in_wall: SIGN_IN_WALL }]).ask;
+      return new BrowserTask(asTab, ask, { ...base, goal: 'Create a repository', waitForPersonSeconds: 0, person }).run();
+    };
+    expect(await handBack({ visible: true })).toMatchObject({
+      reason: 'The page asks to sign in at http://fixture and no supplied value fits its fields; sign in there (or pass the values), then call again.',
+      wall: { kind: 'sign_in', origin: 'http://fixture', person_can_act: true },
+    });
+    expect(await handBack({ visible: false })).toMatchObject({
+      reason:
+        'The page asks to sign in at http://fixture and no supplied value fits its fields; pass the values, or sign in with a visible browser (JEVWAY_BROWSER=auto or launch; this one is headless), then call again.',
+      wall: { kind: 'sign_in', origin: 'http://fixture', person_can_act: false },
+    });
   });
 });
 
@@ -242,7 +260,10 @@ describe('a sign-in wall counts as passed only when the page is clearly past it'
 
   it('is passed on another page with no sign-in form, or the same page once its form is gone', () => {
     expect(stillSigningIn(dashboard(), wall)).toBe(false);
-    expect(stillSigningIn(page({ url: SIGN_IN, actions: [], text: 'Signed in' }), wall)).toBe(false);
+    const inline = loginPage('', false, 'http://fixture/repo/new');
+    expect(stillSigningIn(page({ url: 'http://fixture/repo/new', actions: [], text: 'Create a new repository' }), inline)).toBe(false);
+    // On a sign-in path the page is still the sign-in, whatever it shows ("Signed in, redirecting…").
+    expect(stillSigningIn(page({ url: SIGN_IN, actions: [], text: 'Signed in' }), wall)).toBe(true);
   });
 });
 
@@ -287,7 +308,7 @@ describe('an SSO page', () => {
       status: 'blocked',
       reason:
         'The page asks to sign in with Google at https://accounts.google.com for another site, and nobody finished it during the 1 s jevway waited with the tab in front; sign in there, then call again.',
-      wall: { kind: 'sign_in', origin: 'https://accounts.google.com', name: 'google' },
+      wall: { kind: 'sign_in', origin: 'https://accounts.google.com', name: 'google', person_can_act: true, waited_seconds: 1 },
     });
   });
 

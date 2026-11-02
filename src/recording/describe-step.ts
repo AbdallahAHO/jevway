@@ -62,6 +62,9 @@ export const describeStep = ({ operation, element = '', valueKey, fileKey, optio
       return `${verb('scroll')} back up`;
     case 'WAIT':
       return `${verb('wait')} for the page to finish updating`;
+    // Says itself: "A person passed the Cloudflare check".
+    case 'WAIT_FOR_PERSON':
+      return element;
     default:
       return `${operation} ${target}`;
   }

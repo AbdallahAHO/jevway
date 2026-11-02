@@ -34,6 +34,7 @@ export interface TaskRequest extends Omit<StartOptions, 'output'> {
 export type SessionEvent =
   | { type: 'started'; session: string }
   | { type: 'step'; session: string; n: number; story: string; url: string }
+  | { type: 'waiting'; session: string; message: string; seconds_left: number; url: string }
   | { type: 'finished'; session: string; status: TaskStatus };
 
 export interface TaskResult {
@@ -178,6 +179,7 @@ export const createSessionService = (runner: Pick<Runner, 'start' | 'look' | 'st
       checks: request.checks,
       maxSteps: request.maxSteps,
       maxSeconds: request.maxSeconds,
+      waitForPersonSeconds: request.waitForPersonSeconds,
       allowedHosts: request.allowedHosts,
       blockedHosts: request.blockedHosts,
       confirmIrreversible: request.confirmIrreversible,
@@ -219,7 +221,11 @@ export const createSessionService = (runner: Pick<Runner, 'start' | 'look' | 'st
       };
       tell({ type: 'started', session: id });
       entry.busy = true;
-      const running = entry.task.run({ signal, onStep: (step, n, url) => tell({ type: 'step', session: id, n, story: storyLine(step), url }) });
+      const running = entry.task.run({
+        signal,
+        onStep: (step, n, url) => tell({ type: 'step', session: id, n, story: storyLine(step), url }),
+        onWait: ({ message, seconds_left }, url) => tell({ type: 'waiting', session: id, message, seconds_left, url }),
+      });
       entry.running = running.catch(() => undefined);
       try {
         const summary = await running;

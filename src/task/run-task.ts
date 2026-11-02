@@ -15,6 +15,9 @@ import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
 import { checkUploadFiles, fileNames } from './upload-files.ts';
 import { checkTotpSecrets, totpMasks, typingCode, type TotpSecret } from './totp.ts';
 import { isTransientModelError } from '../jev/retry.ts';
+import type { Notify } from '../notify/desktop.ts';
+import { notificationText, passedText, waitingText, type PersonWall } from '../notify/person-messages.ts';
+import { ssoProviderOf, stillSigningIn, waitForPersonLoop, type WaitOutcome } from './person-wait.ts';
 
 export interface TaskOptions {
   goal: string;
@@ -80,11 +83,23 @@ export interface TaskOptions {
   hosts?: HostRules;
   /** How long a bot check (a Cloudflare challenge, a captcha page) gets to clear itself before the run hands back `blocked`. */
   wallWaitMs?: number;
+  /** With a visible browser, how long a person gets to pass a bot check, sign in or finish an SSO sign-in before the run hands back; 0 never waits. */
+  waitForPersonSeconds?: number;
+  /** Start-only, set by the runner: whether a person can see the browser, and how to reach them. */
+  person?: PersonReach;
   /**
    * The caller's checks, evaluated by code on the final page (see checks.ts): a failed one turns `done` into
    * `uncertain`; all passing turn `blocked`/`uncertain` into `done` only with `doneWhen` scored ≥ 0.5 on that page.
    */
   checks?: Check[];
+}
+
+/** Whether a person can see this browser (not headless), the desktop notifier, and the wait's read and countdown intervals. */
+export interface PersonReach {
+  visible: boolean;
+  notify?: Notify;
+  pollMs?: number;
+  tickMs?: number;
 }
 
 export type TaskStatus = 'done' | 'needs_input' | 'needs_confirmation' | 'uncertain' | 'blocked' | 'step_budget';
@@ -94,8 +109,12 @@ export interface TaskWall {
   kind: 'bot_check' | 'sign_in';
   /** The origin of the page the wall is on, e.g. `https://www.npmjs.com`. */
   origin: string;
-  /** For a bot check, whose: cloudflare, recaptcha, hcaptcha, turnstile or unusual-traffic. */
+  /** For a bot check, whose: cloudflare, recaptcha, hcaptcha, turnstile or unusual-traffic; for an SSO sign-in, the provider: google, apple or microsoft. */
   name?: string;
+  /** False in a headless browser, where nobody can pass the wall: a visible one (`JEVWAY_BROWSER=auto` or `launch`) is needed. */
+  person_can_act?: boolean;
+  /** How long the run waited with the tab in front for a person who did not come; absent when it did not wait. */
+  waited_seconds?: number;
 }
 
 export interface TaskSummary {
@@ -126,6 +145,9 @@ export interface TaskSummary {
 
 /** Hears one step of a call as the run moves past it: the step (scrubbed), its number in the call from 1, and the page's URL. */
 export type StepListener = (step: StepRecord & { confidence: number }, n: number, url: string) => void;
+
+/** Hears the countdown while the run waits for a person at a wall, and the page's URL. */
+export type WaitListener = (note: { message: string; seconds_left: number }, url: string) => void;
 
 export interface TraceEntry {
   decision: Omit<Decision, 'action'> & { action?: string };
@@ -166,8 +188,13 @@ const DEFAULTS = {
   hosts: ANY_HOST,
   // Prior art (jkudish/jev-browser) waits 8 s; npm's headless challenge never cleared in 50 s, so this bounds patience.
   wallWaitMs: 8000,
+  // A task built without the runner never waits for a person; the runner sets the call's wait (default 120 s when visible).
+  waitForPersonSeconds: 0,
   checks: [] as Check[],
 };
+// While waiting for a person: how often the page is read (a full observe, so not every 250 ms) and how often the countdown is told.
+const PERSON_POLL_MS = 1000;
+const PERSON_TICK_MS = 10_000;
 // How often a bot check is looked at again while it gets the chance to clear itself.
 const WALL_POLL_MS = 250;
 // How often a page that has not reacted yet is looked at again while waiting for it to change.
@@ -258,7 +285,9 @@ const BLANK_PAGE: PageState = {
  */
 export class BrowserTask {
   readonly trace: TraceEntry[] = [];
-  #options: Required<Omit<TaskOptions, 'doneWhen' | 'recordDir' | 'output' | 'model' | 'totp'>> & Pick<TaskOptions, 'doneWhen' | 'model'>;
+  #options: Required<Omit<TaskOptions, 'doneWhen' | 'recordDir' | 'output' | 'model' | 'totp' | 'person'>> & Pick<TaskOptions, 'doneWhen' | 'model'>;
+  /** Whether a person can see the browser and how to tell them; fixed when the session starts. */
+  #person: PersonReach;
   #history: (StepRecord & { confidence: number })[] = [];
   #latencies: number[] = [];
   #inputTokens = 0;
@@ -336,11 +365,13 @@ export class BrowserTask {
   /** This call's step listener, and how many of the call's steps it was told. */
   #onStep: StepListener | undefined;
   #stepsTold = 0;
+  #onWait: WaitListener | undefined;
   /** This call's stop signal (caller cancel or time budget); set while a call runs. */
   #limit: RunLimit | undefined;
 
-  constructor(tab: Tab, ask: Ask, { recordDir, output, totp, ...options }: TaskOptions) {
+  constructor(tab: Tab, ask: Ask, { recordDir, output, totp, person, ...options }: TaskOptions) {
     this.#tab = tab;
+    this.#person = person ?? { visible: true };
     this.#tabs = [tab];
     this.#ask = ask;
     const authenticators = checkTotpSecrets(totp, options.values);
@@ -447,7 +478,7 @@ export class BrowserTask {
   update(
     patch: Partial<Omit<TaskOptions, 'hosts'>> & { confirmIrreversible?: boolean; confirmTarget?: string; allowedHosts?: string[]; blockedHosts?: string[] },
   ) {
-    const { confirmIrreversible, confirmTarget, values, secretKeys, files, totp, recordDir: _recordDir, output: _output, allowedHosts, blockedHosts, ...options } = patch;
+    const { confirmIrreversible, confirmTarget, values, secretKeys, files, totp, recordDir: _recordDir, output: _output, person: _person, allowedHosts, blockedHosts, ...options } = patch;
     // First, so a list that would widen the hosts, or a bad authenticator secret, throws before anything else changes.
     const hosts = narrowHosts(this.#options.hosts, { allowed: allowedHosts, blocked: blockedHosts });
     const authenticators = checkTotpSecrets(totp, values);
@@ -497,10 +528,12 @@ export class BrowserTask {
   /**
    * Runs until done or a hand-back. `signal` is the caller's cancel (the MCP request's): the run stops at its next
    * check, `blocked` "Cancelled by the caller"; an input already under way finishes first. `onStep` hears each step of
-   * this call (numbered from 1) once the run moves past it, with the page's URL then; a listener that throws is ignored.
+   * this call (numbered from 1) once the run moves past it, with the page's URL then; `onWait` the countdown while it
+   * waits for a person at a wall. A listener that throws is ignored.
    */
-  async run({ signal, onStep }: { signal?: AbortSignal; onStep?: StepListener } = {}): Promise<TaskSummary> {
+  async run({ signal, onStep, onWait }: { signal?: AbortSignal; onStep?: StepListener; onWait?: WaitListener } = {}): Promise<TaskSummary> {
     this.#onStep = onStep;
+    this.#onWait = onWait;
     this.#stepsTold = 0;
     // The recording is for people: a browser failure while recording must not change or hang the run's outcome.
     await this.#recording?.start(this.#tab).catch(() => undefined);
@@ -517,6 +550,7 @@ export class BrowserTask {
     for (; this.#traceScrubbed < this.trace.length; this.#traceScrubbed++) this.trace[this.#traceScrubbed] = this.#scrub(this.trace[this.#traceScrubbed]);
     const summary = this.#scrub(settled);
     this.#onStep = undefined;
+    this.#onWait = undefined;
     await this.#recording?.finish(this.#tab, summary, { goal: this.#options.goal, doneWhen: this.#options.doneWhen }).catch(() => undefined);
     if (this.#output) await this.#writeCall(this.#output.dir, summary);
     return summary;
@@ -540,6 +574,60 @@ export class BrowserTask {
     const width = this.#ending?.page.w || END_PAGE_WIDTH;
     const scale = Math.min(1, END_PAGE_WIDTH / (width * ratio));
     return Buffer.from(await this.#tab.screenshot({ format: 'jpeg', quality: 70, scale }), 'base64');
+  }
+
+  /** Tells the wait listener the countdown; like a step listener, it only hears. */
+  #tellWait(message: string, secondsLeft: number, url: string) {
+    try {
+      this.#onWait?.({ message: this.#scrub(message), seconds_left: secondsLeft }, this.#scrub(url));
+    } catch {
+      // The caller's progress line never decides how the run goes.
+    }
+  }
+
+  // jevway: with the browser in view, a person can get past a wall the run never touches. The tab comes forward, one
+  // notification says what to do, and the page is read (no model, no input) until the wall is gone or the time is up.
+  async #waitForPerson(
+    wall: PersonWall,
+    page: PageState,
+    { isWall, clearReads, limit }: { isWall: (page: PageState) => Promise<boolean> | boolean; clearReads: number; limit: RunLimit },
+  ): Promise<{ outcome: WaitOutcome | 'off'; page: PageState }> {
+    const waitMs = this.#person.visible ? this.#options.waitForPersonSeconds * 1000 : 0;
+    if (waitMs <= 0 || limit.stopped()) return { outcome: 'off', page };
+    const tab = this.#tab;
+    for (const [method, params] of [['Page.bringToFront', {}], ['Target.activateTarget', { targetId: tab.targetId }]] as const) {
+      try {
+        await tab.send(method, params);
+      } catch {
+        // Best effort: an old Chrome or a closed window still gets the notification.
+      }
+    }
+    try {
+      this.#person.notify?.(notificationText(wall));
+    } catch {
+      // A notifier only hears.
+    }
+    const { outcome, page: read } = await waitForPersonLoop({
+      waitMs,
+      pollMs: this.#person.pollMs ?? PERSON_POLL_MS,
+      tickMs: this.#person.tickMs ?? PERSON_TICK_MS,
+      clearReads,
+      read: async () => {
+        // A tab the page opens meanwhile is the person's (a "Sign in with Google" popup): never followed.
+        tab.takeOpened();
+        if (tab.closed) return undefined;
+        return this.#observe().catch((error) => {
+          if (error instanceof StalePage) return page;
+          throw error;
+        });
+      },
+      isWall,
+      pause: limit.pause,
+      stopped: () => Boolean(limit.stopped()),
+      tell: (secondsLeft) => this.#tellWait(waitingText(wall, secondsLeft), secondsLeft, page.url),
+    });
+    if (outcome === 'passed') this.#history.push({ operation: 'WAIT_FOR_PERSON', element: passedText(wall), page_changed: true, confidence: 1 });
+    return { outcome, page: read ?? page };
   }
 
   /** Tells the step listener about this call's steps it has not heard yet; the page's URL is the one the run is on now. */
@@ -644,8 +732,8 @@ export class BrowserTask {
         const now = await this.#observe().catch(() => undefined);
         if (now && (await findBotWall(this.#tab, now))) {
           page = now;
-          const { wall } = await wallAfterWait();
-          return wall ? stopAtWall(wall, decision) : undefined;
+          const { wall, waited } = await wallAfterWait();
+          return wall ? stopAtWall(wall, decision, waited) : undefined;
         }
       }
       return stop('done', reason, decision);
@@ -663,9 +751,19 @@ export class BrowserTask {
     };
 
     // jevway: a bot check offers nothing to act on, and the run never tries to get past one. It gets wallWaitMs to clear
-    // itself (the page read again meanwhile), once per call: one that comes back after clearing ends the run at once.
+    // itself (the page read again meanwhile), then, in a visible browser, a person gets waitForPersonSeconds to pass it;
+    // once per call: one that comes back after clearing ends the run at once.
     let wallWaited = false;
-    const wallAfterWait = async (): Promise<{ wall?: BotWall; cleared: boolean }> => {
+    // Each kind of wall waits for a person once per call.
+    const personWaited = new Set<PersonWall['kind']>();
+    const waitForPerson = async (wall: PersonWall, isWall: (page: PageState) => Promise<boolean> | boolean, clearReads: number) => {
+      if (personWaited.has(wall.kind)) return 'off';
+      personWaited.add(wall.kind);
+      const waited = await this.#waitForPerson(wall, page, { isWall, clearReads, limit });
+      page = waited.page;
+      return waited.outcome;
+    };
+    const wallAfterWait = async (): Promise<{ wall?: BotWall; cleared: boolean; waited?: number; byPerson?: boolean }> => {
       let wall = await findBotWall(this.#tab, page);
       if (!wall) return { cleared: false };
       if (wallWaited) return { wall, cleared: false };
@@ -681,14 +779,22 @@ export class BrowserTask {
         });
         wall = await findBotWall(this.#tab, page);
       }
-      return { wall, cleared: !wall };
+      if (!wall || limit.stopped()) return { wall, cleared: !wall };
+      const outcome = await waitForPerson({ kind: 'bot_check', check: wall.name }, async (now) => Boolean(await findBotWall(this.#tab, now)), 1);
+      // A tab that went away is the loop's to handle, as after any step.
+      if (outcome === 'passed' || outcome === 'gone') return { cleared: true, byPerson: true };
+      return { wall, cleared: false, ...(outcome === 'ran_out' && { waited: this.#options.waitForPersonSeconds }) };
     };
 
-    const stopAtWall = (wall: BotWall, decision?: Decision): TaskSummary => {
+    const stopAtWall = (wall: BotWall, decision?: Decision, waited?: number): TaskSummary => {
       // A cancel or the time budget that cut the wait short is the reason the run ended.
       const halt = limit.stopped();
       if (halt) return stop(halt.status, halt.reason, decision);
-      return { ...stop('blocked', wallReason(wall), decision), wall: { kind: 'bot_check', origin: originOf(page.url), name: wall.provider } };
+      const { visible } = this.#person;
+      return {
+        ...stop('blocked', wallReason(wall, { visible, waited }), decision),
+        wall: { kind: 'bot_check', origin: originOf(page.url), name: wall.provider, person_can_act: visible, ...(waited !== undefined && { waited_seconds: waited }) },
+      };
     };
 
     // Browser and model errors end the run as `blocked`: the calling agent keeps the session and decides what next.
@@ -710,8 +816,28 @@ export class BrowserTask {
         // The arm belongs to one step: a click that never reached the page leaves none for the next decision, on any tab.
         for (const tab of this.#tabs) tab.disarmConfirm();
         // Checked before a decision is spent: a challenge page has nothing for Jev to pick.
-        const { wall } = await wallAfterWait();
-        if (wall) return stopAtWall(wall);
+        const { wall, waited, byPerson } = await wallAfterWait();
+        if (wall) return stopAtWall(wall, undefined, waited);
+        // A person passed it (or its tab went away): the checks above run again on the page now.
+        if (byPerson) continue;
+        // An identity provider's sign-in for another site is the person's: with a visible browser it waits for them.
+        const provider = ssoProviderOf(page.url);
+        if (provider) {
+          const origin = originOf(page.url);
+          const outcome = await waitForPerson({ kind: 'sso', provider }, (now) => Boolean(ssoProviderOf(now.url)), 2);
+          if (outcome === 'passed' || outcome === 'gone') continue;
+          if (outcome === 'stopped') {
+            const halt = limit.stopped()!;
+            return stop(halt.status, halt.reason);
+          }
+          if (outcome === 'ran_out') {
+            const waited = this.#options.waitForPersonSeconds;
+            return {
+              ...stop('blocked', ssoReason(provider, origin, waited)),
+              wall: { kind: 'sign_in', origin, name: provider.toLowerCase(), person_can_act: true, waited_seconds: waited },
+            };
+          }
+        }
         if (++decisions > maxSteps * 2) return stop('step_budget', `Made ${maxSteps * 2} decisions without finishing`);
         let decision: Decision;
         try {
@@ -770,9 +896,16 @@ export class BrowserTask {
             continue;
           }
           if (signIn) {
+            const wallPage = page;
+            const outcome = await waitForPerson({ kind: 'sign_in', host: hostOf(page.url) }, (now) => stillSigningIn(now, wallPage), 2);
+            if (outcome === 'passed' || outcome === 'gone') continue;
+            const halt = limit.stopped();
+            if (halt) return stop(halt.status, halt.reason, decision);
+            const { visible } = this.#person;
+            const waited = outcome === 'ran_out' ? this.#options.waitForPersonSeconds : undefined;
             return {
-              ...stop('blocked', `The page asks to sign in at ${signIn.origin} and no supplied value fits its fields; sign in there (or pass the values), then call again.`, decision),
-              wall: signIn,
+              ...stop('blocked', signInReason(signIn.origin, { visible, waited }), decision),
+              wall: { ...signIn, person_can_act: visible, ...(waited !== undefined && { waited_seconds: waited }) },
             };
           }
           return stop('blocked', error!, decision);
@@ -1842,9 +1975,36 @@ class ModelCallError extends Error {}
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-// The hand-back for a bot wall: what it is, what made it one, and who can pass it.
-const wallReason = (wall: BotWall) =>
-  `The page is a bot check (${wall.name}; seen: ${wall.evidence.map((e) => (e.startsWith('title ') ? e : `"${e}"`)).join(', ')}) that did not clear by itself; jevway never tries to get past one. A person can pass it in this tab, then continue the session.`;
+// The hand-back for a bot wall: what it is, what made it one, whether a person was waited for, and who can pass it.
+const wallReason = (wall: BotWall, { visible, waited }: { visible: boolean; waited?: number }) => {
+  const seen = wall.evidence.map((e) => (e.startsWith('title ') ? e : `"${e}"`)).join(', ');
+  const wait = waited === undefined ? '' : `, and nobody passed it in the ${waited} s jevway waited with the tab in front`;
+  const who = visible
+    ? 'A person can pass it in this tab, then continue the session.'
+    : 'This browser is headless, so nobody can pass it here: a visible browser is needed (JEVWAY_BROWSER=auto or launch).';
+  return `The page is a bot check (${wall.name}; seen: ${seen}) that did not clear by itself${wait}; jevway never tries to get past one. ${who}`;
+};
+
+// The hand-back for a sign-in wall no supplied value passes.
+const signInReason = (origin: string, { visible, waited }: { visible: boolean; waited?: number }) => {
+  const wait = waited === undefined ? '' : `, and nobody signed in during the ${waited} s jevway waited with the tab in front`;
+  const what = visible
+    ? 'sign in there (or pass the values), then call again.'
+    : 'pass the values, or sign in with a visible browser (JEVWAY_BROWSER=auto or launch; this one is headless), then call again.';
+  return `The page asks to sign in at ${origin} and no supplied value fits its fields${wait}; ${what}`;
+};
+
+// The hand-back for an SSO sign-in nobody finished while the run waited.
+const ssoReason = (provider: string, origin: string, waited: number) =>
+  `The page asks to sign in with ${provider} at ${origin} for another site, and nobody finished it during the ${waited} s jevway waited with the tab in front; sign in there, then call again.`;
+
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
 
 // Anything that is not a model error came from the tab (CDP, page never settling, an unconfirmed action).
 const describeError = (error: unknown) =>
