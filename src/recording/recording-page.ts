@@ -1,6 +1,10 @@
 // The design every recording page shares (Prima Persona: one 4-column grid, monochrome, hairline rows, Switzer):
 // a run's own index.html, the jobs report and the agent report. The player (the video, its timeline and the step strip,
 // kept on the same step) is here too, so a run looks the same wherever it is shown.
+import { readFileSync } from 'node:fs';
+import { storyLine } from '../task/present.ts';
+import type { TaskSummary } from '../task/run-task.ts';
+import { pastTense } from './describe-step.ts';
 import type { RecordedStep } from './recording.ts';
 
 export const escapeHtml = (text: string) =>
@@ -10,9 +14,41 @@ const escape = escapeHtml;
 /** Switzer from Fontshare; the system stack takes over when it can't load (offline, file://). */
 export const FONT_LINK = 'https://api.fontshare.com/v2/css?f[]=switzer@400,500&display=swap';
 
+// --- what every page's head carries
+
+/** The installed jevway's version (`package.json` sits two folders up from here in `src/` and in `dist/`). */
+export const JEVWAY_VERSION = (() => {
+  try {
+    return (JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }).version;
+  } catch {
+    return 'unknown';
+  }
+})();
+
+/** Names the page's maker for an agent that fetched it: `<meta name="generator" content="jevway 0.4.0">`. */
+export const GENERATOR_META = `<meta name="generator" content="jevway ${JEVWAY_VERSION}">`;
+
+/** The web font, optional: fetched without holding the first paint, so an offline page draws at once in the system stack. */
+export const FONT_STYLESHEET = `<link rel="stylesheet" href="${FONT_LINK}" media="print" onload="this.media='all'">`;
+
+/**
+ * Data an agent reads without scraping the markup: JSON in an inert script element, `<` escaped so no string in it can
+ * close the element.
+ *
+ * @example
+ * embeddedJson('jevway-summary', record) // '<script type="application/json" id="jevway-summary">{…}</script>'
+ */
+export const embeddedJson = (id: string, data: unknown) =>
+  `<script type="application/json" id="${escape(id)}">${JSON.stringify(data).replace(/</g, '\\u003c')}</script>`;
+
 // --- words and numbers a reader compares
 
 export const statusWord = (status: string) => status.replaceAll('_', ' ');
+const STATUS_LABELS: Record<string, string> = { done: 'Done', needs_input: 'Needs input', needs_confirmation: 'Needs confirmation', uncertain: 'Uncertain', blocked: 'Blocked', step_budget: 'Out of budget' };
+/** A status as a person says it: "Needs input", "Out of budget". */
+export const statusLabel = (status: string) => STATUS_LABELS[status] ?? statusWord(status).replace(/^./, (c) => c.toUpperCase());
+/** How a status reads at a glance: done held, a hand-back is the caller's turn (reached), a stop missed. */
+export const statusTone = (status: string) => (status === 'done' ? 'held' : ['needs_input', 'needs_confirmation', 'uncertain'].includes(status) ? 'reached' : 'missed');
 export const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 export const indexLabel = (i: number) => String(i + 1).padStart(2, '0');
@@ -30,6 +66,88 @@ export const pathOf = (url: string) => {
 };
 /** A run's Finished shots carry the status (lowercase) as their operation; actions are uppercase. */
 export const isFinished = (step: RecordedStep) => step.operation === step.operation.toLowerCase();
+
+// --- a recording told as the summary's story
+
+/** One line of a call's story: the summary's sentence, and the recorded shot it belongs to (index into the steps) when there is one. */
+export interface StoryEntry {
+  sentence: string;
+  shot?: number;
+}
+
+/** One call's story: its sentences in order, ending with how it ended. */
+export interface CallStory {
+  status?: string;
+  entries: StoryEntry[];
+}
+
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+const withoutStop = (text: string) => text.replace(/\.$/, '');
+
+// A recorded shot's own wording when no summary step tells it: past tense, or what kept it from running.
+const toldFromShot = (step: RecordedStep) =>
+  step.unreachable
+    ? `Did not ${lowerFirst(step.description)}: something covered its target${(step.attempts ?? 1) > 1 ? ` (${step.attempts} tries)` : ''}.`
+    : pastTense(step.description);
+
+// A shot and a summary step are the same step when their operation and wording agree: the summary's sentence starts
+// with the shot's description in the past tense (or "Did not …" for a target that was never reached).
+const sameStep = (shot: RecordedStep, step: TaskSummary['steps'][number], sentence: string) => {
+  if (shot.operation !== step.operation) return false;
+  if (shot.unreachable) return sentence.startsWith(`Did not ${lowerFirst(shot.description)}`);
+  if (sentence.startsWith('Did not ')) return false;
+  return shot.operation === 'PRESS_ESCAPE' || sentence.startsWith(withoutStop(pastTense(shot.description)));
+};
+
+/**
+ * The recorded steps told the way a summary's `story` tells them (`storyLine`), one story per call: the recording's
+ * Finished shots split the calls, and each shot takes the sentence of the summary step it matches, in order. A summary
+ * step with no shot (a rejected done, a covered target fed back) keeps its place without one; a shot no summary step
+ * matches is told from its own description.
+ *
+ * @example
+ * storyOfRecording(steps, summaries)[0].entries[0] // { sentence: 'Clicked "New issue".', shot: 0 }
+ */
+export const storyOfRecording = (steps: RecordedStep[], summaries: TaskSummary[]): CallStory[] => {
+  const calls: { shots: number[]; end?: number }[] = [{ shots: [] }];
+  steps.forEach((step, i) => {
+    const call = calls.at(-1)!;
+    if (isFinished(step)) {
+      call.end = i;
+      calls.push({ shots: [] });
+    } else call.shots.push(i);
+  });
+  if (!calls.at(-1)!.shots.length && calls.length > 1) calls.pop();
+  return calls.map(({ shots, end }, n) => {
+    const told = summaries[n]?.steps ?? [];
+    // A summary saved by older code may lack a step's element.
+    const sentences = told.map((step) => storyLine({ ...step, element: step.element ?? '' }));
+    const entries: StoryEntry[] = [];
+    let cursor = 0;
+    for (const shot of shots) {
+      const match = told.findIndex((step, j) => j >= cursor && sameStep(steps[shot], step, sentences[j]));
+      if (match < 0) {
+        entries.push({ sentence: toldFromShot(steps[shot]), shot });
+        continue;
+      }
+      entries.push(...sentences.slice(cursor, match).map((sentence) => ({ sentence })), { sentence: sentences[match], shot });
+      cursor = match + 1;
+    }
+    entries.push(...sentences.slice(cursor).map((sentence) => ({ sentence })));
+    if (end === undefined) return { entries };
+    const status = steps[end].operation;
+    const reason = summaries[n]?.reason ?? steps[end].description.replace(/^Finished: [a-z_]+\.\s*/, '');
+    entries.push({ sentence: `${statusLabel(status)}: ${reason}`, shot: end });
+    return { status, entries };
+  });
+};
+
+/** Each recorded step's sentence, by its index: what its card and its alt text say. */
+export const sentencesOf = (stories: CallStory[]) => {
+  const sentences: string[] = [];
+  for (const { entries } of stories) for (const { sentence, shot } of entries) if (shot !== undefined) sentences[shot] = sentence;
+  return sentences;
+};
 
 /** One hairline row of a fact list: the label in column 1, the body across columns 2–4. */
 export const fact = (label: string, body: string) => `<div class="fact grid4"><dt>${label}</dt><dd class="c2s3">${body}</dd></div>`;
@@ -62,13 +180,14 @@ export const stripOpening = (label: string, viewport?: Viewport) => {
 };
 
 /**
- * One step as a card: the shot, then its number, video time and confidence, what happened, and where. The run's
- * Finished shots (lowercase operation, the status) read "Finished: <status>", their reason in the alt text. With
- * `href` the whole card is a link (the overview); otherwise it seeks the player it sits in.
+ * One step as a card: the shot, then its number, video time and confidence, what happened (`sentence`, the story's
+ * wording, else the recorded description), and where. Finished shots (lowercase operation, the status) read
+ * "Finished: <status>" without a sentence. With `href` the whole card is a link (the overview); otherwise it seeks the
+ * player it sits in, and a link named after the shot's file opens it full size.
  */
-export const shotCard = (step: RecordedStep, i: number, dir: string, open: { href: string } | { video: boolean }) => {
+export const shotCard = (step: RecordedStep, i: number, dir: string, open: { href: string } | { video: boolean }, sentence?: string) => {
   const finished = isFinished(step);
-  const label = finished ? `Finished: ${statusWord(step.operation)}` : step.description;
+  const label = sentence ?? (finished ? `Finished: ${statusWord(step.operation)}` : step.description);
   const timed = 'video' in open && open.video && step.video_at !== undefined;
   const meta = [
     indexLabel(i),
@@ -76,14 +195,15 @@ export const shotCard = (step: RecordedStep, i: number, dir: string, open: { hre
     ...(step.unreachable ? [`<span class="missed">not reached${(step.attempts ?? 1) > 1 ? ` ×${step.attempts}` : ''}: covered</span>`] : step.confidence !== undefined && !finished ? [step.confidence.toFixed(2)] : []),
   ].join(' · ');
   const src = `${dir}${step.file}`;
-  const image = `<img src="${escape(src)}" alt="${escape(step.description)}" loading="lazy" decoding="async" width="1120" height="780">`;
+  const image = `<img src="${escape(src)}" alt="${escape(sentence ?? step.description)}" loading="lazy" decoding="async" width="1120" height="780">`;
   const text = `<span class="what">${escape(label)}</span><span class="where">${escape(pathOf(step.url))}</span>`;
   const className = `shot${finished ? ' finished' : ''}`;
   if ('href' in open) return `<a class="${className}" href="${escape(open.href)}">${image}<span class="caption"><span class="meta num">${meta}</span>${text}</span></a>`;
-  // In a player the whole card seeks (the button gives it a keyboard stop); the full-size link sits outside the button.
+  // In a player the whole card seeks (the button gives it a keyboard stop); the file's own link sits outside the button.
   const data = timed ? ` data-at="${step.video_at}"` : ` data-src="${escape(src)}"`;
+  const name = step.file.split('/').pop()!;
   return `<div class="${className}" data-index="${i}"${data}><button type="button" class="seek" aria-label="Show step ${i + 1}">${image}</button>
-<span class="caption"><span class="meta-line"><span class="meta num">${meta}</span><a class="full-size" href="${escape(src)}" target="_blank" rel="noopener">Full size</a></span>${text}</span></div>`;
+<span class="caption"><span class="meta-line"><span class="meta num">${meta}</span><a class="full-size" href="${escape(src)}" target="_blank" rel="noopener" title="Open the shot full size">${escape(name)}</a></span>${text}</span></div>`;
 };
 
 /**
@@ -103,6 +223,7 @@ export const playerMarkup = ({
   viewport,
   bar,
   preload = 'none',
+  sentences = [],
 }: {
   dir: string;
   video: string | null;
@@ -114,16 +235,18 @@ export const playerMarkup = ({
   bar: string;
   /** `metadata` when the page holds one video: it then knows its length (and, for an old recording, its size) at once. */
   preload?: 'none' | 'metadata';
+  /** Each step's sentence from the story (`sentencesOf`), for its card and alt text. */
+  sentences?: string[];
 }) => {
   const screen = screenFrame(viewport);
   const strip = stripOpening(label, viewport);
   const poster = `${dir}${steps[0].file}`;
   const timed = steps.filter((s) => s.video_at !== undefined);
   if (!video || !timed.length) {
-    return `${screen}<img data-frame src="${escape(poster)}" alt="${escape(steps[0].description)}"></div>
+    return `${screen}<img data-frame src="${escape(poster)}" alt="${escape(sentences[0] ?? steps[0].description)}"></div>
 <p class="small screen-note">No video for this run (it needs ffmpeg): pick a step to see its shot.</p>
 ${bar}
-${strip}${steps.map((s, i) => shotCard(s, i, dir, { video: false })).join('')}</div>`;
+${strip}${steps.map((s, i) => shotCard(s, i, dir, { video: false }, sentences[i])).join('')}</div>`;
   }
   // The last frame holds 1.5 s (recording.ts), so this is the video's length until its metadata says otherwise.
   const duration = Math.max(...timed.map((s) => s.video_at!)) + 1.5;
@@ -138,7 +261,7 @@ ${strip}${steps.map((s, i) => shotCard(s, i, dir, { video: false })).join('')}</
   return `${screen}<video src="${escape(`${dir}${video}`)}" preload="${preload}"${posterAttribute} controls muted playsinline aria-label="Screencast of ${label}"></video></div>
 <div class="timeline-scroll"><div class="timeline" style="min-width:${width.toFixed(1)}rem"><div class="track"></div><div class="played"></div><div class="ticks">${ticks}</div></div></div>
 ${bar}
-${strip}${steps.map((s, i) => shotCard(s, i, dir, { video: true })).join('')}</div>`;
+${strip}${steps.map((s, i) => shotCard(s, i, dir, { video: true }, sentences[i])).join('')}</div>`;
 };
 
 // --- the stylesheet: tokens, the grid, type, the player and fact rows
@@ -149,9 +272,10 @@ export const BASE_STYLE = `
   --foreground: oklch(0.205 0 0);
   --muted: oklch(0.922 0 0);
   --muted-foreground: oklch(0.47 0 0);
-  --held: oklch(0.55 0.13 150);
-  --reached: oklch(0.64 0.14 70);
-  --missed: oklch(0.56 0.19 27);
+  /* Text-safe on the background: at least 4.5:1 */
+  --held: oklch(0.5 0.13 150);
+  --reached: oklch(0.52 0.12 65);
+  --missed: oklch(0.5 0.19 27);
   --font-sans: "Switzer", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --wrap: 85rem;
@@ -173,8 +297,8 @@ export const BASE_STYLE = `
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--background); color: var(--foreground); font: 400 1rem/1.5 var(--font-sans); -webkit-font-smoothing: antialiased; }
-h1, h2, h3, p, dl, dd, ul, figure { margin: 0; }
-ul { padding: 0; list-style: none; }
+h1, h2, h3, p, dl, dd, ul, ol, figure { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
 a { color: inherit; text-decoration: none; }
 a:hover { color: var(--muted-foreground); }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: inherit; }
@@ -262,9 +386,25 @@ a.shot:hover img { opacity: 0.85; }
 .kv { color: var(--muted-foreground); margin-right: 0.375rem; }
 .address { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 0.8125rem; overflow-wrap: anywhere; }
 
+/* The top bar: the page's name and its in-page links */
+nav.top { position: sticky; top: 0; z-index: 5; background: var(--background); }
+nav.top .wrapper { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding-block: 0.75rem; font-size: 0.75rem; }
+nav.top .links { display: flex; gap: 1rem; color: var(--muted-foreground); }
+
 /* Footer */
 footer .wrapper { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1rem; padding-block: 2rem; border-top: 1px solid var(--muted); font-size: 0.75rem; line-height: 1rem; color: var(--muted-foreground); }
 footer span { overflow-wrap: anywhere; }
+
+/* Print: the story and the shots on paper, no player */
+@media print {
+  :root { --background: #fff; --foreground: #000; --muted: #ccc; --muted-foreground: #444; color-scheme: light; }
+  video, .screen, .screen-note, .timeline-scroll, .player-bar, .full-size, nav.top, .needs-js { display: none !important; }
+  .strip { flex-wrap: wrap; overflow: visible; }
+  .shot { flex: 0 0 calc((100% - 3 * var(--gap)) / 4); break-inside: avoid; }
+  .player .shot img { opacity: 1; }
+  li, figure, article, .fact { break-inside: avoid; }
+  a { text-decoration: underline; }
+}
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
 `;
@@ -286,6 +426,9 @@ export const PLAYER_SCRIPT = `<script>
     const ticks = [...panel.querySelectorAll('.tick')];
     const shots = [...panel.querySelectorAll('.strip .shot')];
     const played = panel.querySelector('.played');
+    // A run page's story list: one entry per shot, marked with the shot it tells (outside the strip).
+    const entries = [...panel.querySelectorAll('li[data-shot]')];
+    const screen = panel.querySelector('.screen');
     const clockText = panel.querySelector('.clock');
     let current = -1;
     const reveal = (shot) => {
@@ -297,6 +440,7 @@ export const PLAYER_SCRIPT = `<script>
       if (index === current) return;
       current = index;
       for (const list of [ticks, shots]) list.forEach((el, n) => (n === index ? el.setAttribute('aria-current', 'step') : el.removeAttribute('aria-current')));
+      entries.forEach((el) => (Number(el.dataset.shot) === index ? el.setAttribute('aria-current', 'step') : el.removeAttribute('aria-current')));
       reveal(shots[index]);
       const tick = ticks[index];
       if (tick && timeline && timeline.scrollWidth > timeline.clientWidth) {
@@ -321,17 +465,34 @@ export const PLAYER_SCRIPT = `<script>
         if (clockText) clockText.textContent = clock(Number(shot.dataset.at));
       }
     };
-    // A reader's seek: plays from there, and the address names the step so it can be shared (#<view>-r<run>-s<step>).
+    // A reader's seek: plays from there, and the address names the step so it can be shared (#<view>-r<run>-s<step>
+    // in a report, #s<step> on a run page).
     const choose = (index) => {
       seek(index, true);
       const view = panel.closest('.job-view');
       if (view && panel.dataset.run) history.replaceState(null, '', '#' + view.id + '-r' + panel.dataset.run + '-s' + (index + 1));
+      else if (panel.hasAttribute('data-step-links')) history.replaceState(null, '', '#s' + (index + 1));
     };
     ticks.forEach((tick) => tick.addEventListener('click', () => choose(Number(tick.dataset.index))));
     // A click anywhere on a card seeks, except on its full-size link.
     shots.forEach((shot, n) => shot.addEventListener('click', (event) => { if (!event.target.closest('a')) choose(n); }));
+    // A story entry's time: play from there, with the video in view.
+    panel.querySelectorAll('a.at[data-seek]').forEach((link) => link.addEventListener('click', (event) => {
+      event.preventDefault();
+      choose(Number(link.dataset.seek));
+      if (screen && screen.getBoundingClientRect().top < 0) screen.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
+    }));
     // A link to a step (the router): go there without playing.
     panel.addEventListener('seek-step', (event) => seek(event.detail.index, false));
+    // A run page opened at #s<step> (a shared link): that step, without playing.
+    if (panel.hasAttribute('data-step-links')) {
+      const open = () => {
+        const step = /^s(\\d+)$/.exec(location.hash.slice(1));
+        if (step && shots[Number(step[1]) - 1]) seek(Number(step[1]) - 1, false);
+      };
+      addEventListener('hashchange', open);
+      open();
+    }
     if (!video) return;
     const place = () => {
       if (!video.duration || !isFinite(video.duration)) return;

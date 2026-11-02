@@ -3,9 +3,28 @@ import { DEVICES } from '../../src/browser/devices.ts';
 import type { Tab } from '../../src/browser/tab.ts';
 import { scrubberFor, shownValues } from '../../src/jev/secrets.ts';
 import type { RecordedStep } from '../../src/recording/recording.ts';
-import { clock, dollars, escapeHtml as escape, fact, indexLabel, playerMarkup, plural, seconds, shotCard, statusWord, stripOpening, thousands, type Viewport } from '../../src/recording/recording-page.ts';
+import {
+  clock,
+  dollars,
+  embeddedJson,
+  escapeHtml as escape,
+  fact,
+  FONT_STYLESHEET,
+  GENERATOR_META,
+  indexLabel,
+  playerMarkup,
+  plural,
+  seconds,
+  sentencesOf,
+  shotCard,
+  statusWord,
+  storyOfRecording,
+  stripOpening,
+  thousands,
+  type Viewport,
+} from '../../src/recording/recording-page.ts';
 import type { TaskStatus, TaskSummary } from '../../src/task/run-task.ts';
-import { ARROW, BACK_ARROW, FONT_LINK, HEAD_SCRIPT, SCRIPT, STYLE } from './report-page.ts';
+import { ARROW, BACK_ARROW, HEAD_SCRIPT, SCRIPT, STYLE } from './report-page.ts';
 
 /**
  * A calling agent's second call on the same session: what it asks next, from whatever the first call left behind
@@ -252,8 +271,9 @@ const overviewRow = (result: ReportResult, recording: Recording | undefined, sui
   const passed = passCount(runs);
   const kinds = [passed === runs.length && 'held', isFlaky(runs) && 'flaky', job.expect && 'handback', passed === 0 && 'failed'].filter(Boolean).join(' ');
   const href = `#${job.id}`;
+  const sentences = recording ? sentencesOf(storyOfRecording(recording.steps, featured.summaries)) : [];
   const strip = recording?.steps.length
-    ? `${stripOpening(`run ${featured.run}`, recording.viewport ?? device)}${recording.steps.map((s, i) => shotCard(s, i, featured.dir, { href: `${href}-r${featured.run}-s${i + 1}` })).join('')}</div>`
+    ? `${stripOpening(`run ${featured.run}`, recording.viewport ?? device)}${recording.steps.map((s, i) => shotCard(s, i, featured.dir, { href: `${href}-r${featured.run}-s${i + 1}` }, sentences[i])).join('')}</div>`
     : `<p class="small no-recording">No recording for run ${featured.run}${featured.error ? `: ${escape(featured.error)}` : '.'}</p>`;
   return `<article class="job-row" data-kinds="${kinds}">
 <div class="grid4">
@@ -339,7 +359,8 @@ const player = (r: RunResult, recording: Recording | undefined, runs: RunResult[
     const note = notRun(r) ? 'Not run: the suite stopped before this run.' : r.error ? `This run ended in an error before it recorded anything: ${escape(r.error)}` : `No recording was found for run ${r.run}.`;
     return `<div class="screen quiet"><p class="meta">Run ${r.run}</p><p class="small">${note}</p></div>\n${bar}`;
   }
-  return playerMarkup({ dir: r.dir, video: recording!.video, steps, label: `run ${r.run}`, featured, viewport: recording!.viewport ?? device, bar });
+  const sentences = sentencesOf(storyOfRecording(steps, r.summaries));
+  return playerMarkup({ dir: r.dir, video: recording!.video, steps, label: `run ${r.run}`, featured, viewport: recording!.viewport ?? device, bar, sentences });
 };
 
 /** The run's facts as hairline rows: what Jev was given, how the run was judged, what it did and what it cost. */
@@ -428,6 +449,23 @@ ${failures}
 </section>`;
 };
 
+/** The suite as data for an agent reading the page: every job, and how each run ended and was judged. */
+const suiteSummary = ({ title, model, results }: { title: string; model: string; results: ReportResult[] }) => {
+  const runs = results.flatMap((r) => r.runs);
+  return {
+    kind: 'jobs-report',
+    title,
+    model,
+    passed: passCount(runs),
+    runs: runs.length,
+    jobs: results.map(({ job, runs: jobRuns }) => ({
+      id: job.id,
+      title: job.title,
+      runs: jobRuns.map((r) => ({ run: r.run, passed: r.passed, status: r.summaries.at(-1)?.status ?? null, dir: r.dir })),
+    })),
+  };
+};
+
 /**
  * The whole report as one self-contained page: an overview (the suite in a sentence, its figures, every job as a row
  * with its featured run's step shots) and one view per job, opened by `#<job id>`, that starts with the run's
@@ -480,8 +518,10 @@ export const renderReport = ({
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>${escape(title)}</title>
 <meta name="description" content="${escape(`${title}: every run judged by ground truth, recorded as video and step shots.`)}">
-<link rel="preconnect" href="https://api.fontshare.com" crossorigin>
-<link rel="stylesheet" href="${FONT_LINK}">
+${GENERATOR_META}
+<meta name="color-scheme" content="light dark">
+<link rel="alternate" type="application/json" href="results.json" title="The suite's results as data">
+${FONT_STYLESHEET}
 ${HEAD_SCRIPT}
 <style>${STYLE}</style>
 </head><body>
@@ -491,6 +531,7 @@ ${overviewView({ title, results, suiteWrites, runsPerJob, device: deviceViewport
 ${views.join('\n')}
 </main>
 <footer><div class="wrapper"><span>${escape(model)} · screenshots ${escape(screenshots)} · ${escape(device)} · phrasing ${escape(phrasing)} · ${startedAt(outFolder)}</span><span>${outFolder ? `verify/out/${escape(outFolder)}` : 'out folder unknown'}</span></div></footer>
+${embeddedJson('jevway-summary', suiteSummary({ title, model, results }))}
 ${SCRIPT}
 </body></html>
 `;

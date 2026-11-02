@@ -27,11 +27,6 @@ html:not(.js) .needs-js { display: none; }
 .row-title { font-size: clamp(1.375rem, 1.2rem + 0.8vw, 1.875rem); font-weight: 500; line-height: 1.2; letter-spacing: -0.025em; text-wrap: pretty; }
 .figure { display: block; font-size: clamp(1.5rem, 1.3rem + 0.8vw, 1.875rem); font-weight: 500; line-height: 1.25; letter-spacing: -0.025em; }
 
-/* Nav */
-nav.top { position: sticky; top: 0; z-index: 5; background: var(--background); }
-nav.top .wrapper { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding-block: 0.75rem; font-size: 0.75rem; }
-nav.top .links { display: flex; gap: 1rem; color: var(--muted-foreground); }
-
 /* Overview */
 .intro { padding-block: 5rem 3rem; }
 @media (min-width: 64rem) { .intro { padding-block: 9rem 4rem; } }

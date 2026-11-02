@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { renderReport, wilson, type JobResult, type RunResult } from '../../verify/jobs/report.ts';
-import { renderFolder, reportFromResults } from '../../verify/jobs/rerender.ts';
+import { renderFolder, reportFromResults, rerender } from '../../verify/jobs/rerender.ts';
 import { HASH_TARGET, SCRIPT } from '../../verify/jobs/report-page.ts';
 import type { RecordedStep } from '../../src/recording/recording.ts';
 import type { TaskStatus, TaskSummary } from '../../src/task/run-task.ts';
@@ -267,8 +267,9 @@ describe('the overview', () => {
   });
 
   it('shows the featured run\'s steps under each job, ending on its Finished card', () => {
-    expect(overview).toContain('Click &quot;New issue&quot;');
-    expect(text(overview)).toContain('Finished: done');
+    // Told as the summary's story tells it.
+    expect(overview).toContain('Clicked &quot;New issue&quot;.');
+    expect(text(overview)).toMatch(/Done: \S/);
     expect(overview).toContain('new-issue/run-1/01.jpg');
   });
 
@@ -371,7 +372,7 @@ describe('a job view', () => {
     for (const [id, steps] of [['new-issue', writeSteps], ['no-video', RECORDINGS['no-video/run-1/'].steps]] as const) {
       const panel = panelOf(viewOf(html, id), 1);
       for (const s of steps) {
-        expect(panel, `${id} ${s.file}`).toMatch(new RegExp(`<a [^>]*href="${id}/run-1/${s.file}" target="_blank" rel="noopener"[^>]*>Full size</a>`));
+        expect(panel, `${id} ${s.file}`).toMatch(new RegExp(`<a [^>]*href="${id}/run-1/${s.file}" target="_blank" rel="noopener"[^>]*>${s.file.split('/').pop()}</a>`));
       }
       for (const [button] of panel.matchAll(/<button\b[\s\S]*?<\/button>/g)) expect(button).not.toContain('<a ');
     }
@@ -485,7 +486,7 @@ describe('edge cases', () => {
 
   it('keeps every inline script parseable, with hostile titles and reasons on the page', () => {
     const hostile = render({ title: '</script><script>alert("t")</script> `${x}` \\ \u2028 end' });
-    const scriptsOf = (page: string) => [...page.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(([, source]) => source);
+    const scriptsOf = (page: string) => [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(([, source]) => source);
     const scripts = scriptsOf(hostile);
     // Only the page's own scripts: a title or reason that broke out would add one (a valid one, so count them).
     expect(scripts.length).toBe(scriptsOf(render()).length);
@@ -565,7 +566,7 @@ describe('re-rendering a saved results.json', () => {
       writeFileSync(join(runDir, 'summary.json'), JSON.stringify({ summaries: [summary('done', 'Verified.', 1)], video: 'run.mp4', steps: writeSteps }));
       const page = renderFolder(runDir);
       expect(page.file).toBe(join(runDir, 'index.html'));
-      expect(page.html.indexOf('<video src="run.mp4"')).toBeLessThan(page.html.indexOf('<dl'));
+      expect(page.html.indexOf('<video src="run.mp4"')).toBeLessThan(page.html.indexOf('<section id="details"'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -598,10 +599,9 @@ describe('for agents and offline readers', () => {
     const dir = mkdtempSync(join(tmpdir(), 'jevway-rerender-run-'));
     try {
       writeFileSync(join(dir, 'summary.json'), JSON.stringify({ summaries: [summary('done', 'Verified.', 1)], video: null, steps: writeSteps }));
-      const { file, html: page } = renderFolder(dir);
-      writeFileSync(file, page);
+      const file = rerender(dir);
       expect(existsSync(join(dir, 'manifest.json'))).toBe(true);
-      expect(page).toContain('href="manifest.json"');
+      expect(readFileSync(file, 'utf8')).toContain('href="manifest.json"');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

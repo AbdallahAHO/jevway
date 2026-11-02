@@ -1,157 +1,188 @@
-import type { JourneyDoc } from './journey-doc.ts';
+// A journey folder's own page (`index.html` next to `journey.json`): the flows as readable sequences, every screen named
+// by its type with what the agent said about it, and the QA findings by severity. Server-rendered on the shared design,
+// no script; screenshots load from `screens/`, so the folder can be zipped, served or published as-is.
+import { DEVICES } from '../browser/devices.ts';
+import {
+  BASE_STYLE,
+  embeddedJson,
+  escapeHtml as escape,
+  fact,
+  FONT_STYLESHEET,
+  GENERATOR_META,
+  JEVWAY_VERSION,
+  plural,
+} from '../recording/recording-page.ts';
+import { describeAction, type Hotspot, type JourneyDoc, type JourneyScreen } from './journey-doc.ts';
+import type { QaFinding } from './screen-judgments.ts';
 
-/**
- * A self-contained journey viewer next to `journey.json`: flow tree, per-flow screen strips with the tapped
- * hotspot outlined, agent descriptions and insights, Jev's screen type and patterns, and QA findings.
- * Screenshots load from `screens/`, so the folder can be zipped, served, or published as-is.
- */
-export const renderViewer = (doc: JourneyDoc) => `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(doc.site)} journeys</title>
-<style>
-:root { --bg:#f5f4f1; --panel:#fff; --ink:#1b1b19; --muted:#6b6a65; --line:#e3e1db; --accent:#e5484d; --chip:#efede8; --high:#d93036; --medium:#c47a00; --low:#6b6a65; }
-@media (prefers-color-scheme: dark) { :root { --bg:#111110; --panel:#1a1a19; --ink:#eeeeec; --muted:#a09f9a; --line:#2c2c2a; --chip:#252523; --accent:#ff6369; } }
-* { box-sizing: border-box; }
-body { margin:0; font:14px/1.45 ui-sans-serif, system-ui, -apple-system, sans-serif; background:var(--bg); color:var(--ink); }
-.layout { display:grid; grid-template-columns: 260px 1fr; min-height:100vh; }
-aside { border-right:1px solid var(--line); padding:20px 16px; position:sticky; top:0; height:100vh; overflow:auto; }
-aside h1 { font-size:18px; margin:0 0 4px; }
-.meta { color:var(--muted); font-size:12px; margin-bottom:16px; }
-.stats { display:flex; gap:12px; margin-bottom:18px; font-size:12px; color:var(--muted); }
-.stats b { display:block; font-size:18px; color:var(--ink); }
-nav a { display:block; padding:5px 8px; border-radius:6px; color:inherit; text-decoration:none; }
-nav a:hover { background:var(--chip); }
-nav a small { color:var(--muted); }
-.tabs { display:flex; gap:4px; padding:16px 24px 0; }
-.tabs button { border:0; background:none; color:var(--muted); font:inherit; padding:6px 10px; border-bottom:2px solid transparent; cursor:pointer; }
-.tabs button[aria-selected=true] { color:var(--ink); border-color:var(--ink); }
-main { min-width:0; }
-section.view { padding:8px 24px 48px; }
-.flow { margin:22px 0 34px; }
-.flow h2 { font-size:16px; margin:0; }
-.flow .sub { color:var(--muted); font-size:12px; margin:2px 0 12px; }
-.strip { display:flex; gap:18px; overflow-x:auto; padding-bottom:10px; scroll-snap-type:x proximity; }
-.card { flex:0 0 220px; scroll-snap-align:start; }
-body.landscape .card { flex-basis:460px; } body.landscape .grid { grid-template-columns:repeat(auto-fill, minmax(380px, 1fr)); }
-.shot { position:relative; border-radius:18px; overflow:hidden; border:1px solid var(--line); background:var(--panel); cursor:zoom-in; }
-.shot img { display:block; width:100%; }
-.hotspot { position:absolute; border:2px solid var(--accent); border-radius:6px; background:rgb(229 72 77 / .12); pointer-events:none; }
-.primary { position:absolute; border:2px dashed var(--accent); border-radius:6px; opacity:.7; pointer-events:none; }
-.num { position:absolute; top:8px; left:8px; background:var(--ink); color:var(--bg); font-size:11px; border-radius:99px; padding:1px 7px; }
-.card .action { margin-top:8px; font-weight:600; font-size:12.5px; }
-.card .action::before { content:"→ "; color:var(--accent); }
-.card p { margin:4px 0; font-size:12.5px; }
-.card .insight { color:var(--muted); font-style:italic; }
-.chips { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
-.chip { background:var(--chip); border-radius:99px; padding:1px 7px; font-size:11px; color:var(--muted); }
-.chip.type { color:var(--ink); }
-.qa { font-size:11px; margin-top:6px; }
-.qa span { display:inline-block; margin:0 4px 2px 0; }
-.sev-high { color:var(--high); } .sev-medium { color:var(--medium); } .sev-low { color:var(--low); }
-.grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:18px; margin-top:18px; }
-table { width:100%; border-collapse:collapse; margin-top:18px; font-size:13px; }
-td, th { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
-dialog { border:0; border-radius:16px; padding:0; max-width:min(920px, 94vw); background:var(--panel); color:var(--ink); }
-dialog::backdrop { background:rgb(0 0 0 / .55); }
-.detail { display:grid; grid-template-columns:minmax(0, 360px) 1fr; gap:20px; padding:20px; }
-.detail img { width:100%; border-radius:14px; border:1px solid var(--line); }
-.empty { color:var(--muted); padding:40px 0; }
-@media (max-width: 760px) {
-  .layout { grid-template-columns:1fr; } aside { position:static; height:auto; border-right:0; border-bottom:1px solid var(--line); }
-  .tabs, section.view { padding-left:16px; padding-right:16px; } .detail { grid-template-columns:1fr; }
-}
-</style>
-</head>
-<body>
-<div class="layout">
-  <aside>
-    <h1 id="site"></h1>
-    <div class="meta" id="meta"></div>
-    <div class="stats" id="stats"></div>
-    <nav id="tree"></nav>
-  </aside>
-  <main>
-    <div class="tabs" role="tablist">
-      <button role="tab" data-view="flows" aria-selected="true">Flows</button>
-      <button role="tab" data-view="screens" aria-selected="false">Screens</button>
-      <button role="tab" data-view="qa" aria-selected="false">QA</button>
-    </div>
-    <section class="view" id="flows"></section>
-    <section class="view" id="screens" hidden></section>
-    <section class="view" id="qa" hidden></section>
-  </main>
-</div>
-<dialog id="lightbox"></dialog>
-<script type="application/json" id="journey">${JSON.stringify(doc).replace(/</g, '\\u003c')}</script>
-<script>
-const doc = JSON.parse(document.getElementById('journey').textContent);
-// Parents sort before their children ("Homes" < "Homes/Home details").
-doc.flows.sort((a, b) => a.name.localeCompare(b.name));
-const screens = Object.fromEntries(doc.screens.map(s => [s.id, s]));
-const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c]);
-const $ = id => document.getElementById(id);
-const qaBadges = s => s.qa.length ? '<div class="qa">' + [...new Map(s.qa.map(f => [f.kind, f])).values()].map(f => '<span class="sev-' + f.severity + '">● ' + esc(f.kind.replace(/_/g, ' ')) + '</span>').join('') + '</div>' : '';
-const typeChips = s => '<div class="chips"><span class="chip type">' + esc(s.type) + '</span>' + s.patterns.slice(0, 4).map(p => '<span class="chip">' + esc(p.replace(/_/g, ' ')) + '</span>').join('') + '</div>';
-const boxStyle = b => 'left:' + b.x * 100 + '%;top:' + b.y * 100 + '%;width:' + b.width * 100 + '%;height:' + b.height * 100 + '%';
-const shot = (s, hotspot, num) => '<div class="shot" data-screen="' + s.id + '"><img loading="lazy" src="' + esc(s.screenshot) + '" alt="' + esc(s.title) + '">' +
-  (hotspot ? '<div class="hotspot" style="' + boxStyle(hotspot) + '"></div>' : '') +
-  (s.primaryAction ? '<div class="primary" title="Primary action (Box)" style="' + boxStyle(s.primaryAction) + '"></div>' : '') +
-  '<span class="num">' + esc(num) + '</span></div>';
+const SEVERITIES: QaFinding['severity'][] = ['high', 'medium', 'low'];
 
-// Desktop journeys get wide cards; phone journeys keep narrow portrait strips.
-if (!/iphone|pixel/.test(doc.device)) document.body.classList.add('landscape');
-$('site').textContent = doc.site;
-$('meta').textContent = doc.device + ' · ' + new Date(doc.createdAt).toLocaleString() + (doc.intent ? ' · ' + doc.intent : '');
-const qaCount = doc.screens.reduce((n, s) => n + s.qa.length, 0);
-$('stats').innerHTML = [['Flows', doc.flows.filter(f => f.screens.length).length], ['Screens', doc.screens.length], ['QA', qaCount]]
-  .map(([label, value]) => '<div><b>' + value + '</b>' + label + '</div>').join('');
+const words = (key: string) => key.replaceAll('_', ' ');
+const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+/** A screen's type as its name: "Results", "Navigation menu". */
+const typeName = (screen: JourneyScreen) => capitalized(words(screen.type));
+/** "s03 · Results": how every part of the page names a screen. */
+const screenName = (screen: JourneyScreen) => `${screen.id} · ${typeName(screen)}`;
+const percent = (fraction: number) => `${Number((fraction * 100).toFixed(2))}%`;
+const boxStyle = (box: Hotspot) => `left:${percent(box.x)};top:${percent(box.y)};width:${percent(box.width)};height:${percent(box.height)}`;
+// ISO time → "2026-11-02 09:04 UTC"
+const utc = (iso: string) => (Number.isNaN(Date.parse(iso)) ? iso : `${new Date(iso).toISOString().slice(0, 16).replace('T', ' ')} UTC`);
 
-const depth = name => name.split('/').length - 1;
-$('tree').innerHTML = doc.flows.map((f, i) => '<a href="#flow-' + i + '" style="padding-left:' + (8 + depth(f.name) * 14) + 'px">' +
-  esc(f.name.split('/').pop()) + (f.screens.length ? ' <small>' + f.screens.length + '</small>' : '') + '</a>').join('');
+/** The shot of a screen in the device's shape (no shift as it loads), the tapped spot or the primary action outlined. */
+const shot = (screen: JourneyScreen, size: { width: number; height: number }, outline?: { box: Hotspot; kind: 'hotspot' | 'primary' }) =>
+  `<span class="frame"><img src="${escape(screen.screenshot)}" alt="${escape(`${typeName(screen)} screen (${screen.id}): ${screen.description ?? screen.title}`)}" loading="lazy" decoding="async" width="${size.width}" height="${size.height}">${
+    outline ? `<span class="${outline.kind}" aria-hidden="true" style="${boxStyle(outline.box)}"></span>` : ''
+  }</span>`;
 
-const flows = doc.flows.filter(f => f.screens.length);
-$('flows').innerHTML = flows.length ? flows.map(f => '<div class="flow" id="flow-' + doc.flows.indexOf(f) + '"><h2>' + esc(f.name) + '</h2><div class="sub">' + f.screens.length + ' screens</div><div class="strip">' +
-  f.screens.map((step, i) => { const s = screens[step.screen]; return '<div class="card">' + shot(s, step.hotspot, i + 1) + typeChips(s) +
-    (s.description ? '<p>' + esc(s.description) + '</p>' : '') + (s.insight ? '<p class="insight">' + esc(s.insight) + '</p>' : '') +
-    (step.action ? '<div class="action">' + esc(step.action) + '</div>' : '') + qaBadges(s) + '</div>'; }).join('') +
-  '</div></div>').join('') : '<p class="empty">No steps yet: the journey has a start screen only.</p>';
-
-$('screens').innerHTML = '<div class="grid">' + doc.screens.map(s => '<div class="card" style="flex:none">' + shot(s, null, s.id) + typeChips(s) +
-  '<p>' + esc(s.description || s.title) + '</p>' + qaBadges(s) + '</div>').join('') + '</div>';
-
-const findings = doc.screens.flatMap(s => s.qa.map(f => ({ ...f, screen: s.id })));
-const rank = { high: 0, medium: 1, low: 2 };
-$('qa').innerHTML = findings.length ? '<table><tr><th>Severity</th><th>Screen</th><th>Finding</th><th>Detail</th></tr>' +
-  findings.sort((a, b) => rank[a.severity] - rank[b.severity]).map(f => '<tr><td class="sev-' + f.severity + '">' + f.severity + '</td><td><a href="#" data-screen="' + f.screen + '">' + f.screen + '</a></td><td>' +
-    esc(f.kind.replace(/_/g, ' ')) + '</td><td>' + esc(f.detail) + '</td></tr>').join('') + '</table>' : '<p class="empty">No QA findings.</p>';
-
-document.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
-  document.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
-  document.querySelectorAll('section.view').forEach(v => v.hidden = v.id !== tab.dataset.view);
-}));
-
-document.addEventListener('click', event => {
-  const target = event.target.closest('[data-screen]');
-  if (!target) return;
-  event.preventDefault();
-  const s = screens[target.dataset.screen];
-  const into = doc.steps.filter(step => step.to === s.id).map(step => step.from + ' → ' + esc(step.action.label));
-  $('lightbox').innerHTML = '<div class="detail"><img src="' + esc(s.screenshot) + '" alt=""><div><h2 style="margin-top:0">' + esc(s.title) + '</h2>' +
-    '<p class="meta">' + s.id + ' · <a href="' + esc(s.url) + '" target="_blank" rel="noreferrer">' + esc(s.url) + '</a></p>' + typeChips(s) +
-    (s.description ? '<p>' + esc(s.description) + '</p>' : '') + (s.insight ? '<p class="insight"><i>' + esc(s.insight) + '</i></p>' : '') +
-    (into.length ? '<p><b>Reached from</b><br>' + into.join('<br>') + '</p>' : '') +
-    (s.qa.length ? '<p><b>QA</b><br>' + s.qa.map(f => '<span class="sev-' + f.severity + '">' + esc(f.kind) + '</span>: ' + esc(f.detail)).join('<br>') + '</p>' : '') +
-    '<p><button onclick="this.closest(\\'dialog\\').close()">Close</button></p></div></div>';
-  $('lightbox').showModal();
-});
-</script>
-</body>
-</html>
+const VIEWER_STYLE = `
+.run-top { padding-block: 2.5rem 0; display: grid; gap: 1.75rem; }
+.run-top .label { padding-top: 0.5rem; }
+.lede { margin-top: 0.75rem; }
+.block { margin-top: 4rem; }
+.block-head { margin-bottom: 1.5rem; }
+.journey { padding-bottom: 4rem; }
+.frame { position: relative; display: block; border-radius: 0.75rem; overflow: hidden; background: var(--muted); }
+.frame img { width: 100%; height: auto; aspect-ratio: var(--shot-aspect); object-fit: cover; object-position: top; }
+.hotspot, .primary { position: absolute; border-radius: 0.375rem; pointer-events: none; }
+.hotspot { border: 2px solid var(--missed); background: color-mix(in oklch, var(--missed) 14%, transparent); }
+.primary { border: 2px dashed var(--missed); opacity: 0.75; }
+.flow { border-top: 1px solid var(--muted); padding-block: 1.5rem 2rem; }
+.flow h3 { font-size: 1.125rem; line-height: 1.5rem; font-weight: 500; }
+.sequence { margin-top: 0.5rem; font-size: 0.9375rem; line-height: 1.5rem; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.sequence a { color: var(--foreground); text-decoration: underline; text-decoration-color: var(--muted); text-underline-offset: 3px; }
+.flow-strip { display: flex; gap: var(--gap); overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; margin-top: 1.25rem; padding-bottom: 0.75rem; scrollbar-width: thin; }
+.flow-strip li { flex: 0 0 var(--card); scroll-snap-align: start; min-width: 0; }
+.flow-strip figure { display: flex; flex-direction: column; gap: 0.5rem; }
+.flow-strip a.frame:hover img { opacity: 0.85; }
+figcaption { display: flex; flex-direction: column; gap: 0.125rem; font-size: 0.875rem; line-height: 1.25rem; overflow-wrap: anywhere; }
+figcaption .then { color: var(--muted-foreground); }
+.screens { display: grid; gap: 0; }
+.screen-entry { border-top: 1px solid var(--muted); padding: 1.5rem 0.75rem; margin-inline: -0.75rem; scroll-margin-top: 3rem; align-items: start; }
+.screen-entry:target { background: color-mix(in oklch, var(--muted) 35%, transparent); box-shadow: inset 2px 0 0 var(--foreground); }
+.screen-entry figure { max-width: var(--figure); }
+.screen-entry h3 { font-size: 1.125rem; line-height: 1.5rem; font-weight: 500; }
+.screen-entry .body { display: grid; gap: 0.5rem; align-content: start; }
+.screen-entry .body p { font-size: 0.9375rem; line-height: 1.5rem; overflow-wrap: anywhere; }
+.insight { color: var(--muted-foreground); }
+.chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.chip { border: 1px solid var(--muted); border-radius: 99px; padding: 0 0.5rem; font-size: 0.75rem; line-height: 1.25rem; color: var(--muted-foreground); }
+.sev { font-size: 0.75rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.02em; margin-right: 0.375rem; }
+.sev.high { color: var(--missed); } .sev.medium { color: var(--reached); } .sev.low { color: var(--muted-foreground); }
+.findings li { padding-block: 0.375rem; font-size: 0.9375rem; line-height: 1.5rem; overflow-wrap: anywhere; }
+.qa-group { border-top: 1px solid var(--muted); padding-block: 1.25rem; align-items: start; }
+.qa-group h3 { margin-bottom: 0.5rem; }
+.qa-group .findings li { display: flex; flex-wrap: wrap; gap: 0 0.5rem; }
+.kind { font-weight: 500; }
+.qa-group a { text-decoration: underline; text-decoration-color: var(--muted); text-underline-offset: 3px; }
+.empty { color: var(--muted-foreground); }
 `;
 
-const escapeHtml = (text: string) =>
-  text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+const flowSection = (doc: JourneyDoc, screens: Map<string, JourneyScreen>, size: { width: number; height: number }) => {
+  const flows = [...doc.flows].sort((a, b) => a.name.localeCompare(b.name)).filter((flow) => flow.screens.length);
+  if (!flows.length) return '<p class="small empty">No steps yet: the journey has its start screen only.</p>';
+  return flows
+    .map((flow) => {
+      const known = flow.screens.filter(({ screen }) => screens.has(screen));
+      const sequence = known
+        .map(({ screen, action }) => {
+          const s = screens.get(screen)!;
+          return `<a href="#${escape(s.id)}">${escape(typeName(s))} (${escape(s.id)})</a>${action ? ` → ${escape(action)}` : ''}`;
+        })
+        .join(' → ');
+      const cards = known
+        .map(({ screen, action, hotspot }, i) => {
+          const s = screens.get(screen)!;
+          return `<li><figure><a class="frame-link" href="#${escape(s.id)}" aria-label="${escape(screenName(s))}">${shot(s, size, hotspot ? { box: hotspot, kind: 'hotspot' } : undefined)}</a><figcaption><span class="meta num">${String(i + 1).padStart(2, '0')} · ${escape(s.id)}</span><span>${escape(typeName(s))}</span>${
+            action ? `<span class="then">${escape(action)}</span>` : ''
+          }</figcaption></figure></li>`;
+        })
+        .join('');
+      return `<article class="flow"><h3>${escape(flow.name.split('/').join(' / '))}</h3><p class="sequence">${sequence}</p><ol class="flow-strip">${cards}</ol></article>`;
+    })
+    .join('\n');
+};
+
+const screenArticle = (screen: JourneyScreen, doc: JourneyDoc, screens: Map<string, JourneyScreen>, size: { width: number; height: number }) => {
+  const reached = doc.steps
+    .filter((step) => step.to === screen.id && step.from !== screen.id && screens.has(step.from))
+    .map((step) => `<a href="#${escape(step.from)}">${escape(screenName(screens.get(step.from)!))}</a> by ${escape(describeAction(step))}`);
+  const body = [
+    `<h3>${escape(screenName(screen))}</h3>`,
+    `<p class="small">${escape(screen.title)} · <span class="address">${escape(screen.url)}</span></p>`,
+    ...(screen.description ? [`<p>${escape(screen.description)}</p>`] : []),
+    ...(screen.insight ? [`<p class="insight">${escape(screen.insight)}</p>`] : []),
+    ...(screen.patterns.length ? [`<p class="chips" aria-label="UI patterns">${screen.patterns.map((p) => `<span class="chip">${escape(words(p))}</span>`).join('')}</p>`] : []),
+    ...(screen.qa.length
+      ? [`<ul class="findings" aria-label="QA findings">${[...screen.qa].sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity)).map((f) => `<li><span class="sev ${f.severity}">${f.severity}</span><span class="kind">${escape(words(f.kind))}</span> ${escape(f.detail)}</li>`).join('')}</ul>`]
+      : []),
+    ...(reached.length ? [`<p class="small">Reached from ${reached.join('; ')}</p>`] : screen.id === doc.screens[0]?.id ? ['<p class="small">The start screen</p>'] : []),
+  ];
+  const primary = screen.primaryAction ? { box: screen.primaryAction, kind: 'primary' as const } : undefined;
+  return `<article class="screen-entry grid4" id="${escape(screen.id)}"><figure>${shot(screen, size, primary)}${
+    screen.primaryAction ? `<figcaption class="small">Dashed: the primary action${screen.primaryAction.element ? `, ${escape(screen.primaryAction.element)}` : ''}</figcaption>` : ''
+  }</figure><div class="body c2s3">${body.join('')}</div></article>`;
+};
+
+const qaSection = (doc: JourneyDoc) => {
+  const findings = doc.screens.flatMap((screen) => screen.qa.map((finding) => ({ ...finding, screen })));
+  if (!findings.length) return '<p class="small empty">No QA findings.</p>';
+  return SEVERITIES.map((severity) => {
+    const group = findings.filter((f) => f.severity === severity);
+    if (!group.length) return '';
+    const items = group
+      .map((f) => `<li><span class="kind">${escape(words(f.kind))}</span><span>${escape(f.detail)}</span><span class="small">on <a href="#${escape(f.screen.id)}">${escape(screenName(f.screen))}</a></span></li>`)
+      .join('');
+    return `<div class="qa-group grid4"><h3 class="sev ${severity}">${capitalized(severity)} · ${group.length}</h3><ul class="findings c2s3">${items}</ul></div>`;
+  }).join('\n');
+};
+
+/**
+ * The journey map as one self-contained page: what was explored and on which device, then each flow as a sequence of
+ * screens and the actions between them, every screen (by type, with its description, insight, patterns, findings and
+ * how it was reached, at `#<screen id>`), and the QA findings by severity, each linking its screen. The doc itself is
+ * embedded as `#jevway-journey`.
+ *
+ * @example
+ * writeFileSync(join(outDir, 'index.html'), renderViewer(doc));
+ */
+export const renderViewer = (doc: JourneyDoc) => {
+  const screens = new Map(doc.screens.map((screen) => [screen.id, screen]));
+  const device = Object.hasOwn(DEVICES, doc.device) ? DEVICES[doc.device as keyof typeof DEVICES] : DEVICES.desktop;
+  const size = { width: device.width, height: device.height };
+  const portrait = size.height > size.width;
+  const flowCount = doc.flows.filter((flow) => flow.screens.length).length;
+  const findings = doc.screens.flatMap((screen) => screen.qa);
+  const high = findings.filter((f) => f.severity === 'high').length;
+  const counts = `${plural(doc.screens.length, 'screen')} in ${plural(flowCount, 'flow')}, ${plural(findings.length, 'QA finding')}${high ? ` (${high} high)` : ''}.`;
+  const shape = `--shot-aspect:${size.width} / ${size.height};--card:${portrait ? '10rem' : '18rem'};--figure:${portrait ? '14rem' : '100%'}`;
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>${escape(`${doc.site}: journey map · jevway`)}</title>
+<meta name="description" content="${escape(`${doc.site}: ${counts}`)}">
+${GENERATOR_META}
+<meta name="color-scheme" content="light dark">
+<link rel="alternate" type="application/json" href="journey.json" title="This journey as data">
+${FONT_STYLESHEET}
+<style>${BASE_STYLE}${VIEWER_STYLE}</style>
+</head><body style="${shape}">
+<nav class="top" aria-label="This page"><div class="wrapper"><span>jevway · journey</span><div class="links"><a href="#flows">Flows</a><a href="#screens">Screens</a><a href="#qa">QA</a><a href="journey.json">journey.json</a></div></div></nav>
+<header class="wrapper run-top">
+<div class="grid4"><p class="meta label">Journey</p><div class="c2s3"><h1 class="job-title">${escape(doc.site)}</h1>${doc.intent ? `<p class="small lede"><span class="kv">Asked</span> ${escape(doc.intent)}</p>` : ''}<p class="small lede">${counts}</p></div></div>
+<dl class="facts">${[fact('Start page', `<span class="address">${escape(doc.startUrl)}</span>`), fact('Device', `${escape(doc.device)} <span class="num">(${size.width} × ${size.height})</span>`), fact('Mapped', escape(utc(doc.createdAt)))].join('\n')}</dl>
+</header>
+<main class="wrapper journey">
+<section id="flows" class="block" aria-labelledby="flows-title"><h2 class="section-title block-head" id="flows-title">Flows</h2>
+${flowSection(doc, screens, size)}
+</section>
+<section id="screens" class="block" aria-labelledby="screens-title"><h2 class="section-title block-head" id="screens-title">Screens</h2>
+<div class="screens">${doc.screens.map((screen) => screenArticle(screen, doc, screens, size)).join('\n')}</div>
+</section>
+<section id="qa" class="block" aria-labelledby="qa-title"><h2 class="section-title block-head" id="qa-title">QA findings</h2>
+${qaSection(doc)}
+</section>
+</main>
+<footer><div class="wrapper"><span>Mapped by jevway ${escape(JEVWAY_VERSION)}. Solid outline: the spot tapped to leave a screen; dashed: its primary action.</span><span><a href="journey.json">journey.json</a> · <a href="manifest.json">manifest.json</a></span></div></footer>
+${embeddedJson('jevway-journey', doc)}
+</body></html>
+`;
+};

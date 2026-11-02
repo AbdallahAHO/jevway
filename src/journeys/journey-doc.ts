@@ -97,7 +97,8 @@ export const buildFlows = (steps: JourneyStep[]): Flow[] => {
 
 const parentOf = (name: string) => (name.includes('/') ? name.slice(0, name.lastIndexOf('/')) : null);
 
-const describeAction = (step: JourneyStep) => {
+/** A step's action as a person reads it: `Tap "Search"`, `Type into "Destination" → "Lisbon"`. */
+export const describeAction = (step: JourneyStep) => {
   const verb =
     { CLICK: 'Tap', TYPE_TEXT: 'Type into', SELECT: 'Choose' }[step.action.operation] ?? step.action.operation;
   return `${verb} "${step.action.label}"${step.action.value ? ` → "${step.action.value}"` : ''}`;

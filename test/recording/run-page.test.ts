@@ -74,7 +74,7 @@ const section = (html: string, id: string) => {
   return start < 0 ? '' : html.slice(start, html.indexOf('</section>', start));
 };
 const stepItem = (html: string, n: number) => {
-  const match = new RegExp(`<li id="s${n}"[\\s\\S]*?</li>`).exec(html);
+  const match = new RegExp(`<li [^>]*id="s${n}"[\\s\\S]*?</li>`).exec(html);
   return match ? match[0] : '';
 };
 
@@ -94,7 +94,7 @@ describe("a run's index.html: the top says what was asked, how it ended and why"
 
   it('says when it ran, how long it took, what it cost, and where it started and ended', () => {
     const top = text(page.slice(page.indexOf('<header'), page.indexOf('</header>')));
-    expect(top).toContain('2026-11-02 08:00 UTC');
+    expect(top).toContain('2026-11-02 14:00 UTC');
     expect(top).toContain('5.0 s');
     expect(top).toContain('est. $0.0034');
     expect(top).toContain('2 calls · 3 actions');

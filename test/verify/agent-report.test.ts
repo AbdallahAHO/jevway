@@ -289,7 +289,7 @@ describe('a chore view', () => {
     expect(html).not.toContain('<script>alert("p")');
     expect(html).not.toContain('<b>yes</b>');
     expect(html).toContain('&lt;b&gt;yes&lt;/b&gt;');
-    const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(([, source]) => source);
+    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(([, source]) => source);
     expect(scripts.length).toBeGreaterThanOrEqual(2);
     for (const source of scripts) expect(() => new vm.Script(source)).not.toThrow();
   });

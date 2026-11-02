@@ -3,34 +3,13 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { PageAction, PageState, Tab } from '../browser/tab.ts';
-import {
-  BASE_STYLE,
-  clock,
-  dollars,
-  escapeHtml,
-  fact,
-  FONT_LINK,
-  playerMarkup,
-  plural,
-  PLAYER_SCRIPT,
-  seconds,
-  statusWord,
-  thousands,
-  type Viewport,
-} from './recording-page.ts';
 import { safeSlug, stepFileName } from '../output/layout.ts';
 import type { TaskSummary } from '../task/run-task.ts';
+import { describeStep, type StepIntent } from './describe-step.ts';
+import { escapeHtml, type Viewport } from './recording-page.ts';
+import { renderRunPage, type Asked } from './run-page.ts';
 
-/** What Jev is about to do on a screen, in the terms the task loop knows. */
-export interface StepIntent {
-  operation: string;
-  element?: string;
-  valueKey?: string;
-  /** For UPLOAD: the declared file's key. */
-  fileKey?: string;
-  option?: string;
-  confidence?: number;
-}
+export { describeStep, escapeHtml, type StepIntent };
 
 export interface RecordedStep {
   file: string;
@@ -75,61 +54,6 @@ export const frameDurations = (times: number[]) =>
 export const videoOffset = (times: number[], durations: number[], at: number) =>
   times.reduce((offset, time, i) => (time < at ? offset + durations[i] : offset), 0);
 
-// Row labels carry a whole table row; a sentence needs its first words.
-const shorten = (label: string, max = 70) => {
-  const text = label.replace(/\s+/g, ' ').trim();
-  return text.length > max ? `${text.slice(0, max).replace(/\s+\S*$/, '')}…` : text;
-};
-
-// Each verb as Jev is about to do it (`next`, the recording's step shots) and as done (`done`, a summary's story).
-const VERBS = {
-  click: ['Click', 'Clicked'],
-  type: ['Type', 'Typed'],
-  choose: ['Choose', 'Chose'],
-  press: ['Press', 'Pressed'],
-  scroll: ['Scroll', 'Scrolled'],
-  wait: ['Wait', 'Waited'],
-  upload: ['Upload', 'Uploaded'],
-} as const;
-
-/**
- * A step as one plain sentence for people reading a recording (`next`, what happens on this screen) or a summary's
- * story (`done`, what happened).
- *
- * @example
- * describeStep({ operation: 'TYPE_TEXT', element: 'Search traces', valueKey: 'search_query' })
- * // 'Type the "search_query" value into "Search traces"'
- * describeStep({ operation: 'CLICK', element: 'Search' }, 'done') // 'Clicked "Search"'
- */
-export const describeStep = ({ operation, element = '', valueKey, fileKey, option }: StepIntent, tense: 'next' | 'done' = 'next') => {
-  const target = `"${shorten(element)}"`;
-  const verb = (name: keyof typeof VERBS) => VERBS[name][tense === 'next' ? 0 : 1];
-  switch (operation) {
-    case 'CLICK':
-      return `${verb('click')} ${target}`;
-    case 'CLICK_AT':
-      return `${verb('click')} the control at ${target} by its on-screen position`;
-    case 'TYPE_TEXT':
-      return `${verb('type')} the "${valueKey}" value into ${target}`;
-    case 'UPLOAD':
-      return fileKey ? `${verb('upload')} the "${fileKey}" file into ${target}` : `${verb('upload')} a file into ${target}`;
-    case 'SELECT':
-      return option ? `${verb('choose')} "${option}" in ${target}` : `${verb('choose')} an option in ${target}`;
-    case 'PRESS_ENTER':
-      return `${verb('press')} Enter in ${target} to submit it`;
-    case 'PRESS_ESCAPE':
-      return `${verb('press')} Escape to close the open menu or popup`;
-    case 'SCROLL_DOWN':
-      return `${verb('scroll')} down to reveal more of the page`;
-    case 'SCROLL_UP':
-      return `${verb('scroll')} back up`;
-    case 'WAIT':
-      return `${verb('wait')} for the page to finish updating`;
-    default:
-      return `${operation} ${target}`;
-  }
-};
-
 // A step shot's name: the verb and what it acts on, short enough to read in a file list.
 const stepWords = ({ operation, element = '', valueKey, fileKey, option }: StepIntent) => {
   switch (operation) {
@@ -165,6 +89,8 @@ const stepWords = ({ operation, element = '', valueKey, fileKey, option }: StepI
 export class Recording {
   readonly steps: RecordedStep[] = [];
   readonly summaries: TaskSummary[] = [];
+  /** What each call was asked, scrubbed, one per summary. */
+  readonly asked: Asked[] = [];
   #dir: string;
   #frames: Frame[] = [];
   /** The page size the screencast reports (CSS pixels): the run page and the reports shape the video's frame by it. */
@@ -233,18 +159,20 @@ export class Recording {
 
   // A session can run several times (missing value, confirmation); each run ends with its own final shot,
   // and the video is re-encoded to cover every run so far.
-  async finish(tab: Tab, summary: TaskSummary) {
+  async finish(tab: Tab, summary: TaskSummary, asked?: { goal: string; doneWhen?: string }) {
     const page = await tab.observe();
     await this.step(tab, page, { operation: summary.status });
     this.steps.at(-1)!.description = `Finished: ${summary.status}. ${summary.reason}`;
     this.summaries.push(summary);
+    if (asked) this.asked.push({ goal: this.#scrub(asked.goal), ...(asked.doneWhen && { done_when: this.#scrub(asked.doneWhen) }) });
     await tab.send('Page.stopScreencast').catch(() => undefined);
     this.#stopListening?.();
     this.#stopListening = undefined;
     const video = (await this.#encode()) ?? null;
     const viewport = this.#viewport;
-    writeFileSync(join(this.#dir, 'summary.json'), JSON.stringify({ summaries: this.summaries, video, steps: this.steps, ...(viewport && { viewport }) }, null, 1));
-    writeFileSync(join(this.#dir, 'index.html'), renderSteps(this.steps, this.summaries, video, viewport));
+    const record = { summaries: this.summaries, video, steps: this.steps, ...(viewport && { viewport }), ...(this.asked.length && { asked: this.asked }) };
+    writeFileSync(join(this.#dir, 'summary.json'), JSON.stringify(record, null, 1));
+    writeFileSync(join(this.#dir, 'index.html'), renderRunPage(record));
   }
 
   // Frames → H.264 through ffmpeg's concat list, each frame held for its duration. Without ffmpeg: no video.
@@ -276,65 +204,3 @@ export class Recording {
     }
   }
 }
-
-export { escapeHtml };
-
-// What a run's calls cost, summed: requests, input tokens, time, and the estimate unless a call has none.
-const costLine = (summaries: TaskSummary[]) => {
-  const sum = (pick: (s: TaskSummary) => number) => summaries.reduce((total, s) => total + pick(s), 0);
-  const cost = summaries.reduce<number | null>((total, s) => (total === null || s.jev.est_cost_usd == null ? null : total + s.jev.est_cost_usd), 0);
-  return `${plural(sum((s) => s.jev.requests), 'Jev request')} · ${thousands(sum((s) => s.jev.input_tokens))} input tokens · ${seconds(sum((s) => s.elapsed_ms))} · ${cost === null ? 'est. cost unknown' : `est. ${dollars(cost)}`}`;
-};
-
-// epoch seconds → "2026-11-01 18:39 UTC"
-const recordedAt = (at: number) => `${new Date(at * 1000).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
-
-/**
- * A run's own page (`index.html` in its record folder), in the reports' layout: how it ended, then the screencast with
- * its steps on a timeline and a strip kept in sync, then the facts. One self-contained file next to its shots and
- * video; it reads without JS (the script only syncs the player).
- *
- * @example
- * writeFileSync('runs/a/index.html', renderSteps(steps, summaries, 'run.mp4', { width: 1120, height: 780 }));
- */
-export const renderSteps = (steps: RecordedStep[], summaries: TaskSummary[], video: string | null = null, viewport?: Viewport) => {
-  const last = summaries.at(-1);
-  const ending = last ? `Finished: ${statusWord(last.status)}` : 'jevway run';
-  const actions = summaries.reduce((total, s) => total + s.steps.length, 0);
-  const bar = `<div class="player-bar grid4"><p class="meta c1s3">${plural(steps.length, 'step')}${video ? ' · pick one to play from there' : ''}</p><span class="meta clock c4 end">${video ? clock(0) : ''}</span></div>`;
-  const player = steps.length
-    ? playerMarkup({ dir: '', video, steps, label: 'this run', featured: true, viewport, bar, preload: 'metadata' })
-    : '<div class="screen quiet"><p class="small">No step was recorded.</p></div>';
-  const facts = [
-    ...(summaries.length ? [fact('Calls', `${escapeHtml(summaries.map((s) => statusWord(s.status)).join(' → '))} · ${plural(actions, 'action')}`)] : []),
-    ...(last ? [fact('Final reason', escapeHtml(last.reason)), fact('Final address', `<span class="address">${escapeHtml(last.url)}</span>`), fact('Page title', escapeHtml(last.title))] : []),
-    ...(summaries.length ? [fact('Cost', `<span class="num">${costLine(summaries)}</span>`)] : []),
-    fact('Files', `<a href="summary.json">summary.json</a>${video ? ` · <a href="${escapeHtml(video)}">${escapeHtml(video)}</a>` : ''}`),
-  ];
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>${escapeHtml(`jevway run: ${last ? statusWord(last.status) : 'recorded'}`)}</title>
-<link rel="preconnect" href="https://api.fontshare.com" crossorigin>
-<link rel="stylesheet" href="${FONT_LINK}">
-<style>${BASE_STYLE}
-.run-page { padding-bottom: 4rem; }
-.run-page .facts { margin-top: 4rem; }
-</style>
-</head><body>
-<main class="wrapper run-page">
-<header class="job-head grid4">
-<p class="meta">jevway run<br>${steps.length ? recordedAt(steps[0].at) : ''}</p>
-<h1 class="job-title c2s2">${escapeHtml(ending)}</h1>
-<p class="meta c4 end">${plural(summaries.length, 'call')} · ${plural(actions, 'action')}</p>
-${last ? `<p class="small story c2s2">${escapeHtml(last.reason)}</p>` : ''}
-</header>
-<div class="run player current">
-${player}
-</div>
-<dl class="facts">${facts.join('\n')}</dl>
-</main>
-<footer><div class="wrapper"><span>Recorded by jevway for people to read; the model never sees these shots.</span><span>${plural(steps.length, 'step')}${video ? ` · ${escapeHtml(video)}` : ' · no video (needs ffmpeg)'}</span></div></footer>
-${PLAYER_SCRIPT}
-</body></html>
-`;
-};

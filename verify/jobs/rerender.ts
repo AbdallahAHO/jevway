@@ -12,8 +12,9 @@
  * // pnpm report:render verify/out/forgejo-2026-11-01T15-43-33-653Z/new-issue/run-1
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
-import { renderSteps } from '../../src/recording/recording.ts';
+import { basename, dirname, join, resolve } from 'node:path';
+import { writeManifest } from '../../src/output/manifest.ts';
+import { renderRunPage } from '../../src/recording/run-page.ts';
 import { agentRunReader, renderAgentReport, type ChoreRun, type Totals } from '../agent/report.ts';
 import type { Phrasing, ReportJob, ReportResult, RunResult } from './report.ts';
 import { renderReport } from './report.ts';
@@ -77,8 +78,8 @@ export const renderFolder = (dir: string) => {
   const outDir = resolve(dir);
   const results = join(outDir, 'results.json');
   if (!existsSync(results)) {
-    const { steps, summaries, video, viewport } = JSON.parse(readFileSync(join(outDir, 'summary.json'), 'utf8'));
-    return { file: join(outDir, 'index.html'), html: renderSteps(steps, summaries, video ?? null, viewport) };
+    const record = JSON.parse(readFileSync(join(outDir, 'summary.json'), 'utf8'));
+    return { file: join(outDir, 'index.html'), html: renderRunPage({ ...record, video: record.video ?? null }), runFolder: true };
   }
   const saved = JSON.parse(readFileSync(results, 'utf8'));
   const file = join(outDir, 'report.html');
@@ -96,13 +97,25 @@ export const renderFolder = (dir: string) => {
   return { file, html: renderReport({ ...reportFromResults(saved as SavedResults, basename(outDir)), readRecording }) };
 };
 
+/**
+ * Rebuilds a folder's page in place and returns its path. A run folder recorded before plan 115 also gets the
+ * `manifest.json` its page links.
+ *
+ * @example
+ * rerender('verify/out/forgejo-2026-11-01T15-43-33-653Z/new-issue/run-1') // '…/run-1/index.html'
+ */
+export const rerender = (dir: string) => {
+  const { file, html, runFolder } = renderFolder(dir);
+  writeFileSync(file, html);
+  if (runFolder && !existsSync(join(dirname(file), 'manifest.json'))) writeManifest(dirname(file), 'run');
+  return file;
+};
+
 if (import.meta.main) {
   const [dir] = process.argv.slice(2);
   if (!dir) {
     process.stderr.write('usage: node verify/jobs/rerender.ts <verify/out/folder | a run folder>\n');
     process.exit(2);
   }
-  const { file, html } = renderFolder(dir);
-  writeFileSync(file, html);
-  process.stdout.write(`${file}\n`);
+  process.stdout.write(`${rerender(dir)}\n`);
 }

@@ -3,10 +3,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RecordedStep } from '../../src/recording/recording.ts';
-import { escapeHtml as escape, fact, indexLabel, playerMarkup, plural, statusWord, type Viewport } from '../../src/recording/recording-page.ts';
+import { embeddedJson, escapeHtml as escape, fact, FONT_STYLESHEET, GENERATOR_META, indexLabel, playerMarkup, plural, statusWord, type Viewport } from '../../src/recording/recording-page.ts';
 import { describeConfirmTarget, type BrowserCall, type ConfirmTarget } from './confirms.ts';
 import { figure, startedAt, wilson } from '../jobs/report.ts';
-import { ARROW, BACK_ARROW, FONT_LINK, HEAD_SCRIPT, SCRIPT, STYLE } from '../jobs/report-page.ts';
+import { ARROW, BACK_ARROW, HEAD_SCRIPT, SCRIPT, STYLE } from '../jobs/report-page.ts';
 
 /** One run of one chore, as the suite saved it in `results.json` `rows`. */
 export interface ChoreRun {
@@ -381,8 +381,10 @@ ${METHOD.map(([label, body]) => `<div class="method-row grid4"><p class="meta">$
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>${escape(title)}</title>
 <meta name="description" content="${escape(`${title}: Claude Code drives jevway over MCP; every run judged by the app's state, with its transcript of tool calls.`)}">
-<link rel="preconnect" href="https://api.fontshare.com" crossorigin>
-<link rel="stylesheet" href="${FONT_LINK}">
+${GENERATOR_META}
+<meta name="color-scheme" content="light dark">
+<link rel="alternate" type="application/json" href="results.json" title="The suite's results as data">
+${FONT_STYLESHEET}
 ${HEAD_SCRIPT}
 <style>${STYLE}${AGENT_STYLE}</style>
 </head><body>
@@ -392,6 +394,14 @@ ${overview}
 ${views.join('\n')}
 </main>
 <footer><div class="wrapper"><span>Claude Code (${escape(model)}) · jevway over MCP · ${startedAt(outFolder)}</span><span>${outFolder ? `verify/out/${escape(outFolder)}` : 'out folder unknown'}</span></div></footer>
+${embeddedJson('jevway-summary', {
+  kind: 'agent-report',
+  title,
+  model,
+  passed: totals.passed,
+  ran: totals.ran,
+  chores: chores.map((runs) => ({ id: runs[0].chore, runs: runs.map((r) => ({ run: r.run, verdict: r.verdict, dir: r.dir })) })),
+})}
 ${SCRIPT}
 </body></html>
 `;

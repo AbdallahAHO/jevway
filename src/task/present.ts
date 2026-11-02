@@ -1,6 +1,6 @@
 import type { StepRecord } from '../jev/decide.ts';
 import type { RunFiles } from '../output/run-folder.ts';
-import { describeStep } from '../recording/recording.ts';
+import { describeStep } from '../recording/describe-step.ts';
 import type { TaskSummary } from './run-task.ts';
 
 export type { RunFiles };

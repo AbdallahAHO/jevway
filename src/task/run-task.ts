@@ -480,7 +480,7 @@ export class BrowserTask {
     for (; this.#traceScrubbed < this.trace.length; this.#traceScrubbed++) this.trace[this.#traceScrubbed] = this.#scrub(this.trace[this.#traceScrubbed]);
     const summary = this.#scrub(settled);
     this.#onStep = undefined;
-    await this.#recording?.finish(this.#tab, summary).catch(() => undefined);
+    await this.#recording?.finish(this.#tab, summary, { goal: this.#options.goal, doneWhen: this.#options.doneWhen }).catch(() => undefined);
     if (this.#output) await this.#writeCall(this.#output.dir, summary);
     return summary;
   }
