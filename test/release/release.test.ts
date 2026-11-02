@@ -4,7 +4,7 @@ import { compareVersions, nextPatch, nextStep, releaseAsProblem, versionFromTitl
 const HEAD = 'abc1234def';
 const green = { status: 'completed', conclusion: 'success', headSha: HEAD, url: 'https://ci/1' };
 const pr = { number: 7, title: 'chore(main): release 0.2.0', url: 'https://pr/7' };
-const state = (over: Partial<ReleaseState> = {}): ReleaseState => ({ local: '0.1.0', published: '0.1.0', head: HEAD, ci: green, ...over });
+const state = (over: Partial<ReleaseState> = {}): ReleaseState => ({ local: '0.1.0', published: '0.1.0', head: HEAD, ci: green, releasePlease: green, ...over });
 
 describe('the next release step', () => {
   it('merges the open release PR once CI is green on main', () => {
@@ -13,6 +13,13 @@ describe('the next release step', () => {
 
   it('says there is nothing to release without a release PR, and how to force one', () => {
     expect(nextStep(state())).toMatchObject({ kind: 'nothing', message: expect.stringContaining('pnpm release as 0.1.1') });
+  });
+
+  it('waits for release-please to finish on main’s head before saying there is nothing to release', () => {
+    expect(nextStep(state({ releasePlease: { ...green, status: 'in_progress', conclusion: '' } }))).toMatchObject({ kind: 'wait', message: expect.stringContaining('release PR') });
+    expect(nextStep(state({ releasePlease: { ...green, headSha: 'older' } }))).toMatchObject({ kind: 'wait' });
+    expect(nextStep(state({ releasePlease: undefined }))).toMatchObject({ kind: 'wait' });
+    expect(nextStep(state({ releasePlease: { ...green, conclusion: 'failure' } }))).toMatchObject({ kind: 'blocked', message: expect.stringContaining('https://ci/1') });
   });
 
   it('waits while CI runs or has not reached main’s head, and refuses a red main', () => {

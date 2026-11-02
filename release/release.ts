@@ -36,14 +36,16 @@ const readState = (): ReleaseState => {
   const head = gh('api', 'repos/{owner}/{repo}/commits/main', '--jq', '.sha');
   const local = json<{ version: string }>(gh('api', 'repos/{owner}/{repo}/contents/package.json?ref=main', '-H', 'Accept: application/vnd.github.raw'))!.version;
   const pr = json<ReleaseState['pr'][]>(gh('pr', 'list', '--state', 'open', '--label', 'autorelease: pending', '--json', 'number,title,url', '--limit', '1'))?.[0];
-  const ci = json<ReleaseState['ci'][]>(gh('run', 'list', '--workflow', 'ci.yml', '--branch', 'main', '--limit', '1', '--json', 'status,conclusion,headSha,url'))?.[0];
-  return { local, published: tryRun('npm', ['view', PACKAGE, 'version']), head, pr, ci };
+  const newestRun = (workflow: string) =>
+    json<ReleaseState['ci'][]>(gh('run', 'list', '--workflow', workflow, '--branch', 'main', '--event', 'push', '--limit', '1', '--json', 'status,conclusion,headSha,url'))?.[0];
+  return { local, published: tryRun('npm', ['view', PACKAGE, 'version']), head, pr, ci: newestRun('ci.yml'), releasePlease: newestRun('release.yml') };
 };
 
 const printState = (state: ReleaseState, step: NextStep) => {
   console.log(`main        ${state.head.slice(0, 7)}  (package.json ${state.local})`);
   console.log(`npm         ${state.published ?? 'not published'}`);
   console.log(`CI on main  ${state.ci ? `${state.ci.conclusion || state.ci.status} on ${state.ci.headSha.slice(0, 7)}` : 'no run yet'}`);
+  console.log(`release run ${state.releasePlease ? `${state.releasePlease.conclusion || state.releasePlease.status} on ${state.releasePlease.headSha.slice(0, 7)}` : 'no run yet'}`);
   console.log(`release PR  ${state.pr ? `#${state.pr.number} ${state.pr.title}` : 'none'}`);
   console.log(`\n→ ${step.message}`);
 };
@@ -100,10 +102,22 @@ const publish = async (pr: number, version: string) => {
   console.log(`✓ ${PACKAGE}@${version} is live: https://www.npmjs.com/package/${PACKAGE}/v/${version}`);
 };
 
-const release = async () => {
+/** The next step once release-please and CI have finished on main's head, printing the state on the way. */
+const settledStep = async (): Promise<NextStep> => {
   const state = readState();
   const step = nextStep(state);
   printState(state, step);
+  if (step.kind !== 'wait') return step;
+  const settled = await waitFor('release-please and CI to finish on main', 600, () => {
+    const next = nextStep(readState());
+    return next.kind === 'wait' ? undefined : next;
+  });
+  console.log(`→ ${settled.message}`);
+  return settled;
+};
+
+const release = async () => {
+  const step = await settledStep();
   if (step.kind === 'nothing') return;
   if (step.kind !== 'merge') process.exit(1);
   if (!(await confirm(`Merge #${step.pr} and publish ${PACKAGE}@${step.version} to npm?`))) return;

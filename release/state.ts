@@ -1,3 +1,6 @@
+/** The newest run of one workflow on main. */
+type WorkflowRun = { status: string; conclusion: string; headSha: string; url: string };
+
 /** What the release flow knows about the repo, npm and GitHub at one moment. */
 export type ReleaseState = {
   /** `version` in package.json on main: the last version release-please released. */
@@ -9,7 +12,9 @@ export type ReleaseState = {
   /** The open release-please PR, if any. */
   pr?: { number: number; title: string; url: string };
   /** The newest `ci` run on main. */
-  ci?: { status: string; conclusion: string; headSha: string; url: string };
+  ci?: WorkflowRun;
+  /** The newest `release` run on main: release-please opens or updates the release PR there. */
+  releasePlease?: WorkflowRun;
 };
 
 export type NextStep =
@@ -42,12 +47,16 @@ export const releaseAsProblem = (version: string, published?: string) => {
   return undefined;
 };
 
-const ciProblem = ({ ci, head }: ReleaseState): NextStep | undefined => {
-  if (!ci || ci.headSha !== head) return { kind: 'wait', message: `CI has not reported on main's head (${head.slice(0, 7)}) yet; try again in a minute` };
-  if (ci.status !== 'completed') return { kind: 'wait', message: `CI is still running on main: ${ci.url}` };
-  if (ci.conclusion !== 'success') return { kind: 'blocked', message: `CI ${ci.conclusion} on main: fix it before releasing: ${ci.url}` };
+const runProblem = (run: WorkflowRun | undefined, head: string, name: string, after: string): NextStep | undefined => {
+  if (!run || run.headSha !== head) return { kind: 'wait', message: `${name} has not reported on main's head (${head.slice(0, 7)}) yet` };
+  if (run.status !== 'completed') return { kind: 'wait', message: `${name} is still running on main${after}: ${run.url}` };
+  if (run.conclusion !== 'success') return { kind: 'blocked', message: `${name} ${run.conclusion} on main: fix it before releasing: ${run.url}` };
   return undefined;
 };
+
+const ciProblem = ({ ci, head }: ReleaseState) => runProblem(ci, head, 'CI', '');
+const releasePleaseProblem = ({ releasePlease, head }: ReleaseState) =>
+  runProblem(releasePlease, head, 'release-please', ', so the release PR may not be open yet');
 
 /** Decides the one next step of a release from the current state. */
 export const nextStep = (state: ReleaseState): NextStep => {
@@ -55,6 +64,8 @@ export const nextStep = (state: ReleaseState): NextStep => {
   // A tag whose publish failed is left behind: the next release PR publishes past it.
   const unpublished = published && compareVersions(local, published) > 0 ? `v${local} is tagged but never reached npm (it has ${published})` : undefined;
   if (!pr) {
+    const pending = releasePleaseProblem(state);
+    if (pending) return pending;
     if (unpublished) return { kind: 'blocked', message: `${unpublished}: land a fix: commit for the next release PR, or pnpm release as ${nextPatch(local)}` };
     return { kind: 'nothing', message: `Nothing to release: no feat: or fix: commit since v${local}. To release anyway: pnpm release as ${nextPatch(local)}` };
   }
