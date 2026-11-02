@@ -4,13 +4,14 @@ import { parseArgs } from 'node:util';
 import { devToolsActivePort, findChrome } from '../browser/chrome.ts';
 import { createLiveAsk, resolveModel } from '../jev/model.ts';
 import { replayDir } from '../jev/replay.ts';
-import { diagnose, exitCode, liveCheck, planSteps, render, type Probes } from './doctor.ts';
+import { diagnose, doctorJson, exitCode, liveCheck, planSteps, render, type Probes } from './doctor.ts';
 import { envFilePath, shownEnvFilePath } from './env-file.ts';
 
-const USAGE = `jevway doctor [--plan] [--live] [--browser <source>] [--model <name>]
+const USAGE = `jevway doctor [--plan | --json] [--live] [--browser <source>] [--model <name>]
 
   Checks Node, the API key and the route it selects, the browser source and ffmpeg. Never prints a key.
   --plan     print the setup steps still missing, numbered
+  --json     print { ready, findings: [{ check, level, message, fix? }] }
   --live     also make ONE real Jev request (costs a fraction of a cent)
   --browser  check this source instead of $JEVWAY_BROWSER (auto, launch, launch-headless or a URL)
   --model    check this model instead of $JEVWAY_MODEL
@@ -27,7 +28,8 @@ const envFileMode = () => {
   }
 };
 
-const realProbes = (browser: string, model: string | undefined, fromEnvFile: string[]): Probes => ({
+/** The doctor's view of this machine, for one browser source and model. */
+export const realProbes = (browser: string, model: string | undefined, fromEnvFile: string[]): Probes => ({
   nodeVersion: process.versions.node,
   browser,
   model,
@@ -54,6 +56,7 @@ export const runDoctor = async (argv: string[], fromEnvFile: string[]): Promise<
       args: argv,
       options: {
         plan: { type: 'boolean' },
+        json: { type: 'boolean' },
         live: { type: 'boolean' },
         browser: { type: 'string' },
         model: { type: 'string' },
@@ -77,6 +80,7 @@ export const runDoctor = async (argv: string[], fromEnvFile: string[]): Promise<
     findings.push(await liveCheck(createLiveAsk(profile), profile.model, [process.env.TYPESAFE_API_KEY, process.env.OPENROUTER_API_KEY]));
   }
   // Written before the caller exits: on macOS a piped stdout is asynchronous.
-  await new Promise((resolve) => process.stdout.write(options.plan ? planSteps(findings) : render(findings), resolve));
+  const output = options.json ? `${JSON.stringify(doctorJson(findings), null, 2)}\n` : options.plan ? planSteps(findings) : render(findings);
+  await new Promise((resolve) => process.stdout.write(output, resolve));
   return exitCode(findings);
 };

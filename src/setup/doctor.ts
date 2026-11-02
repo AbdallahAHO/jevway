@@ -89,8 +89,8 @@ const debuggingUrl = (source: string) => {
   }
 };
 
-// Probes over plain HTTP only: opening the DevTools WebSocket would make the user's Chrome ask to allow it.
-const browserFinding = async ({ browser, findChrome, devToolsActivePort, answers }: Probes): Promise<Finding> => {
+/** The browser source's state, probed over plain HTTP only: the DevTools WebSocket would make Chrome ask to allow it. */
+export const browserFinding = async ({ browser, findChrome, devToolsActivePort, answers }: Probes): Promise<Finding> => {
   if (browser === 'launch' || browser === 'launch-headless') {
     const chrome = findChrome();
     return chrome
@@ -206,6 +206,22 @@ export const planSteps = (findings: Finding[]) => {
   ].map(({ level, fix }, index) => `${index + 1}. ${level === 'warn' ? '(optional) ' : ''}${fix}`);
   return steps.length ? `Steps left:\n${steps.join('\n')}\n` : 'Nothing left to set up: jevway is ready.\n';
 };
+
+/**
+ * `--json`: the findings for agents, each named by a stable `check` slug, and `ready` when nothing blocks.
+ *
+ * @example
+ * doctorJson(findings) // { ready: false, findings: [{ check: 'browser', level: 'fail', message: '…', fix: '…' }] }
+ */
+export const doctorJson = (findings: Finding[]) => ({
+  ready: exitCode(findings) === 0,
+  findings: findings.map(({ area, level, message, fix }) => ({
+    check: area.toLowerCase().replaceAll(' ', '_'),
+    level,
+    message,
+    ...(fix && level !== 'ok' && { fix }),
+  })),
+});
 
 /**
  * `--live`: one real request (the one-Choice evidence question, the cheapest the model is asked) to prove the key,
