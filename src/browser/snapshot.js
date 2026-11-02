@@ -401,6 +401,8 @@
       rect: { x: r.x, y: r.y, w: r.width, h: r.height },
     };
     if (hover) base.hover = true;
+    // jevway: a label from its row, icon or surrounding text is not an accessible name; journey QA reports the control.
+    if (rname !== 'row' && !hiddenInput && (unnamedToggle(e, rname) || !name(e).trim())) base.unnamed = true;
     for (const key of ['checked', 'selected', 'expanded']) {
       const value = e.getAttribute('aria-' + key);
       if (value !== null) base[key] = value;

@@ -192,6 +192,13 @@ describe('screen QA', () => {
     expect(findings[3].detail).toContain('"button" 22×22');
   });
 
+  it('reports a control the reader named from the text around it as unlabeled', () => {
+    const heart = { id: 'h1', kind: 'click', node: 9, role: 'button', label: 'Popular this week — Casa Flora', unnamed: true, rect: { x: 0, y: 0, w: 48, h: 48 } };
+    const named = { id: 'n1', kind: 'click', node: 10, role: 'button', label: 'Save', rect: { x: 0, y: 60, w: 48, h: 48 } };
+    const findings = qaFindings({ ...page, actions: [heart, named] } as PageState, { consoleErrors: [], failedRequests: [] }, judgments({}), 0, true);
+    expect(findings).toEqual([{ kind: 'unlabeled_control', severity: 'medium', detail: '1 control(s) without an accessible name (button)' }]);
+  });
+
   it('reads screen judgments and only trusts a confident duplicate match', () => {
     const base = {
       screen_type: { choice: 'results', confidence: 0.8 },

@@ -687,6 +687,8 @@ const checks: Check[] = [
       const box = page.actions.find((action) => action.kind === 'fill' && action.label === 'Page of 30');
       assert.ok(box, `page box not named: ${labelsOf(page.actions)}`);
       assert.equal(box.role, 'spinbutton');
+      assert.equal(box.unnamed, true, 'a label from the text around it is not an accessible name');
+      assert.equal(find(page.actions, 'button', /^Save$/)?.unnamed, undefined, 'a button named by its text is marked unnamed');
       assert.ok(find(page.actions, 'spinbutton', /^Open Page of 30$/), `click entry not named: ${labelsOf(page.actions)}`);
       await tab.act(box, page, '3');
       assert.equal((await fixtureState(tab)).page, '3');

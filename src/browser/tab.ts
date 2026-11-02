@@ -50,6 +50,8 @@ export interface PageAction {
   expanded?: string;
   /** Shown only while the pointer is over its container; the pointer is moved onto it before the click. */
   hover?: boolean;
+  /** Has no accessible name of its own: `label` comes from its row, icon or the text around it. */
+  unnamed?: boolean;
   delta?: number;
   /** A scroll's wheel point: the centre of the visible part of the pane it scrolls (viewport CSS pixels, from DOM rects). */
   at?: { x: number; y: number };

@@ -195,7 +195,7 @@ export const qaFindings = (
       });
     }
   }
-  const unlabeled = controls.filter((action) => action.label === action.role);
+  const unlabeled = controls.filter((action) => action.unnamed || action.label === action.role);
   if (unlabeled.length) {
     findings.push({
       kind: 'unlabeled_control',
