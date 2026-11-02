@@ -781,11 +781,12 @@ describe('screenshots', () => {
     expect(tab.recorded).toBe(2);
     expect(tab.screenshots).toBe(0);
     expect(requests.some((request) => Array.isArray(request.state))).toBe(false);
-    expect(readdirSync(recordDir).sort()).toEqual(['01.jpg', '02.jpg', 'index.html', 'summary.json']);
+    expect(readdirSync(recordDir).sort()).toEqual(['calls', 'final.jpg', 'index.html', 'manifest.json', 'steps', 'summary.json']);
+    expect(readdirSync(join(recordDir, 'steps')).sort()).toEqual(['01-click-open-full-name.jpg', '02-finished-done.jpg']);
     const { steps } = JSON.parse(readFileSync(join(recordDir, 'summary.json'), 'utf8'));
     expect(steps.map((s: { operation: string }) => s.operation)).toEqual(['CLICK', 'done']);
     expect(steps[0].description).toMatch(/^Click "/);
-    expect(readFileSync(join(recordDir, 'index.html'), 'utf8')).toContain('<img src="01.jpg"');
+    expect(readFileSync(join(recordDir, 'index.html'), 'utf8')).toContain('<img src="steps/01-click-open-full-name.jpg"');
   });
 
   it('returns the run\'s own status when its recording cannot start or take the final shot', async () => {
@@ -831,9 +832,11 @@ describe('screenshots', () => {
     await new BrowserTask(asTab, ask, { goal: 'Open', recordDir }).run();
     const { steps } = JSON.parse(readFileSync(join(recordDir, 'summary.json'), 'utf8'));
     expect(steps.map((s: { file: string; operation: string }) => [s.file, s.operation])).toEqual([
-      ['01.jpg', 'CLICK'],
-      ['02.jpg', 'done'],
+      ['steps/01-click-open-full-name.jpg', 'CLICK'],
+      ['steps/02-finished-done.jpg', 'done'],
     ]);
+    // The refused shot's file went with it.
+    expect(readdirSync(join(recordDir, 'steps')).sort()).toEqual(['01-click-open-full-name.jpg', '02-finished-done.jpg']);
   });
 });
 

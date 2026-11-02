@@ -148,7 +148,11 @@ describe('a secret is scrubbed from the page as soon as it is read, before anyth
   const secret = { values: { token: LONG }, secretKeys: ['token'] };
   // A cut copy is a prefix: 20 characters of it are enough to give the secret away.
   const PREFIX = LONG.slice(0, 20).toLowerCase();
-  const recordingText = (dir: string) => readdirSync(dir).filter((file) => !file.endsWith('.jpg')).map((file) => readFileSync(join(dir, file), 'utf8')).join('\n');
+  // Every text file the recording wrote, and every file's name: a name is text too.
+  const recordingText = (dir: string) => {
+    const files = readdirSync(dir, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => join(entry.parentPath, entry.name));
+    return [...files, ...files.filter((file) => !file.endsWith('.jpg')).map((file) => readFileSync(file, 'utf8'))].join('\n');
+  };
   const leaks = (...outputs: unknown[]) => outputs.map((output) => (typeof output === 'string' ? output : JSON.stringify(output)).toLowerCase().includes(PREFIX));
   const MENU: PageAction = { id: 'menu', kind: 'click', node: 31, role: 'button', label: 'Filters', expanded: 'true' };
 

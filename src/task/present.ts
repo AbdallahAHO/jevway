@@ -1,18 +1,9 @@
 import type { StepRecord } from '../jev/decide.ts';
+import type { RunFiles } from '../output/run-folder.ts';
 import { describeStep } from '../recording/recording.ts';
 import type { TaskSummary } from './run-task.ts';
 
-/** Where a session's files are, as absolute paths: its run folder, the latest end page, and the recording when kept. */
-export interface RunFiles {
-  run_dir: string;
-  /** The page as the latest call ended (JPEG); absent when the capture failed. */
-  screenshot?: string;
-  /** The recording's `index.html` (with `record`). */
-  page?: string;
-  /** The recording's `run.mp4` (with `record` and ffmpeg). */
-  video?: string;
-  manifest: string;
-}
+export type { RunFiles };
 
 export type Detail = 'concise' | 'full';
 

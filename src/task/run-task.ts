@@ -9,6 +9,7 @@ import { ANY_HOST, narrowHosts, outsideHosts, type HostRules } from './hosts.ts'
 import { scrubberFor } from '../jev/secrets.ts';
 import { describeFailure, runChecks, type Check, type CheckResult } from './checks.ts';
 import { deepLink, quoteSpans } from './evidence.ts';
+import { writeCall, type RunFiles } from '../output/run-folder.ts';
 import { Recording } from '../recording/recording.ts';
 import { RunStopped, startRunLimit, type RunLimit } from './run-limit.ts';
 import { checkUploadFiles, fileNames } from './upload-files.ts';
@@ -59,7 +60,13 @@ export interface TaskOptions {
   allowCoordinateClicks?: boolean;
   /** After an action that changed nothing yet, or a WAIT, keep observing up to this long for the page to change before deciding again. */
   changeWaitMs?: number;
-  /** Save a sharp screenshot before every action, plus the final page and an index.html viewer, here. */
+  /**
+   * The session's run folder: every call leaves its end page (`final.jpg`, `calls/NN-<status>.jpg`), `summary.json` and
+   * `manifest.json` there. `record` adds the recording for people: a sharp shot before every action, `run.mp4` and an
+   * `index.html` viewer. Without it the task writes nothing.
+   */
+  output?: { dir: string; record?: boolean };
+  /** The same as `output: { dir: recordDir, record: true }`. */
   recordDir?: string;
   /** Hosts the run may be on (see hosts.ts): checked before every decision and after every step; leaving ends it `blocked`. */
   hosts?: HostRules;
@@ -109,6 +116,9 @@ export interface TaskSummary {
   evidence?: { quote: string; url: string; deep_link?: string; confidence: number };
 }
 
+/** Hears one step of a call as the run moves past it: the step (scrubbed), its number in the call from 1, and the page's URL. */
+export type StepListener = (step: StepRecord & { confidence: number }, n: number, url: string) => void;
+
 export interface TraceEntry {
   decision: Omit<Decision, 'action'> & { action?: string };
   executed: boolean;
@@ -120,6 +130,8 @@ const PAGE_TEXT_CHARS = 2500;
 // An agent must know when the text was cut, to read the rest with another call or chrome-devtools.
 export const pageTextFor = (text: string) =>
   text.length > PAGE_TEXT_CHARS ? `${text.slice(0, PAGE_TEXT_CHARS)}\n…[${text.length - PAGE_TEXT_CHARS} more characters not shown]` : text;
+// The widest end-page screenshot a run folder keeps, in pixels: enough to read, light enough to inline in a result.
+const END_PAGE_WIDTH = 1280;
 // How much of the page title a needs_confirmation reason quotes.
 const CONFIRM_TITLE_CHARS = 80;
 // How much of a page dialog's text a step or a repeat reason quotes.
@@ -239,7 +251,7 @@ const BLANK_PAGE: PageState = {
  */
 export class BrowserTask {
   readonly trace: TraceEntry[] = [];
-  #options: Required<Omit<TaskOptions, 'doneWhen' | 'recordDir' | 'model'>> & Pick<TaskOptions, 'doneWhen' | 'model'>;
+  #options: Required<Omit<TaskOptions, 'doneWhen' | 'recordDir' | 'output' | 'model'>> & Pick<TaskOptions, 'doneWhen' | 'model'>;
   #history: (StepRecord & { confidence: number })[] = [];
   #latencies: number[] = [];
   #inputTokens = 0;
@@ -306,15 +318,28 @@ export class BrowserTask {
   #tabs: Tab[];
   #ask: Ask;
   #recording: Recording | undefined;
+  /** The run folder each call writes to, every call's summary so far, and what the last call left there. */
+  #output: TaskOptions['output'];
+  #summaries: TaskSummary[] = [];
+  #lastCall: { files: RunFiles; screenshot?: Buffer } | undefined;
+  /** This call's step listener, and how many of the call's steps it was told. */
+  #onStep: StepListener | undefined;
+  #stepsTold = 0;
   /** This call's stop signal (caller cancel or time budget); set while a call runs. */
   #limit: RunLimit | undefined;
 
-  constructor(tab: Tab, ask: Ask, { recordDir, ...options }: TaskOptions) {
+  constructor(tab: Tab, ask: Ask, { recordDir, output, ...options }: TaskOptions) {
     this.#tab = tab;
     this.#tabs = [tab];
     this.#ask = ask;
     this.#options = { ...DEFAULTS, values: {}, secretKeys: [], ...definedOnly(options), files: checkUploadFiles(options.files) };
-    if (recordDir) this.#recording = new Recording(recordDir, (text) => this.#scrub(text));
+    this.#output = output ?? (recordDir ? { dir: recordDir, record: true } : undefined);
+    if (this.#output?.record) this.#recording = new Recording(this.#output.dir, (text) => this.#scrub(text));
+  }
+
+  /** What the last call left in the run folder, and its end page as JPEG bytes (absent when the capture failed); none without `output`. */
+  get lastCall() {
+    return this.#lastCall;
   }
 
   /** The model a call's requests went to, and what its input tokens cost at that model's published rate. */
@@ -409,7 +434,7 @@ export class BrowserTask {
   update(
     patch: Partial<Omit<TaskOptions, 'hosts'>> & { confirmIrreversible?: boolean; confirmTarget?: string; allowedHosts?: string[]; blockedHosts?: string[] },
   ) {
-    const { confirmIrreversible, confirmTarget, values, secretKeys, files, recordDir: _recordDir, allowedHosts, blockedHosts, ...options } = patch;
+    const { confirmIrreversible, confirmTarget, values, secretKeys, files, recordDir: _recordDir, output: _output, allowedHosts, blockedHosts, ...options } = patch;
     // First, so a list that would widen the hosts throws before anything else changes.
     const hosts = narrowHosts(this.#options.hosts, { allowed: allowedHosts, blocked: blockedHosts });
     // A new goal may be to flip back what the old one flipped.
@@ -434,9 +459,12 @@ export class BrowserTask {
 
   /**
    * Runs until done or a hand-back. `signal` is the caller's cancel (the MCP request's): the run stops at its next
-   * check, `blocked` "Cancelled by the caller"; an input already under way finishes first.
+   * check, `blocked` "Cancelled by the caller"; an input already under way finishes first. `onStep` hears each step of
+   * this call (numbered from 1) once the run moves past it, with the page's URL then; a listener that throws is ignored.
    */
-  async run({ signal }: { signal?: AbortSignal } = {}): Promise<TaskSummary> {
+  async run({ signal, onStep }: { signal?: AbortSignal; onStep?: StepListener } = {}): Promise<TaskSummary> {
+    this.#onStep = onStep;
+    this.#stepsTold = 0;
     // The recording is for people: a browser failure while recording must not change or hang the run's outcome.
     await this.#recording?.start(this.#tab).catch(() => undefined);
     let settled: TaskSummary;
@@ -451,8 +479,42 @@ export class BrowserTask {
     // A secret never leaves in a summary or a trace, wherever the page echoed it: the checks and the evidence included.
     for (; this.#traceScrubbed < this.trace.length; this.#traceScrubbed++) this.trace[this.#traceScrubbed] = this.#scrub(this.trace[this.#traceScrubbed]);
     const summary = this.#scrub(settled);
+    this.#onStep = undefined;
     await this.#recording?.finish(this.#tab, summary).catch(() => undefined);
+    if (this.#output) await this.#writeCall(this.#output.dir, summary);
     return summary;
+  }
+
+  // What a call leaves in the run folder; like the recording, it never changes or hangs the run's outcome.
+  async #writeCall(dir: string, summary: TaskSummary) {
+    this.#summaries.push(summary);
+    const screenshot = await this.#endPage().catch(() => undefined);
+    try {
+      const files = writeCall({ dir, call: this.#summaries.length, status: summary.status, shot: screenshot, summaries: this.#summaries, recorded: Boolean(this.#recording) });
+      this.#lastCall = { files, ...(screenshot && { screenshot }) };
+    } catch {
+      this.#lastCall = undefined;
+    }
+  }
+
+  /** The tab's viewport as a light JPEG for agents: quality 70, at most 1280 pixels wide. Pixels: a secret typed into a visible field shows. */
+  async #endPage() {
+    const ratio = Number(await this.#tab.evaluate('devicePixelRatio')) || 1;
+    const width = this.#ending?.page.w || END_PAGE_WIDTH;
+    const scale = Math.min(1, END_PAGE_WIDTH / (width * ratio));
+    return Buffer.from(await this.#tab.screenshot({ format: 'jpeg', quality: 70, scale }), 'base64');
+  }
+
+  /** Tells the step listener about this call's steps it has not heard yet; the page's URL is the one the run is on now. */
+  #tellSteps(firstStep: number, url: string) {
+    if (!this.#onStep) return;
+    for (; firstStep + this.#stepsTold < this.#history.length; this.#stepsTold++) {
+      try {
+        this.#onStep(this.#scrub(this.#history[firstStep + this.#stepsTold]), this.#stepsTold + 1, url);
+      } catch {
+        // A listener is the caller's (progress, a log line): it never decides how the run goes.
+      }
+    }
   }
 
   async #loop(signal?: AbortSignal): Promise<TaskSummary> {
@@ -485,6 +547,7 @@ export class BrowserTask {
     const stop = (status: TaskStatus, reason: string, decision?: Decision, { overridable = false } = {}): TaskSummary => {
       // A dialog that opened late still belongs on the step that caused it.
       this.#reportDialogs(firstStep);
+      this.#tellSteps(firstStep, page.url);
       // A hand-back asks a new question, so a confirmation still pending (a refused one) is spent.
       if (status === 'needs_confirmation') this.#spendConfirmation();
       // The agent answers a question about one control; the pin says which (see #handBack).
@@ -603,6 +666,7 @@ export class BrowserTask {
         // A tab opened (or closed) since the last look, by a late script: the checks below judge the tab in use.
         const switchedLate = await this.#switchTabs();
         if (switchedLate) page = await this.#afterSwitch(switchedLate, firstStep);
+        this.#tellSteps(firstStep, page.url);
         // Never a decision on a page outside the hosts: a start page, a redirect or a late navigation that left them ends the run.
         const outside = outsideHosts(page.url, hosts);
         if (outside) return stop('blocked', `The page is outside this run's hosts: ${outside}; the run stopped without going back`);
@@ -809,6 +873,7 @@ export class BrowserTask {
               operation: decision.operation,
               element: action.label,
               valueKey: decision.valueKey ?? undefined,
+              fileKey: decision.fileKey ?? undefined,
               option: action.kind === 'select' ? String(action.value) : undefined,
               confidence: round(Math.min(decision.confidence, decision.targetConfidence ?? 1)),
             },

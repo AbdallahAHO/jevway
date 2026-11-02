@@ -18,6 +18,7 @@ import {
   thousands,
   type Viewport,
 } from './recording-page.ts';
+import { safeSlug, stepFileName } from '../output/layout.ts';
 import type { TaskSummary } from '../task/run-task.ts';
 
 /** What Jev is about to do on a screen, in the terms the task loop knows. */
@@ -129,14 +130,37 @@ export const describeStep = ({ operation, element = '', valueKey, fileKey, optio
   }
 };
 
+// A step shot's name: the verb and what it acts on, short enough to read in a file list.
+const stepWords = ({ operation, element = '', valueKey, fileKey, option }: StepIntent) => {
+  switch (operation) {
+    case 'CLICK':
+    case 'CLICK_AT':
+      return `click ${element}`;
+    case 'TYPE_TEXT':
+      return `type ${valueKey ?? element}`;
+    case 'UPLOAD':
+      return `upload ${fileKey ?? element}`;
+    case 'SELECT':
+      return `select ${option ?? element}`;
+    case 'PRESS_ENTER':
+    case 'PRESS_ESCAPE':
+    case 'SCROLL_DOWN':
+    case 'SCROLL_UP':
+    case 'WAIT':
+      return operation.replace('_', ' ');
+    default:
+      return `finished ${operation}`;
+  }
+};
+
 /**
  * A human-facing record of a run: a screencast video (`run.mp4`, needs ffmpeg), a sharp screenshot before every
  * executed action with its target outlined and a one-sentence description, the final page, `summary.json`
  * and an `index.html` viewer. Separate from what the model sees.
  *
  * @example
- * const task = new BrowserTask(tab, ask, { goal, recordDir: 'runs/langfuse' });
- * await task.run(); // runs/langfuse/run.mp4, 01.jpg … index.html
+ * const task = new BrowserTask(tab, ask, { goal, output: { dir: 'runs/langfuse', record: true } });
+ * await task.run(); // runs/langfuse/run.mp4, steps/01-click-traces.jpg … index.html
  */
 export class Recording {
   readonly steps: RecordedStep[] = [];
@@ -171,7 +195,8 @@ export class Recording {
 
   async step(tab: Tab, page: PageState, intent: StepIntent, target?: PageAction['rect']) {
     const marks = target ? [{ label: intent.operation, rect: target }] : [];
-    const file = `${String(this.steps.length + 1).padStart(2, '0')}.jpg`;
+    const file = stepFileName(this.steps.length + 1, safeSlug(stepWords(intent), this.#scrub));
+    mkdirSync(join(this.#dir, 'steps'), { recursive: true });
     writeFileSync(join(this.#dir, file), Buffer.from(await tab.markedScreenshot(marks, page, { sharp: true }), 'base64'));
     this.steps.push({
       file,
@@ -185,7 +210,7 @@ export class Recording {
 
   /** The action shot just taken never ran (the page moved first); the retry takes its place. */
   discardLast() {
-    this.steps.pop();
+    this.#remove(this.steps.pop());
   }
 
   /** The action shot just taken never ran: its target couldn't be reached. Repeats of the same miss fold into one. */
@@ -194,11 +219,16 @@ export class Recording {
     if (!last) return;
     if (previous?.unreachable && previous.description === last.description) {
       previous.attempts = (previous.attempts ?? 1) + 1;
-      this.steps.pop();
+      this.#remove(this.steps.pop());
       return;
     }
     last.unreachable = true;
     last.attempts = 1;
+  }
+
+  // A shot named for a step that never ran would sit in the folder with no step to explain it.
+  #remove(step: RecordedStep | undefined) {
+    if (step) rmSync(join(this.#dir, step.file), { force: true });
   }
 
   // A session can run several times (missing value, confirmation); each run ends with its own final shot,

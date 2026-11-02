@@ -158,6 +158,14 @@ export const fakeTab = (pages: PageState[] = [page()]) => {
       tab.clicksAt.push(point);
       return 'canvas';
     },
+    /** The device pixel ratio the page reports, and every plain screenshot taken (a run folder's end page). */
+    pixelRatio: 1,
+    finalShots: [] as { format?: string; quality?: number; scale?: number }[],
+    evaluate: async (expression: string) => (expression === 'devicePixelRatio' ? tab.pixelRatio : undefined),
+    screenshot: async (options: { format?: string; quality?: number; scale?: number } = {}) => {
+      tab.finalShots.push(options);
+      return Buffer.from('final page').toString('base64');
+    },
     markedScreenshot: async (_marks: unknown, _viewport: unknown, options?: { sharp?: boolean }) => {
       if (options?.sharp) tab.recorded++;
       else tab.screenshots++;
