@@ -84,8 +84,10 @@ Probes (headless and headed Chrome, 2026-11-02, this machine):
    chooser too when files are declared. The declared-file rule is unchanged.
 7. **Drop zones.** With files declared, `snapshot.js` lists a visible element (at least 40×40) as a drop zone only when it
    holds no file input and carries a conservative marker: an `ondrop` attribute; `dropzone`, `drop-zone`, `drop-area`,
-   `droparea` or `file-drop` in its class, id or a `data-` attribute name; or its own short text (≤ 200 chars) reads
-   "drag and drop", "drag & drop", "drop … file(s)" or "drop … here". The innermost such element wins. It is listed as
+   `droparea`, `file-drop` or `drop-target` in its class, id or a `data-` attribute name; or a short text (≤ 200 chars)
+   reads "drag and drop", "drag & drop" or "drop (your/a/the) file(s)/CV/resume/image(s)/photo(s)/document(s)/
+   attachment(s)" (its nearest box of 40×40 or more; "Prices drop here" is no zone). The innermost such element wins;
+   one holding or inside a file field's stand-in is that field already. It is listed as
    `kind: 'upload'`, role `file`, `drop: true`, label `<its text or name> (drop zone)`. `Tab.upload` on it checks the
    target is fresh and uncovered (`RESOLVE_TARGET`), moves the point into the viewport for a frame, and dispatches
    `dragEnter`, `dragOver`, `drop` with `data.files: [path]` (trusted events). The page receiving the drop is checked in

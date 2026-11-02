@@ -221,11 +221,11 @@ Every input goes through `Tab.act` or `Tab.upload` (`src/browser/tab.ts`):
 5. **Delivery check.** A counter of trusted `pointerdown`, `mousedown` and `touchstart` events is registered before the page's own scripts. If it has not moved after 4 reads 40 ms apart, the run ends `blocked` with `InputNotDelivered`. It is never retried, because a click the page received but the counter missed must not run twice.
 6. **Type.** Select-all (Cmd or Ctrl+A), then one `keyDown`/`keyUp` per character, so autocompletes see real keys. Text containing a line break is inserted with `Input.insertText`, since a line-break key would submit the form.
 7. **Select.** A native `<select>` option is set in the page (`value`, then `input` and `change` events), with no pointer input.
-8. **Upload.** `DOM.setFileInputFiles` with the declared path, after the same element-level freshness check. Never inside a frame.
+8. **Upload.** `DOM.setFileInputFiles` with the declared path, after the same element-level freshness check; in a frame, the node is resolved in the frame's own world and the file set through the session that owns the frame. A drop zone (no file input) instead gets the same resolve and cover check as a click, then a trusted `dragEnter`, `dragOver`, `drop` (`Input.dispatchDragEvent` with the path) at its centre; a drop the page never received is `TargetUnreachable`.
 
 ### 2.6 See what changed
 
-After the input, the loop follows a tab the input opened, reads the page again and, if the fingerprint is unchanged, keeps reading every 150 ms for up to 1.5 s (`changeWaitMs`). The step goes into history with `page_changed`, and for a typed field `value_kept` (does the field still hold the text). Then the hosts are checked again, dialogs the step raised are reported on it, and the post-action guards run (section 5).
+After the input, the loop follows a tab the input opened, reads the page again and, if the fingerprint is unchanged, keeps reading every 150 ms for up to 1.5 s (`changeWaitMs`). The step goes into history with `page_changed`, and for a typed field `value_kept` (does the field still hold the text). Then the hosts are checked again, downloads the step started are waited for (30 s at most), kept in the run folder and noted on it (`(downloaded invoice.pdf, 84 KB)`; the next request's page text starts `[Downloaded this call] …`), dialogs the step raised are reported on it, and the post-action guards run (section 5).
 
 ## 3. The action space
 
@@ -236,7 +236,7 @@ Operations are offered per step, only when they have something to act on (`build
 | `CLICK` | At least one clickable control is listed. | Target anything not listed this step. |
 | `TYPE_TEXT` | At least one editable field is listed. | Type anything except `values[key]` for the key the model chose. No fitting key: fed back once, then `needs_input`. |
 | `SELECT` | A native dropdown is listed; each option is a target `id:n`. | Choose an option the page doesn't offer or that is disabled. |
-| `UPLOAD` | Files were declared and a file field is listed. | Upload anything but a declared file (absolute path, checked readable before the run). The model sees key and file name only. |
+| `UPLOAD` | Files were declared and a file field (in the page or a frame) or a marked drop zone is listed. | Upload anything but a declared file (absolute path checked readable before the run, or an `https` URL fetched into the run folder first). The model sees key and file name only. |
 | `SCROLL_DOWN`, `SCROLL_UP` | The document, or a visible pane, can move that way. | Choose the distance or point. A scroll that moved nothing is recorded as `(nothing moved: there is no more to scroll this way)`. |
 | `WAIT` | Always. | Anything; it waits 100 ms, then the loop's change wait. |
 | `PRESS_ENTER` | Right after typing into a search-like field (role searchbox or combobox, or a label with search, query, find or filter) that is still listed. | Press anywhere else. It is refused unless that exact field still has focus. |
@@ -524,7 +524,8 @@ An unrecorded request is a miss: it throws `ReplayMiss` naming the goal, step an
 | `src/task/evidence.ts` | Span cutting and the `#:~:text=` deep link. |
 | `src/task/hosts.ts` | Host patterns, narrowing layers, the outside test. |
 | `src/task/run-limit.ts` | Cancel and time-budget signal. |
-| `src/task/upload-files.ts` | Declared file checks and names shown to the model. |
+| `src/task/upload-files.ts` | Declared file checks, `https` URL fetches (public addresses only, ≤ 3 redirects, 50 MB) and names shown to the model. |
+| `src/browser/downloads.ts`, `src/task/downloads.ts` | Download behaviour per browser source, which tab a download belongs to, keeping a finished one in the run folder. |
 | `src/task/look.ts` | `jevway_look`: a read with no model call and no ids. |
 | `src/recording/recording.ts`, `src/recording/recording-page.ts` | The human record and its page. |
 | `src/jev/decide.ts` | Request shape, heads, follow-ups, answer validation, rescue candidates, evidence request. |

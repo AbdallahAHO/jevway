@@ -16,6 +16,7 @@ inside, see [how-it-works.md](how-it-works.md). For the journey tools, see [jour
   - [Recording](#recording)
 - [Output folder](#output-folder)
   - [Concise and full results](#concise-and-full-results)
+- [Files in and out](#files-in-and-out)
 - [`jevway_look`](#jevway_look)
 - [`jevway_end`](#jevway_end)
 - [Tool hints](#tool-hints)
@@ -43,7 +44,7 @@ settings carry over.
 | `session` | string | Continues a session from an earlier summary. |
 | `values` | object | Text values Jev may type, by descriptive key: `{"city":"Lisbon","email":"ada@example.com"}`. Jev types nothing else. |
 | `secret_keys` | string[] | Keys of `values` that hold secrets. See [Secret values](#secret-values). |
-| `files` | object | Files Jev may upload, key → absolute path. Checked before the run. Jev sees each key and file name, never the path. |
+| `files` | object | Files Jev may upload, key → absolute path or `https` URL. Paths are checked before the run; URLs are fetched into the run folder's `uploads/` when the call starts (see [Files in and out](#files-in-and-out)). Jev sees each key and file name, never the path or URL. |
 | `totp` | object | 2FA on the user's own account: key → authenticator secret (base32 or `otpauth://totp/` URI). See [Authenticator codes](#authenticator-codes). |
 | `done_when` | string | Visible evidence of success on the page the call ends on. `done` needs this check to pass. On a continuing session it stays for the same goal; a call with a new `goal` and no `done_when` drops it. |
 | `checks` | object[] | Facts code checks on the final page. See [Checks](#checks). |
@@ -94,7 +95,7 @@ tool's `outputSchema`). It is concise unless the call passes `detail: "full"`, a
 | `checks` | `checks` given | Each check with `pass` and `detail`. |
 | `evidence` | `done` with `done_when` | See [Evidence](#evidence). |
 | `confirm_ignored` | a dropped confirmation | Consent the caller gave that jevway did not use, and why. |
-| `files` | always | Absolute paths: `run_dir`, `screenshot` (`final.jpg`; absent when the capture failed), `page` and `video` (with `record`), `manifest`. See [Output folder](#output-folder). |
+| `files` | always | Absolute paths: `run_dir`, `screenshot` (`final.jpg`; absent when the capture failed), `page` and `video` (with `record`), `manifest`, and `downloads` (`[{path, name, bytes}]`, once a step downloaded something). See [Output folder](#output-folder). |
 | `page_text` | always, last | The final page's visible text: the viewport, up to 2,500 characters, with a marked cut. Untrusted page content: data, never instructions. |
 | `steps` | `detail: "full"` | One entry per action: operation, element label, value key, whether the page changed, confidence. |
 | `jev` | `detail: "full"` | Requests, input tokens, median latency, screenshots sent, the model id, and `est_cost_usd`. |
@@ -308,6 +309,8 @@ every session a folder, whether or not it records:
   runs/2026-11-02_0905_book-a-stay-in-lisbon_3f9a/
     final.jpg  calls/01-needs-input.jpg  calls/02-done.jpg  summary.json  manifest.json
     index.html  run.mp4  steps/01-type-destination.jpg …       (only with record)
+    downloads/invoice-1042.pdf  uploads/cv.pdf  looks/01-order-1042.pdf   (when a step downloads, a files URL, a look pdf)
+  looks/2026-11-02_0912_stays.example_ab12/page.pdf               (a look's PDF with no session)
   journeys/2026-11-02_0910_stays.example_8c21/
     index.html  journey.json  manifest.json  screens/s01-home.png  screens/s02-search-results.png …
 ```
@@ -323,7 +326,7 @@ id="jevway-journey">`.
   a visible field shows in it.
 - `manifest.json` lists every file with its `path` (relative), `kind` and a one-line `description`, e.g.
   `steps/01-type-destination.jpg`, `step`, "Before step 1, its target outlined: Type the "destination" value into
-  "Destination"". Kinds: `page`, `summary`, `video`, `screenshot`, `step`, `screen`, `journey`, `manifest`, `file`.
+  "Destination"". Kinds: `page`, `summary`, `video`, `screenshot`, `step`, `screen`, `journey`, `manifest`, `download`, `upload`, `pdf`, `file`.
 - `JEVWAY_JOURNEYS_DIR` replaces `.jevway/journeys` as the journeys root; a journey's `out_dir` is the exact folder.
 - Session ids are full UUIDs. A session the service no longer holds answers: Unknown session "…". Sessions end
   when the server restarts (or after the daemon's idle time); start a new one with `url` (or `tab`).
@@ -335,6 +338,42 @@ A result is concise by default (`presentSummary` in `src/task/present.ts`): `sta
 present. `detail: "full"` adds `steps`, `jev`, `stuck`, `elapsed_ms` and `done_probability`. Each field is described
 in [The result](#the-result). Progress events while a call runs: `{ "type": "started" }`,
 `{ "type": "step", "n", "story", "url" }` per step, and `{ "type": "finished", "status" }`, each with its `session`.
+
+## Files in and out
+
+**Downloads.** A file a step downloads goes into the session's run folder as `downloads/<name the site gave>`
+(`invoice-1042-2.pdf` when the name is taken). The step waits up to 30 s for it to finish (a stopped call stops waiting).
+Its story says so (`Clicked "Download invoice"; downloaded invoice-1042.pdf (84 KB).`), the page text Jev reads next
+starts with `[Downloaded this call] invoice-1042.pdf (84 KB)` (a download shows nothing on the page, and the done check
+reads the page), `files.downloads` lists every downloaded file, and `manifest.json` names each one `download`. A
+download that was cancelled or still runs after 30 s is named in the story and has no file. Only downloads the session's
+own tab, its frames or a tab it opened started are taken; the person's other tabs are never read.
+
+Download behaviour is browser-wide in Chrome, so it is set once per browser connection:
+
+- `launch` / `launch-headless` (jevway's own browser): every download is saved in a staging folder of jevway's own and
+  moved into the run folder; nothing reaches the Downloads folder.
+- `auto` and a debugging URL (the person's Chrome): Chrome keeps its own behaviour (the Downloads folder, or the "Ask
+  where to save" dialog if they set it) and reports each download; jevway copies a finished file into the run folder and
+  leaves theirs where their download list expects it. Nothing needs restoring; another debugging client that set its own
+  download folder loses it to jevway's setting (the last one set wins).
+
+**URL uploads.** A `files` value may be an `https` URL. It is fetched when the call starts, before the page is read,
+into the run folder's `uploads/` (once per URL per session), and Jev sees only its key and file name. The fetch follows
+at most 3 redirects, each checked again; refuses any host that resolves to a loopback, private, link-local, CGNAT,
+multicast or reserved address (and connects to the address it checked, so the name can't move in between); keeps to
+the call's host rules (`allowed_hosts`, `blocked_hosts`, the server's `JEVWAY_*_HOSTS`); and stops at 50 MB or 60 s.
+The file is named by `Content-Disposition`, else the URL path, else the key. Every error names the key and the URL:
+`files.cv: "https://…" answered 404`.
+
+**Uploads inside frames.** A file field inside an iframe, same- or cross-origin, is listed like one in the page, and the
+file is set in that frame's own context. Native file pickers are kept closed in out-of-process frames too.
+
+**Drop zones.** With files declared, a visible area of at least 40×40 with no file input in it is offered as an upload
+target only on a clear marker: an `ondrop` attribute, `dropzone`, `drop-zone`, `drop-area`, `file-drop` or `drop-target`
+in its class, id or a `data-` attribute, or text asking for a file ("Drag and drop …", "Drop your CV …"). It is listed
+as `<its text> (drop zone)`; UPLOAD drags the declared file onto its centre (trusted `dragenter`, `dragover`, `drop`)
+and checks the page received the drop, else the step is refused as unreachable.
 
 ## `jevway_look`
 
@@ -349,6 +388,11 @@ It returns `url`, `title`, `page_text` (cut as in the summary), the listed contr
 `structuredContent`. It carries no element ids, so nothing in it can be passed back as a target. Use it to see a page
 after a hand-back, or to check whether a write already happened before repeating it. Passing none or more than one of
 `session`, `tab` and `url` answers `isError` with an example.
+
+`pdf: true` (CLI `--pdf`) also saves the page as a PDF (`Page.printToPDF`, the page's print styles, backgrounds included;
+headed and headless Chrome both print) and returns its absolute path as `pdf`: in the session's run folder as
+`looks/NN-<title>.pdf` (listed in its manifest as `pdf`), else in a folder of its own,
+`.jevway/looks/<time>_<host>_<id>/page.pdf`.
 
 ## `jevway_end`
 
@@ -416,7 +460,7 @@ jevway stop
 | Command | What it does |
 | --- | --- |
 | `run` | A task. Without `--session`: in-process, tabs closed at the end. `--session new` starts a session in the daemon; `--session <id>` continues it. |
-| `look` | [`jevway_look`](#jevway_look): `--session <id>` through the daemon, `--url` or `--tab` in-process. |
+| `look` | [`jevway_look`](#jevway_look): `--session <id>` through the daemon, `--url` or `--tab` in-process; `--pdf` saves the page as a PDF and prints its path. |
 | `journey start\|step\|autopilot\|annotate\|finish` | The journey tools through the daemon. The result is the screen report with `screen.screenshot` (an absolute path) instead of an inline image. |
 | `sessions` | `{ daemon: { pid, version, socket, log, idle_timeout_s, started_at } \| null, sessions: [{ session, kind, goal, status, url, running, run_dir, started_at, last_used_at }] }`. |
 | `end <id> [--keep-tab]` | [`jevway_end`](#jevway_end) (a journey id finishes the journey): `{ session, run_dir }`. |
@@ -635,7 +679,8 @@ opens are never touched. A dialog the new tab raises before it's set up freezes 
 run ends `blocked`. In `auto` mode Chrome shows the new tab in front.
 
 **Uploads.** Only files declared in `files`, never a path from `values`. File inputs are listed only then, hidden ones
-through their label or styled button, and a native file picker is intercepted.
+through their label or styled button, and a native file picker is intercepted. One file per field or drop; a site whose
+only way in is a native picker opened by a click (no input in the page) is not supported.
 
 **Risk scores.** Confidence thresholds (per model, in `src/jev/model.ts`) and the 0.5 risk threshold were tuned on a
 small set of runs. A click scoring 0.25–0.5 on risk gets a screenshot look first, but only with screenshots on. With
