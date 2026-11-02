@@ -1,6 +1,8 @@
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createConnection, createServer, type Server, type Socket } from 'node:net';
 import { dirname, join } from 'node:path';
+import { InboxError } from '../inbox/inbox.ts';
+import { createInboxRegistry, type InboxRegistry } from '../inbox/inbox-registry.ts';
 import { ensureOutRoot } from '../output/layout.ts';
 import { createSessionService, UnknownSession, type SessionInfo, type SessionService } from '../session/session-service.ts';
 import { presentSummary } from '../task/present.ts';
@@ -20,6 +22,8 @@ export interface DaemonOptions {
   runnerFor: (choice: RunnerChoice) => SessionRunner;
   /** One entry per start, stop, request and idle end; never a request's parameters. */
   log: (entry: Record<string, unknown>) => void;
+  /** The inboxes `jevway inbox` makes while this daemon runs; they end with it. */
+  inboxes?: InboxRegistry;
 }
 
 export interface Daemon {
@@ -77,6 +81,7 @@ const errorBody = (error: unknown): ErrorBody => {
   if (error instanceof UnknownSession) {
     return { code: 'unknown_session', message: error.message, hint: 'List the open ones with jevway sessions, or start one with jevway run --session new --url <url> --goal <goal>' };
   }
+  if (error instanceof InboxError) return { code: error.code, message: error.message, hint: error.hint };
   return { code: 'failed', message: error instanceof Error ? error.message : String(error), hint: 'The message says what failed; jevway doctor checks the key and the browser.' };
 };
 
@@ -89,7 +94,7 @@ const errorBody = (error: unknown): ErrorBody => {
  * const daemon = await startDaemon({ socket, version, fingerprint, idleMs: 3_600_000, runnerFor, log });
  * await daemon.closed;
  */
-export const startDaemon = async ({ socket, version, fingerprint, idleMs, runnerFor, log }: DaemonOptions): Promise<Daemon> => {
+export const startDaemon = async ({ socket, version, fingerprint, idleMs, runnerFor, log, inboxes = createInboxRegistry() }: DaemonOptions): Promise<Daemon> => {
   const runners = new Map<string, SessionRunner>();
   const services = new Map<string, Holder>();
   const connections = new Set<Socket>();
@@ -207,6 +212,21 @@ export const startDaemon = async ({ socket, version, fingerprint, idleMs, runner
       writeSessionFiles();
       return { journey, ...summary };
     },
+    // Inboxes are named `inbox`, never `session`, so the idle sweep never mistakes one for a busy session.
+    'inbox.create': ({ provider }) => inboxes.create({ provider }),
+    async 'inbox.wait'({ inbox, from, subject, timeoutS }, { signal, emit }) {
+      const address = inboxes.addressOf(inbox);
+      const message = await inboxes.wait(inbox, {
+        from,
+        subject,
+        timeoutMs: timeoutS * 1000,
+        signal,
+        onPoll: (elapsedMs) => emit({ type: 'inbox_wait', address, elapsed_s: Math.round(elapsedMs / 1000), timeout_s: timeoutS }),
+      });
+      return { message: message ?? null };
+    },
+    'inbox.list': ({ inbox }, { signal }) => inboxes.list(inbox, { signal }),
+    'inbox.read': ({ inbox, id }, { signal }) => inboxes.read(inbox, id, { signal }),
   };
 
   // Ending (not destroying) lets the last replies reach their clients first.

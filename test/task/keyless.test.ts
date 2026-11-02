@@ -32,6 +32,8 @@ vi.mock('../../src/browser/chrome.ts', () => ({
 const client = new Client({ name: 'test', version: '0.0.0' });
 const toolNames = [
   'jevway_end',
+  'jevway_inbox_create',
+  'jevway_inbox_wait',
   'jevway_journey_annotate',
   'jevway_journey_autopilot',
   'jevway_journey_finish',

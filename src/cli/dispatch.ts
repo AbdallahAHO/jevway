@@ -5,6 +5,7 @@ import { SKILL_USAGE, runSkill } from '../setup/skill-command.ts';
 import type { Runner } from '../task/start-task.ts';
 import { closestName, usageError } from './flags.ts';
 import { topHelp } from './help.ts';
+import { inboxCommand } from './inbox-command.ts';
 import { journeyCommand } from './journey-command.ts';
 import { lookCommand } from './look-command.ts';
 import { printFailure, type CliIo } from './output.ts';
@@ -35,6 +36,7 @@ const COMMANDS: Record<string, Command> = {
   run: { summary: 'hand a browser goal to Jev (one-shot, or a session with --session)', run: runCommand },
   look: { summary: 'print what a page or a session\'s tab shows, with no model call', run: lookCommand },
   journey: { summary: 'map mobile user journeys: start, step, autopilot, annotate, finish', run: journeyCommand },
+  inbox: { summary: 'a throwaway email inbox for test and demo sign-ups: create, wait, list, read', run: inboxCommand },
   sessions: { summary: 'list the open sessions and journeys', run: sessionsCommand },
   end: { summary: 'end a session and close the tabs it opened', run: endCommand },
   serve: { summary: 'run the session daemon in the foreground', run: serveCommand },

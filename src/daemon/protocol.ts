@@ -16,6 +16,10 @@ export type Method =
   | 'journey.autopilot'
   | 'journey.annotate'
   | 'journey.finish'
+  | 'inbox.create'
+  | 'inbox.wait'
+  | 'inbox.list'
+  | 'inbox.read'
   | 'stop';
 
 export interface ErrorBody {
