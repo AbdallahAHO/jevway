@@ -142,7 +142,14 @@ describe('a one-shot run', () => {
     const { code, json } = await cli(['run', ...GOAL]);
     expect(code).toBe(1);
     expect(json).toMatchObject({ ok: true, status: 'needs_input' });
-    expect(json.next).toBe('Add the missing values to `--values` and run again. Pass `--session new` to keep the tab between calls.');
+    expect(json.next).toBe(
+      'Ask the user the `ask_user` question with your ask tool (unless their request already gives these values), then add the answers to `--values` and run again. Pass `--session new` to keep the tab between calls.',
+    );
+    expect(json.ask_user).toMatchObject({
+      question: 'What should I enter for "Full name" and "Email address"?',
+      fields: [{ key: 'full_name', label: 'Full name' }, { key: 'email_address', label: 'Email address' }],
+      then: 'Run again with the answers in `--values` keys "full_name", "email_address". Pass `--session new` to keep the tab between calls.',
+    });
   });
 
   it('adds the raw steps and stats with --detail full', async () => {
@@ -277,5 +284,14 @@ describe('what to do next, in flags', () => {
     expect(cliNext(nextFor({ status: 'done' }), 'abc')).toBe('Read the result in `page_text` (and `evidence`); end it with `jevway end abc` when you no longer need its tab.');
     expect(cliNext(nextFor({ status: 'done' }), undefined)).toBe('Read the result in `page_text` (and `evidence`).');
     expect(cliNext(nextFor({ status: 'step_budget' }), 'abc')).toMatch(/`--max-steps` \/ `--max-seconds`/);
+  });
+
+  it("words ask_user's then in flags too", () => {
+    expect(cliNext('Call again with this session and the answer in `values.email`; list "email" in `secret_keys`.', 'abc')).toBe(
+      'Run again with `--session abc` and the answer in `--values` key "email"; list "email" in `--secret-keys`.',
+    );
+    expect(cliNext("On Confirm, call again with this session, `confirm_irreversible: true` and `confirm_target` set to the user's own words", 'abc')).toBe(
+      "On Confirm, run again with `--session abc`, `--confirm-irreversible` and `--confirm-target` set to the user's own words",
+    );
   });
 });

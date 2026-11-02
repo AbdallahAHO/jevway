@@ -1823,6 +1823,34 @@ describe('a needs_input names the fields it wants', () => {
     ]);
   });
 
+  it("adds the choices an open list offers for the field, capped, so the person can be offered them", async () => {
+    const option = (n: number, label: string): PageAction => ({ id: `o${n}`, kind: 'click', node: 50 + n, role: 'option', label });
+    const countries = ['Portugal', `Luxembourg${' and more'.repeat(20)}`, 'Spain', 'France', 'Italy', 'Ireland', 'Iceland', 'Greece', 'Malta', 'Cyprus', 'Austria', 'Belgium'];
+    const form = page({
+      actions: [
+        { id: 'c1', kind: 'fill', node: 40, role: 'combobox', label: 'Country', value: '', expanded: 'true' },
+        ...countries.map((label, i) => option(i, label)),
+      ],
+    });
+    const { ask } = scriptedJev([{ operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: NO_SUPPLIED_VALUE }]);
+    const summary = await new BrowserTask(fakeTab([form]).asTab, ask, { goal: 'Check out', values: { name: 'Ada' }, changeWaitMs: 0 }).run();
+    expect(summary.status).toBe('needs_input');
+    expect(summary.missing).toEqual([{ label: 'Country', role: 'combobox', path: '/stays', options: countries.slice(0, 10).map((label) => label.slice(0, 80)) }]);
+  });
+
+  it("adds a listed select's options for a field of the same name", async () => {
+    const form = page({
+      actions: [
+        { id: 's1', kind: 'fill', node: 41, role: 'textbox', label: 'Size', value: '' },
+        { id: 's2', kind: 'select', node: 42, role: 'combobox', label: 'Size → Medium', value: 'm', current_value: 'Small' },
+        { id: 's3', kind: 'select', node: 42, role: 'combobox', label: 'Size → Large', value: 'l', current_value: 'Small' },
+      ],
+    });
+    const { ask } = scriptedJev([{ operation: 'TYPE_TEXT', type_text_target: '1', value_for_1: NO_SUPPLIED_VALUE }]);
+    const summary = await new BrowserTask(fakeTab([form]).asTab, ask, { goal: 'Order', values: { name: 'Ada' }, changeWaitMs: 0 }).run();
+    expect(summary.missing).toEqual([{ label: 'Size', role: 'textbox', path: '/stays', options: ['Medium', 'Large'] }]);
+  });
+
   it('leaves it out of any other hand-back', async () => {
     const { ask } = scriptedJev([{ operation: 'CLICK', click_target: '4', commit_risk: 0.9 }]);
     const summary = await new BrowserTask(fakeTab().asTab, ask, { goal: 'Pay', changeWaitMs: 0 }).run();

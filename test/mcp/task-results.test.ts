@@ -42,7 +42,8 @@ describe('jevway_task results', () => {
       expect(result.content[0].type).toBe('text');
       expect(JSON.parse(result.content[0].text)).toEqual(result.structuredContent);
       const out = result.structuredContent;
-      expect(Object.keys(out).slice(0, 5)).toEqual(['status', 'reason', 'story', 'next', 'session']);
+      expect(Object.keys(out).slice(0, 4)).toEqual(['status', 'reason', 'story', 'next']);
+      expect(Object.keys(out).filter((key) => key !== 'ask_user')[4]).toBe('session');
       expect(Object.keys(out).at(-1)).toBe('page_text');
       expect(out).toMatchObject({
         status,
@@ -87,6 +88,33 @@ describe('jevway_task results', () => {
     const done = (await task({ url: 'http://fixture/stays' })).structuredContent;
     expect(done.evidence).toMatchObject({ quote: 'Stays in Lisbon' });
     expect(done.checks).toEqual([expect.objectContaining({ type: 'url_contains', pass: true })]);
+  });
+
+  it('carries ask_user right after next on a hand-back that needs a person, valid against the output schema', async () => {
+    const { client, task, runs } = await setUp();
+    runs.push(runTo(summaryFor('needs_input')), runTo(summaryFor('needs_confirmation')), runTo(summaryFor('blocked')), runTo(summaryFor('step_budget')));
+    const asked = [];
+    for (let call = 0; call < 4; call++) {
+      const result = await task({ url: 'http://fixture/stays' });
+      // The client checks structuredContent against the listed output schema; a mismatch is an error here.
+      expect(result.isError).toBeFalsy();
+      asked.push(result.structuredContent);
+    }
+    const [input, confirm, wall, budget] = asked;
+    expect(Object.keys(input).slice(0, 5)).toEqual(['status', 'reason', 'story', 'next', 'ask_user']);
+    expect(input.ask_user).toEqual({
+      question: 'What should I enter for "Email"?',
+      header: 'Email',
+      fields: [{ key: 'email', label: 'Email' }],
+      then: 'Call again with this session and the answer in `values.email`.',
+    });
+    expect(confirm.ask_user).toMatchObject({ question: 'Click "Search" on "Stays in Lisbon · Staylist"?', header: 'Confirm' });
+    expect(wall.ask_user).toMatchObject({ header: 'Sign in', options: [{ label: 'Done' }, { label: 'Skip' }] });
+    expect(budget).not.toHaveProperty('ask_user');
+    const { tools } = await client.listTools();
+    const schema = tools.find((tool) => tool.name === 'jevway_task')!.outputSchema as any;
+    expect(schema.properties.ask_user).toMatchObject({ type: 'object' });
+    expect(schema.required).not.toContain('ask_user');
   });
 
   it('links the end page, summary and manifest as file:// resources in the run folder', async () => {

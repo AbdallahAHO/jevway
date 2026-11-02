@@ -133,12 +133,25 @@ describe('next', () => {
     expect(nextFor({ ...doneSummary, status: 'blocked', wall: { kind: 'sign_in', origin: 'https://x.example' } })).toMatch(/sign in at https:\/\/x\.example/i);
     for (const status of ['done', 'uncertain', 'blocked', 'step_budget'] as const) expect(nextFor({ ...doneSummary, status })).toBeTruthy();
   });
+
+  it('points at `ask_user` when the result carries one, keeping what the agent must still do', () => {
+    expect(nextFor(needsInputSummary, { asking: true })).toBe(
+      'Ask the user the `ask_user` question with your ask tool (unless their request already gives these values), then add the answers to `values` and call again with this session.',
+    );
+    expect(nextFor(confirmSummary, { asking: true })).toMatch(/^Ask the user the `ask_user` question with your ask tool, unless their own request names this action and its target;.*`confirm_irreversible: true`/);
+    expect(nextFor({ ...doneSummary, status: 'blocked', wall: { kind: 'bot_check', origin: 'https://x.example', name: 'cloudflare' } }, { asking: true })).toMatch(
+      /^Never try to get past it: ask the user the `ask_user` question/,
+    );
+    for (const status of ['done', 'step_budget'] as const) expect(nextFor({ ...doneSummary, status }, { asking: true })).toBe(nextFor({ ...doneSummary, status }));
+  });
 });
 
 describe('presentSummary', () => {
   it('is concise by default: the story, the page, the files and what to do next', () => {
     const concise = presentSummary({ session: 'S', summary: needsInputSummary, files: FILES });
-    expect(Object.keys(concise)).toEqual(['status', 'reason', 'story', 'next', 'session', 'url', 'title', 'missing', 'files', 'page_text']);
+    expect(Object.keys(concise)).toEqual(['status', 'reason', 'story', 'next', 'ask_user', 'session', 'url', 'title', 'missing', 'files', 'page_text']);
+    expect(concise.ask_user).toMatchObject({ question: 'What should I enter for "Phone number"?', fields: [{ key: 'phone_number', label: 'Phone number' }] });
+    expect(concise.next).toMatch(/`ask_user`/);
     expect(concise.story).toEqual(['Typed the "name" value into "Full name".', 'Typed the "email" value into "Email address".']);
     expect(concise.files).toEqual(FILES);
   });
@@ -147,6 +160,15 @@ describe('presentSummary', () => {
     const full = presentSummary({ session: 'S', summary: needsInputSummary, files: FILES }, { detail: 'full' });
     expect(Object.keys(full).at(-1)).toBe('page_text');
     expect(full).toMatchObject({ steps: needsInputSummary.steps, jev: needsInputSummary.jev, stuck: needsInputSummary.stuck, elapsed_ms: 6120, done_probability: 0.04 });
+  });
+
+  it('carries ask_user right after next in full too, and none on a done', () => {
+    const full = presentSummary({ session: 'S', summary: confirmSummary }, { detail: 'full' });
+    expect(Object.keys(full).slice(0, 5)).toEqual(['status', 'reason', 'story', 'next', 'ask_user']);
+    expect(full.ask_user?.question).toBe('Click "Delete this repository" on "ada/scratch · Settings"?');
+    const done = presentSummary({ session: 'S', summary: doneSummary });
+    expect(done).not.toHaveProperty('ask_user');
+    expect(done.next).not.toMatch(/ask_user/);
   });
 
   it('keeps a dropped confirmation in the concise form: the agent must know its consent was not used', () => {
