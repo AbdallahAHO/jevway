@@ -47,7 +47,7 @@ export const describeStep = ({ operation, element = '', valueKey, fileKey, optio
     case 'CLICK_AT':
       return `${verb('click')} the control at ${target} by its on-screen position`;
     case 'TYPE_TEXT':
-      return `${verb('type')} the "${valueKey}" value into ${target}`;
+      return valueKey ? `${verb('type')} the "${valueKey}" value into ${target}` : `${verb('type')} text into ${target}`;
     case 'UPLOAD':
       return fileKey ? `${verb('upload')} the "${fileKey}" file into ${target}` : `${verb('upload')} a file into ${target}`;
     case 'SELECT':

@@ -116,6 +116,15 @@ describe('story', () => {
     expect(storyLine({ operation: 'UPLOAD', element: 'Avatar', file_key: 'avatar' })).toBe('Uploaded the "avatar" file into "Avatar".');
   });
 
+  it('names no value when a field was refused for lacking one', () => {
+    const line = storyLine({
+      operation: 'TYPE_TEXT',
+      element: 'Search Wikipedia',
+      not_executed: 'no supplied value fits this field; type nothing here',
+    });
+    expect(line).toBe('Did not type text into "Search Wikipedia": no supplied value fits this field; type nothing here.');
+  });
+
   it('shows a secret only as its marker, since steps are scrubbed before they are told', () => {
     const line = storyLine({ operation: 'CLICK', element: 'Copy [secret:token]' });
     expect(line).toBe('Clicked "Copy [secret:token]".');
