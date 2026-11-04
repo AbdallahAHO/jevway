@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/AbdallahAHO/jevway/compare/v0.5.2...v0.5.3) (2026-11-04)
+
+
+### Bug Fixes
+
+* **story:** name no value when a field is refused for lacking one ([#9](https://github.com/AbdallahAHO/jevway/issues/9)) ([95580fb](https://github.com/AbdallahAHO/jevway/commit/95580fb4d8d87551fd55b3812145cb45249e4b0c))
+
 ## [0.5.2](https://github.com/AbdallahAHO/jevway/compare/v0.5.1...v0.5.2) (2026-11-02)
 
 
