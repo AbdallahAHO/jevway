@@ -1,7 +1,7 @@
 {
   "name": "jevway",
   "displayName": "jevway",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Hand a whole browser goal to TypeSafe Jev and get one short, checked summary back: the jevway MCP server (jevway_task, jevway_look, jevway_end, journey mapping, and a disposable inbox for test sign-ups) and the skill that says when to use it and when to use chrome-devtools. Needs TYPESAFE_API_KEY or OPENROUTER_API_KEY in ~/.config/jevway/env or the environment.",
   "author": {
     "name": "Abdallah Othman",
