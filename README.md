@@ -3,6 +3,11 @@
 [![npm](https://img.shields.io/npm/v/jevway)](https://www.npmjs.com/package/jevway)
 [![CI](https://github.com/AbdallahAHO/jevway/actions/workflows/ci.yml/badge.svg)](https://github.com/AbdallahAHO/jevway/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Website](https://img.shields.io/badge/website-jevway.escalay.space-8b5cf6)](https://jevway.escalay.space/?utm_source=github&utm_medium=readme&utm_campaign=badge)
+
+**[Website and demos](https://jevway.escalay.space/?utm_source=github&utm_medium=readme&utm_campaign=header)** ·
+[Quick start](#quick-start) · [Agent setup guide](SETUP.md) · [How it works](docs/how-it-works.md) ·
+[Reference](docs/reference.md)
 
 Give your coding agent a browser goal and get back one short, checked summary. [TypeSafe Jev](https://docs.typesafe.ai)
 picks each click, type and select in about 300 ms, so your agent stops spending a turn on every step.
